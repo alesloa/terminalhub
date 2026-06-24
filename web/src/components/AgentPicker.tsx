@@ -1,0 +1,299 @@
+import { useEffect, useState, type ChangeEvent } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "../api/client";
+import type { HeadroomStatus } from "../api/types";
+import { useRoom } from "../store/room";
+import { useUi } from "../store/ui";
+import { ClaudeLoopWizard } from "./ClaudeLoopWizard";
+
+const FALLBACK_ICON = "/agents/terminal.svg";
+const MAX_ICON_BYTES = 256 * 1024; // matches the server cap
+
+/** Centered "new terminal" modal: pick a detected agent CLI, a plain shell, or a custom one. */
+export function AgentPicker({ workspaceId }: { workspaceId: string }) {
+  const qc = useQueryClient();
+  const close = useRoom(s => s.closeAgentPicker);
+  const requestTerminalFocus = useUi(s => s.requestTerminalFocus);
+  const { data } = useQuery({ queryKey: ["agents"], queryFn: api.listAgents });
+  // The special "Claude (Headroom)" launcher: separate endpoint so its network probe never delays the
+  // main list. Polled while the picker is open so the running dot stays fresh.
+  const { data: hr } = useQuery({ queryKey: ["agents", "headroom"], queryFn: api.headroomStatus, refetchInterval: 15_000 });
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+  const headroomHidden = settings?.headroomLauncherHidden ?? false;
+  const setHeadroomHidden = useMutation({
+    mutationFn: (hidden: boolean) => api.updateSettings({ headroomLauncherHidden: hidden }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+  });
+  const [hrInstall, setHrInstall] = useState(false); // show install steps when the CLI is missing
+
+  const launch = useMutation({
+    mutationFn: ({ command, title }: { command: string; title: string }) =>
+      api.createTerminal(workspaceId, { launchCommandOverride: command, title }),
+    // Focus the new terminal via the room's pending-focus channel, not setActive directly: the
+    // workspaces query hasn't refetched yet, so the new id isn't in the list and Room's
+    // "keep-active-valid" effect would snap focus back to the first terminal. The pending request
+    // is honored once the terminal actually appears.
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["workspaces"] }); requestTerminalFocus(workspaceId, r.terminal.id); close(); },
+  });
+  const pick = (command: string, title: string) => { if (!launch.isPending) launch.mutate({ command, title }); };
+
+  // Which bottom panel is expanded: the add-a-CLI form, the Claude-loop wizard, or neither.
+  const [panel, setPanel] = useState<"none" | "cli" | "loop">("none");
+  // The detected Claude CLI command, used to launch the loop session (falls back to plain `claude`).
+  const claudeBuiltin = (data?.builtin ?? []).find(a => a.id === "claude");
+  const claudeCommand = claudeBuiltin?.command ?? "claude";
+
+  // A Claude loop opens a fresh `claude` session; `kickoff` is the /loop or /goal line the server
+  // types in once the agent is up (see runKickoff). Focus + close behave like a normal pick.
+  const launchLoop = useMutation({
+    mutationFn: (kickoff: string) =>
+      api.createTerminal(workspaceId, { launchCommandOverride: claudeCommand, title: "Claude Task", kickoff }),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["workspaces"] }); requestTerminalFocus(workspaceId, r.terminal.id); close(); },
+  });
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [close]);
+
+  const builtins = (data?.builtin ?? []).filter(a => a.installed); // only installed; missing ones are hidden
+  const customs = data?.custom ?? [];
+
+  // Group custom CLIs by their chosen category. "Detected agents" is reserved for $PATH-detected
+  // built-ins; user CLIs live under "Other" (the default) or any category they name. Each non-"Other"
+  // category renders as its own section between Detected and Other; "Other"-tagged CLIs share the
+  // "Other" section with the Plain terminal.
+  const byCat = new Map<string, typeof customs>();
+  for (const a of customs) {
+    const cat = a.category?.trim() || "Other";
+    (byCat.get(cat) ?? byCat.set(cat, []).get(cat)!).push(a);
+  }
+  const otherCustoms = byCat.get("Other") ?? [];
+  const customCats = [...byCat.keys()].filter(c => c !== "Other").sort((a, b) => a.localeCompare(b));
+  // Existing category names, surfaced in the add-form autocomplete so the user can reuse one.
+  const knownCats = [...new Set(["Other", ...customs.map(a => a.category?.trim() || "Other")])];
+
+  const customCard = (a: (typeof customs)[number]) => (
+    <AgentCard key={a.id} icon={a.icon ?? FALLBACK_ICON} name={a.name} blurb={a.command}
+      onClick={() => pick(a.command, a.name)}
+      onDelete={async () => { await api.deleteAgent(a.id); qc.invalidateQueries({ queryKey: ["agents"] }); }} />
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onMouseDown={close}>
+      <div className="w-[min(680px,92vw)] max-h-[86vh] overflow-auto rounded-xl border border-edge bg-canvas shadow-2xl"
+        onMouseDown={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-edge">
+          <div className="font-semibold">New terminal</div>
+          <button onClick={close} className="text-dim hover:text-fg text-lg leading-none">✕</button>
+        </div>
+
+        <div className="p-5">
+          <div className="text-xs uppercase tracking-wide text-dim mb-2">Detected agents</div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {builtins.map(a => (
+              <AgentCard key={a.id} icon={`/agents/${a.id}.svg`} name={a.name} blurb={a.blurb}
+                onClick={() => pick(a.command, a.name)} />
+            ))}
+            {!headroomHidden && (
+              <HeadroomCard status={hr} pending={launch.isPending || setHeadroomHidden.isPending}
+                onLaunch={() => { if (hr) pick(hr.command, "Claude (Headroom)"); }}
+                onInstall={() => setHrInstall(v => !v)}
+                onHide={() => setHeadroomHidden.mutate(true)} />
+            )}
+            {builtins.length === 0 && headroomHidden && (
+              <div className="col-span-full text-sm text-dim">
+                No agent CLIs detected on $PATH. Open a plain terminal or add one below.
+              </div>
+            )}
+          </div>
+          {!headroomHidden && hrInstall && hr && !hr.installed && (
+            <HeadroomInstall status={hr} onClose={() => setHrInstall(false)} />
+          )}
+
+          {customCats.map(cat => (
+            <div key={cat}>
+              <div className="text-xs uppercase tracking-wide text-dim mt-5 mb-2">{cat}</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {byCat.get(cat)!.map(customCard)}
+              </div>
+            </div>
+          ))}
+
+          <div className="text-xs uppercase tracking-wide text-dim mt-5 mb-2">Other</div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <AgentCard icon={FALLBACK_ICON} name="Plain terminal" blurb="Just a shell"
+              onClick={() => pick("", "Terminal")} />
+            {otherCustoms.map(customCard)}
+          </div>
+
+          {panel === "none" && (
+            <div className="mt-5 flex items-center gap-4">
+              <button onClick={() => setPanel("cli")} className="text-sm text-blue-400 hover:text-blue-300">+ Add a CLI</button>
+              <button onClick={() => setPanel("loop")} className="text-sm text-blue-400 hover:text-blue-300">+ Add Claude Task</button>
+              {headroomHidden && (
+                <button onClick={() => setHeadroomHidden.mutate(false)} className="text-sm text-blue-400 hover:text-blue-300">+ Show Claude (Headroom)</button>
+              )}
+            </div>
+          )}
+          {panel === "cli" && (
+            <AddAgentForm knownCats={knownCats}
+              onClose={() => setPanel("none")}
+              onAdded={() => qc.invalidateQueries({ queryKey: ["agents"] })} />
+          )}
+          {panel === "loop" && (
+            <ClaudeLoopWizard claudeInstalled={!!claudeBuiltin?.installed} starting={launchLoop.isPending}
+              onStart={(cmd) => { if (!launchLoop.isPending) launchLoop.mutate(cmd); }}
+              onClose={() => setPanel("none")} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgentCard({ icon, name, blurb, onClick, onDelete }: {
+  icon: string; name: string; blurb?: string; onClick: () => void; onDelete?: () => void;
+}) {
+  return (
+    <div className="group relative">
+      <button onClick={onClick}
+        className="w-full flex items-center gap-3 p-3 rounded-lg border border-edge bg-panel text-left
+          hover:border-accent/60 hover:bg-surface">
+        <img src={icon} alt="" className="w-7 h-7 shrink-0 object-contain" />
+        <span className="min-w-0">
+          <span className="block truncate text-sm text-bright">{name}</span>
+          {blurb && <span className="block truncate text-xs text-dim">{blurb}</span>}
+        </span>
+      </button>
+      {onDelete && (
+        <button onClick={onDelete} title="Remove"
+          className="absolute top-1 right-1 hidden group-hover:block text-dim hover:text-red-400 text-xs leading-none">✕</button>
+      )}
+    </div>
+  );
+}
+
+/** The "Claude (Headroom)" launcher card. Unlike the detected built-ins, it shows even when the CLI
+ *  is missing — grayed out, with a click that opens install steps. A green/amber dot reflects whether
+ *  the compression proxy is live (it auto-starts on launch either way). Hover ✕ hides it. */
+function HeadroomCard({ status, pending, onLaunch, onInstall, onHide }: {
+  status?: HeadroomStatus; pending: boolean;
+  onLaunch: () => void; onInstall: () => void; onHide: () => void;
+}) {
+  const installed = status?.installed ?? false;
+  const running = status?.running ?? false;
+  return (
+    <div className="group relative">
+      <button disabled={pending} onClick={() => (installed ? onLaunch() : onInstall())}
+        title={installed
+          ? (running ? "Headroom proxy running" : "Headroom installed — the proxy starts automatically on launch")
+          : "Headroom not installed — click for install steps"}
+        className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors disabled:opacity-50
+          ${installed
+            ? "border-edge bg-panel hover:border-accent/60 hover:bg-surface"
+            : "border-edge/60 bg-panel/40 opacity-60 hover:opacity-90"}`}>
+        <img src="/agents/claude-headroom.svg" alt="" className="w-7 h-7 shrink-0 object-contain" />
+        <span className="min-w-0">
+          <span className="flex items-center gap-1.5 text-sm text-bright">
+            <span className="truncate">Claude (Headroom)</span>
+            {installed && (
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${running ? "bg-accent" : "bg-amber-400"}`}
+                title={running ? "proxy running" : "proxy stopped — starts on launch"} />
+            )}
+          </span>
+          <span className="block truncate text-xs text-dim">
+            {installed ? "Claude through Headroom compression" : "Not installed — click to install"}
+          </span>
+        </span>
+      </button>
+      <button onClick={onHide} title="Hide this launcher"
+        className="absolute top-1 right-1 hidden group-hover:block text-dim hover:text-red-400 text-xs leading-none">✕</button>
+    </div>
+  );
+}
+
+/** Inline install steps shown when the Headroom CLI is missing and the user clicks the grayed card. */
+function HeadroomInstall({ status, onClose }: { status: HeadroomStatus; onClose: () => void }) {
+  return (
+    <div className="mt-3 p-4 rounded-lg border border-edge bg-panel">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm font-medium">Install Headroom</div>
+        <button onClick={onClose} className="text-dim hover:text-fg text-sm leading-none">✕</button>
+      </div>
+      <div className="text-xs text-dim mb-2">
+        Local context-compression proxy for Claude — trims tokens before they reach Anthropic. Runs on your machine.
+      </div>
+      <code className="block px-2 py-1.5 rounded bg-canvas border border-edge font-mono text-[11px] text-bright select-all break-all">
+        {status.installHint}
+      </code>
+      <div className="text-xs text-dim mt-2">
+        After installing, reopen this menu (restart the server if it still shows as missing).{" "}
+        <a href={status.repoUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">Docs ↗</a>
+      </div>
+    </div>
+  );
+}
+
+function AddAgentForm({ knownCats, onAdded, onClose }: { knownCats: string[]; onAdded: () => void; onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [command, setCommand] = useState("");
+  const [category, setCategory] = useState("Other");
+  const [icon, setIcon] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  const save = useMutation({
+    mutationFn: () => api.createAgent({ name: name.trim(), command: command.trim(), icon, category: category.trim() || "Other" }),
+    onSuccess: () => { onAdded(); onClose(); },
+    onError: (e: unknown) => setErr(e instanceof Error ? e.message : "failed"),
+  });
+
+  const onFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    if (f.size > MAX_ICON_BYTES) { setErr("Icon too big (max 256 KB)"); return; }
+    setErr("");
+    const r = new FileReader();
+    r.onload = () => setIcon(typeof r.result === "string" ? r.result : null);
+    r.readAsDataURL(f);
+  };
+
+  const canSave = !!name.trim() && !!command.trim() && !save.isPending;
+  return (
+    <div className="mt-5 p-4 rounded-lg border border-edge bg-panel">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm font-medium">Add a CLI</div>
+        <button onClick={onClose} className="text-dim hover:text-fg text-sm leading-none">✕</button>
+      </div>
+      <div className="flex flex-col gap-3">
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Name (e.g. Aider)"
+          className="px-3 py-2 rounded bg-canvas border border-edge text-sm outline-none focus:border-accent/60" />
+        <input value={command} onChange={e => setCommand(e.target.value)} placeholder="Launch command (e.g. aider)"
+          className="px-3 py-2 rounded bg-canvas border border-edge text-sm font-mono outline-none focus:border-accent/60" />
+        {/* Category: type a new one or pick an existing (datalist). "Detected agents" is reserved for
+            $PATH-detected built-ins; the server coerces it to "Other". Blank → "Other". */}
+        <input value={category} onChange={e => setCategory(e.target.value)} list="agent-cats" placeholder="Category (e.g. Other)"
+          className="px-3 py-2 rounded bg-canvas border border-edge text-sm outline-none focus:border-accent/60" />
+        <datalist id="agent-cats">
+          {knownCats.map(c => <option key={c} value={c} />)}
+        </datalist>
+        <div className="flex items-center gap-3">
+          {icon
+            ? <img src={icon} alt="" className="w-8 h-8 object-contain rounded" />
+            : <div className="w-8 h-8 rounded bg-canvas border border-edge" />}
+          <label className="text-sm text-blue-400 hover:text-blue-300 cursor-pointer">
+            Upload icon
+            <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" onChange={onFile} className="hidden" />
+          </label>
+          {icon && <button onClick={() => setIcon(null)} className="text-xs text-dim hover:text-fg">clear</button>}
+        </div>
+        {err && <div className="text-xs text-red-400">{err}</div>}
+        <div className="flex gap-2">
+          <button disabled={!canSave} onClick={() => save.mutate()}
+            className="px-3 py-1.5 rounded bg-blue-600 text-sm disabled:opacity-40">Save</button>
+          <button onClick={onClose} className="px-3 py-1.5 rounded bg-elevated text-sm">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}

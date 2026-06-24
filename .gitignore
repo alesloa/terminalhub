@@ -1,0 +1,21 @@
+node_modules/
+dist/
+*.db
+*.db-*
+.env
+.DS_Store
+data/
+_context
+_plans
+docs/*
+!docs/FEATURES.md
+*.back
+*.bak
+.claude
+.codegraph
+/CLAUDE.md
+/server/AGENTS.md
+terminalhub.zip
+
+# Brainstorming visual-companion scratch (not committed)
+.superpowers/

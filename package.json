@@ -1,0 +1,29 @@
+{
+  "name": "terminalhub",
+  "private": true,
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "author": "Ale Sloan",
+  "homepage": "https://terminalhub.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alesloa/terminalhub.git"
+  },
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=server\" \"npm run dev --workspace=web\"",
+    "build": "npm run build --workspace=web && npm run build --workspace=server",
+    "start": "node scripts/start.mjs",
+    "test": "npm run test --workspace=server",
+    "postinstall": "node scripts/postinstall.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3"
+  }
+}

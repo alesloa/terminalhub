@@ -1,0 +1,680 @@
+@import "@xterm/xterm/css/xterm.css";
+/* Codicon icon font (terminal-tab icons, picker). Like the xterm import, must precede @tailwind —
+   CSS drops any @import that follows a rule. Ships the .codicon-<name> classes + the font face. */
+@import "@vscode/codicons/dist/codicon.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Theme token fallbacks — the default "Terminal Hub" palette as "R G B" channels. applyTheme()
+   (web/src/theme) overrides these inline on <html> once React mounts; this block just prevents a
+   flash of unthemed color before that runs. Channel form so Tailwind opacity modifiers work. */
+:root {
+  --tr-bg: 20 20 20;            --tr-panel: 30 30 30;         --tr-surface: 38 38 38;
+  --tr-elevated: 46 46 46;      --tr-code: 17 17 16;          --tr-edge: 42 42 42;
+  --tr-edge-strong: 58 58 58;   --tr-text: 204 204 204;       --tr-text-bright: 255 255 255;
+  --tr-text-muted: 157 157 157; --tr-text-dim: 113 113 113;   --tr-accent: 34 197 94;
+  --tr-accent-hover: 22 163 74; --tr-accent-fg: 255 255 255;  --tr-link: 74 222 128;
+  --tr-selection: 20 83 45;     --tr-success: 34 197 94;      --tr-error: 239 68 68;
+  --tr-warn: 245 158 11;        --tr-info: 96 165 250;
+}
+
+body { background:rgb(var(--tr-bg)); color:rgb(var(--tr-text)); margin:0; font-family: ui-sans-serif, system-ui; }
+
+/* Full-height chain so the app's root can size with `h-full` instead of `100vh`. A mirror viewer
+   renders the whole app inside MirrorStage's host-sized box; `vh` would escape that box and resolve to
+   the physical screen, so layout heights are `%`-of-parent and this chain makes that == the viewport in
+   the normal (un-mirrored) case. */
+html, body, #root { height: 100%; }
+
+/* Peacock-tinted chrome buttons (room header controls). They inherit --peacock from the room
+   frame, so they read as colored buttons that echo the frame's border. When --peacock is unset
+   (an uncolored room, or used outside a room) every color-mix collapses to the original dark
+   surface — both sides of the mix are equal — so those buttons look exactly as they did before. */
+.peacock-btn { background-color: color-mix(in srgb, var(--peacock, rgb(var(--tr-elevated))) 50%, rgb(var(--tr-elevated))); }
+.peacock-btn:hover { background-color: color-mix(in srgb, var(--peacock, rgb(var(--tr-edge))) 64%, rgb(var(--tr-edge))); }
+
+/* Slow attention blink — terminal needs you (its agent rang the bell). */
+@keyframes tr-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
+.tr-blink { animation: tr-blink 1.3s ease-in-out infinite; }
+
+/* Space-switcher dot when an unviewed space has a terminal that wants you (e.g. its agent just
+   finished, even with the IDE closed). Instead of just dimming, the dot fades in and out to a vivid
+   lime green with a soft matching halo — a clear green blink. The animation drives the fill, so the
+   dot needs no inline background while it's running. */
+@keyframes tr-space-attn {
+  0%, 100% { background-color: rgb(163 230 53 / 0.25); box-shadow: 0 0 0 0 rgb(163 230 53 / 0); }
+  50%      { background-color: rgb(163 230 53 / 1);    box-shadow: 0 0 7px 1px rgb(163 230 53 / 0.65); }
+}
+.tr-space-attn { animation: tr-space-attn 1.3s ease-in-out infinite; }
+
+/* Toast entrances — matched to where the toast appears (see Toaster.tsx POS/ENTER). The overshoot
+   in the cubic-bezier (control point > 1) gives a springy, physical settle. */
+@keyframes tr-toast-drop { from { opacity: 0; transform: translateY(-18px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.tr-toast-drop { animation: tr-toast-drop 360ms cubic-bezier(.22,1.18,.36,1); }
+@keyframes tr-toast-pop { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
+.tr-toast-pop { animation: tr-toast-pop 320ms cubic-bezier(.22,1.2,.36,1); }
+@keyframes tr-toast-rise { from { opacity: 0; transform: translateY(18px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.tr-toast-rise { animation: tr-toast-rise 360ms cubic-bezier(.22,1.18,.36,1); }
+
+/* Toast exits — slide back the way they came and fade out. `forwards` holds the end state (opacity 0)
+   until the store removes the node, so there's no flash back to full opacity (see Toaster.tsx EXIT). */
+@keyframes tr-toast-out-up { to { opacity: 0; transform: translateY(-14px) scale(.96); } }
+.tr-toast-out-up { animation: tr-toast-out-up 240ms ease-in forwards; }
+@keyframes tr-toast-out-down { to { opacity: 0; transform: translateY(14px) scale(.96); } }
+.tr-toast-out-down { animation: tr-toast-out-down 240ms ease-in forwards; }
+@keyframes tr-toast-out-fade { to { opacity: 0; transform: scale(.94); } }
+.tr-toast-out-fade { animation: tr-toast-out-fade 220ms ease-in forwards; }
+
+/* The calendar's event editor slides in from the right edge of the window ("pops out to the side"). */
+@keyframes tr-sheet-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
+.tr-sheet-in { animation: tr-sheet-in 200ms cubic-bezier(.22,.61,.36,1); }
+
+/* Folder overlay (iPhone-style) — the expanded view grows OUT of the folder tile and folds back into
+   it on close. Driven by a keyframe (NOT a JS rAF/transition) so a congested main thread can't starve
+   the grow and leave the panel stuck invisible. FolderOverlay sets --tr-fold-start (the measured
+   collapsed scale) and the element's transform-origin (the folder corner) inline per open. */
+@keyframes tr-fold-in  { from { transform: scale(var(--tr-fold-start, .4)); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes tr-fold-out { from { transform: scale(1); opacity: 1; } to { transform: scale(var(--tr-fold-start, .4)); opacity: 0; } }
+@keyframes tr-fade-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tr-fade-out { from { opacity: 1; } to { opacity: 0; } }
+/* A small fade + lift, used for staggered row reveals (e.g. the folder picker's listing). */
+@keyframes tr-rise { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* Pulsing border glow for an element that wants attention — same cadence as
+   tr-blink, but breathes a halo in its own accent color. Set --tr-glow-color. */
+@keyframes tr-glow {
+  0%, 100% { box-shadow: 0 0 9px 1px var(--tr-glow-color, rgb(var(--tr-accent))); }
+  50%      { box-shadow: 0 0 2px 0 var(--tr-glow-color, rgb(var(--tr-accent))); }
+}
+.tr-glow { animation: tr-glow 1.3s ease-in-out infinite; }
+
+/* Working state — an agent is actively thinking/streaming (NOT the same as "needs attention"). */
+
+/* The terminal dot slowly fades in and out while its agent works — no glow, just the green dot
+   breathing. */
+@keyframes tr-working-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+.tr-working-dot { animation: tr-working-pulse 1.1s ease-in-out infinite; }
+
+/* Stage Manager tile entrance — a gentle staggered fade/slide as the dock opens. Transform/opacity
+   only (smooth, GPU-friendly). The :nth-child delays stagger the first ~8 tiles; later tiles use the
+   base timing. Attention/working on a tile reuse .tr-glow / .tr-blink / .tr-working-dot above. */
+@keyframes tr-stage-tile-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+.tr-stage-tile { animation: tr-stage-tile-in 220ms ease-out both; }
+.tr-stage-tile:nth-child(1) { animation-delay: 0ms; }
+.tr-stage-tile:nth-child(2) { animation-delay: 35ms; }
+.tr-stage-tile:nth-child(3) { animation-delay: 70ms; }
+.tr-stage-tile:nth-child(4) { animation-delay: 105ms; }
+.tr-stage-tile:nth-child(5) { animation-delay: 140ms; }
+.tr-stage-tile:nth-child(6) { animation-delay: 175ms; }
+.tr-stage-tile:nth-child(7) { animation-delay: 210ms; }
+.tr-stage-tile:nth-child(8) { animation-delay: 245ms; }
+@media (prefers-reduced-motion: reduce) {
+  .tr-stage-tile { animation: none; }
+}
+
+/* KITT sweep — a light segment glides left→right and back along the card's bottom edge, in the
+   card's own border/accent color (--tr-glow-color, set on the card). The element is 1/3 of the track
+   wide; translateX(200%) of its own width lands its right edge flush with the track's right edge, and
+   `alternate` ping-pongs it. Transform-only so it stays cheap. */
+@keyframes tr-kitt { from { transform: translateX(0); } to { transform: translateX(200%); } }
+.tr-kitt {
+  background: linear-gradient(90deg, transparent, var(--tr-glow-color, rgb(var(--tr-accent))), transparent);
+  box-shadow: 0 0 6px 1px var(--tr-glow-color, rgb(var(--tr-accent)));
+  animation: tr-kitt 1.4s ease-in-out infinite alternate;
+}
+
+/* Equalizer — three little bars pumping while an agent works; inherits currentColor. Paired with a
+   tr-kitt sweep on the terminal-list rows so a working terminal reads as "doing something". */
+@keyframes tr-eq { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
+.tr-eq { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 10px; }
+.tr-eq i { width: 2px; height: 10px; border-radius: 1px; background: currentColor; transform-origin: bottom; animation: tr-eq 0.9s ease-in-out infinite; }
+.tr-eq i:nth-child(2) { animation-delay: 0.2s; }
+.tr-eq i:nth-child(3) { animation-delay: 0.4s; }
+
+/* Three-dot "wave" loader — e.g. while the commit message is generating. Each dot bobs
+   up then down, staggered, so the motion travels across the row. Inherits currentColor. */
+@keyframes tr-wave { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-3px); } }
+.tr-dot-wave { display: inline-flex; align-items: center; gap: 2px; }
+.tr-dot-wave i { width: 3px; height: 3px; border-radius: 9999px; background: currentColor; animation: tr-wave 1s ease-in-out infinite; }
+
+/* Settings search → jump highlight. When the search box scrolls a setting row into view it adds
+   .tr-setting-flash for a beat so the eye lands on the right control. Blue (brand), not the green
+   terminal accent. Slight negative margin + matching padding so the wash hugs the row, not the text. */
+@keyframes tr-setting-flash { 0%, 100% { background-color: transparent; } 25%, 60% { background-color: rgb(37 99 235 / 0.16); } }
+.tr-setting-flash { animation: tr-setting-flash 1.4s ease-in-out; margin: -4px -8px; padding: 4px 8px; }
+.tr-dot-wave i:nth-child(2) { animation-delay: 0.15s; }
+.tr-dot-wave i:nth-child(3) { animation-delay: 0.3s; }
+
+/* Active-pane ring: a 1px inset edge a touch lighter than the panel border, shown when the pane
+   (or anything inside it) holds focus — the same minimal cue as the Explorer file list, reused on
+   the editor, terminal, and terminal-list panes. Drawn as an overlay above the pane's content
+   (editor/terminal/list fill their box edge-to-edge, so a plain inset shadow would be covered). */
+.tr-pane { position: relative; }
+.tr-pane::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgb(var(--tr-edge-strong));
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.tr-pane:focus-within::after { opacity: 1; }
+
+/* Terminal grid geometry. --tr-term-pad is a minimum gap on both sides; FitAddon reads the .xterm
+   padding (getComputedStyle) and recomputes cols around it, so the text insets with no clipping.
+   On top of that, center the grid: flooring cols leaves a sub-cell remainder + the reserved scrollbar
+   gutter that would otherwise ALL pile on the right (the gap looked ~2x the left). Centering
+   .xterm-screen splits that slack evenly so both sides match. xterm computes selection/link hit-tests
+   from the screen's OWN bounding rect (getCoords(e, _screenElement, …)), so moving the screen keeps
+   clicks aligned. The focus bar (TerminalView) measures the screen's live offset+width and mirrors
+   them, so it stays under the grid wherever centering puts it. */
+:root { --tr-term-pad: 12px; --tr-term-pad-y: 5px; }
+.tr-pane .xterm { padding: var(--tr-term-pad-y) var(--tr-term-pad); }
+.tr-pane .xterm .xterm-screen { margin-left: auto; margin-right: auto; }
+
+/* Paint the whole xterm element + its scroll viewport with the LIVE terminal background (theme bg +
+   background-lift slider, published as --tr-term-bg by useThemeSync). xterm.css hardcodes the
+   viewport to #000, which showed as dark "black line" bands beside the grid — the side padding and
+   the reserved scrollbar gutter — on any theme whose terminal bg isn't pure black. Matching the term
+   bg makes those bands vanish on every theme. */
+.tr-pane .xterm,
+.tr-pane .xterm .xterm-viewport { background-color: var(--tr-term-bg, #000); }
+/* Hide xterm's scrollbar entirely — vestigial here (tmux owns scrollback; the wheel handler drives
+   copy-mode). Killing it reclaims the ~15px gutter "always show scroll bars" Macs reserve, so the
+   grid fills the full width and centers evenly instead of being shoved left of a dark bar. */
+.tr-pane .xterm .xterm-viewport { scrollbar-width: none; }
+.tr-pane .xterm .xterm-viewport::-webkit-scrollbar { display: none; }
+
+/* Drag / resize cursors. The OS-drawn resize+move cursors render near-black and vanish on a dark
+   terminal/theme. These are a dark arrow with a WHITE outline, so they stay visible on ANY
+   background. One source of truth: lockCursor (during a drag) and the cursor-* utility classes +
+   ResizeHandles (hover) all resolve to these vars; the trailing keyword is the fallback if a var
+   is ever missing. Hotspot is the 12,12 center of the 24×24 glyph. col/row map to ew/ns. */
+:root {
+  --cur-ew-resize: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cg%20transform%3D%22rotate(0%2012%2012)%22%3E%3Cpolygon%20points%3D%222%2C12%207%2C8%207%2C10.5%2017%2C10.5%2017%2C8%2022%2C12%2017%2C16%2017%2C13.5%207%2C13.5%207%2C16%22%20fill%3D%22%231c1c1c%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%221.4%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E") 12 12, ew-resize;
+  --cur-ns-resize: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cg%20transform%3D%22rotate(90%2012%2012)%22%3E%3Cpolygon%20points%3D%222%2C12%207%2C8%207%2C10.5%2017%2C10.5%2017%2C8%2022%2C12%2017%2C16%2017%2C13.5%207%2C13.5%207%2C16%22%20fill%3D%22%231c1c1c%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%221.4%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E") 12 12, ns-resize;
+  --cur-nwse-resize: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cg%20transform%3D%22rotate(45%2012%2012)%22%3E%3Cpolygon%20points%3D%222%2C12%207%2C8%207%2C10.5%2017%2C10.5%2017%2C8%2022%2C12%2017%2C16%2017%2C13.5%207%2C13.5%207%2C16%22%20fill%3D%22%231c1c1c%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%221.4%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E") 12 12, nwse-resize;
+  --cur-nesw-resize: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cg%20transform%3D%22rotate(-45%2012%2012)%22%3E%3Cpolygon%20points%3D%222%2C12%207%2C8%207%2C10.5%2017%2C10.5%2017%2C8%2022%2C12%2017%2C16%2017%2C13.5%207%2C13.5%207%2C16%22%20fill%3D%22%231c1c1c%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%221.4%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E") 12 12, nesw-resize;
+  --cur-move: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpolygon%20points%3D%2212%2C2%209%2C5%2010.5%2C5%2010.5%2C10.5%205%2C10.5%205%2C9%202%2C12%205%2C15%205%2C13.5%2010.5%2C13.5%2010.5%2C19%209%2C19%2012%2C22%2015%2C19%2013.5%2C19%2013.5%2C13.5%2019%2C13.5%2019%2C15%2022%2C12%2019%2C9%2019%2C10.5%2013.5%2C10.5%2013.5%2C5%2015%2C5%22%20fill%3D%22%231c1c1c%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%221.4%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E") 12 12, move;
+}
+.cursor-ns-resize { cursor: var(--cur-ns-resize) !important; }
+.cursor-ew-resize { cursor: var(--cur-ew-resize) !important; }
+.cursor-nwse-resize { cursor: var(--cur-nwse-resize) !important; }
+.cursor-nesw-resize { cursor: var(--cur-nesw-resize) !important; }
+.cursor-row-resize { cursor: var(--cur-ns-resize) !important; }
+.cursor-col-resize { cursor: var(--cur-ew-resize) !important; }
+.cursor-move { cursor: var(--cur-move) !important; }
+
+/* Focus bar — a green line marking the terminal pane that's taking input (a cue that survives agent
+   TUIs hiding the caret). Drawn as .xterm-screen::after so it spans EXACTLY the centered grid (same
+   element, left:0/right:0 → perfectly aligned on both edges with zero JS for the horizontal). The
+   grid is top-aligned and FitAddon floors rows, so the screen's bottom stops a sub-row short of the
+   pane edge; bottom:-(--tr-term-rem) drops the bar by that measured gap (set in TerminalView) so it
+   rests flush on the pane's bottom edge without moving the grid. .xterm/.xterm-screen don't clip
+   overflow, so the bar shows in the gap. Shown on :focus-within, same trigger as the pane ring. */
+.tr-pane .xterm-screen::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(-1 * var(--tr-term-rem, 0px));
+  height: 5px;
+  /* Color from --tr-focus-bar (Settings → Appearance, written by useThemeSync); green default. The
+     glow is the same color at 45% via color-mix so it tracks any chosen color. */
+  background: var(--tr-focus-bar, #22c55e);
+  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--tr-focus-bar, #22c55e) 45%, transparent);
+  border-radius: 9999px;          /* rounded caps so the collapsed start reads as a dot */
+  opacity: 0;
+  transform: scaleX(0);           /* collapsed/hidden when this pane isn't focused */
+  transform-origin: left center;  /* grow rightward from the left edge */
+  pointer-events: none;
+  z-index: 6;
+}
+/* On focus, sweep the bar out from a dot on the left to the full grid width — fast + fluid. An
+   animation (not a transition) so it replays from the start every time the pane regains focus. */
+.tr-pane:focus-within .xterm-screen::after {
+  animation: tr-focusbar-sweep 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes tr-focusbar-sweep {
+  0%   { transform: scaleX(0);    opacity: 0; }
+  12%  { transform: scaleX(0.02); opacity: 1; }   /* a dot pops in at the left… */
+  100% { transform: scaleX(1);    opacity: 1; }   /* …then sweeps all the way to the right */
+}
+
+/* Lightness slider in the terminal color picker (dark<->light gradient track). */
+.tr-light-slider { -webkit-appearance: none; appearance: none; height: 12px; border-radius: 9999px; outline: none; cursor: pointer; }
+.tr-light-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 9999px; background: #fff; border: 2px solid rgb(var(--tr-panel)); box-shadow: 0 0 0 1px #000; cursor: pointer; }
+.tr-light-slider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 9999px; background: #fff; border: 2px solid rgb(var(--tr-panel)); cursor: pointer; }
+
+/* Dark scrollbars matching the theme (was browser-default white). */
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--tr-edge-strong)) rgb(var(--tr-bg)); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: rgb(var(--tr-bg)); }
+::-webkit-scrollbar-thumb { background: rgb(var(--tr-edge)); border-radius: 6px; border: 2px solid rgb(var(--tr-bg)); }
+/* Clearly-visible hover: edge (42)→text-muted (157), a real lighten on the dark theme rather than the
+   barely-there edge→edge-strong (42→58) it was. One rule covers every vertical + horizontal scrollbar. */
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--tr-text-muted)); }
+::-webkit-scrollbar-corner { background: rgb(var(--tr-bg)); }
+
+/* Opt-out for compact scroll regions (e.g. the explorer tab strip). */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Touch: canvas cards + folders are press-and-hold draggable (dnd-kit TouchSensor). Kill iOS's
+   long-press callout and the text-selection magnifier so a hold cleanly starts a drag instead of a
+   selection. The inline rename input opts back in so its text stays selectable/editable. */
+[data-ws-card], [data-no-marquee] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+[data-ws-card] input, [data-ws-card] textarea { -webkit-user-select: text; user-select: text; }
+
+/* Fat, easy-to-grab scrollbar for the scrollback viewer (panel-bg context). Wider than the global
+   thin bar with a visible thumb. Pair with a right gutter so the bar clears ResizeHandles' edge strip
+   (otherwise the resize cursor steals the thumb). FF gets the wide track via scrollbar-width:auto. */
+.tr-scroll-wide { scrollbar-width: auto; scrollbar-color: rgb(var(--tr-edge-strong)) transparent; }
+.tr-scroll-wide::-webkit-scrollbar { width: 14px; height: 14px; }
+.tr-scroll-wide::-webkit-scrollbar-track { background: transparent; }
+.tr-scroll-wide::-webkit-scrollbar-thumb { background: rgb(var(--tr-edge-strong)); border-radius: 8px; border: 3px solid rgb(var(--tr-panel)); background-clip: padding-box; }
+.tr-scroll-wide::-webkit-scrollbar-thumb:hover { background: rgb(var(--tr-text-muted)); background-clip: padding-box; }
+.tr-scroll-wide::-webkit-scrollbar-corner { background: transparent; }
+
+/* Workspace canvas: HIDE the native scrollbar. The canvas still scrolls (overflow-auto), but macOS
+   overlay scrollbars auto-hide a second after you stop and the thin dark bar is near-invisible over a
+   wallpaper — so the user couldn't tell they could scroll out to an off-screen card. CanvasScrollbars
+   draws our own always-visible, grabbable bars over the canvas instead (only while content overflows),
+   which is reliable regardless of the OS overlay setting. Killing the native bar also frees its gutter,
+   so the host's measured clientWidth/Height (the ext-floor) doesn't jump by ~15px when overflow starts. */
+.tr-canvas-scroll { scrollbar-width: none; }
+.tr-canvas-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+/* Single-file side-by-side (split) diff: by default CodeMirror's MergeView forces both editors to
+   height:auto / overflow:visible and scrolls one shared wrapper — which means neither editor's own
+   `.cm-scroller` ever scrolls, so the minimap (which pins to that scroller) can't pin or be dragged.
+   For a single-file diff we instead let EACH side own its vertical scroll (their scrollTop is kept
+   in sync in JS), so the new-side minimap pins and its thumb works — like VS Code's side-by-side.
+   Scoped to `.cm-diff-fill` (single-file diffs only) so stacked multi-file diffs keep the default. */
+.cm-diff-host.cm-diff-fill .cm-mergeView,
+.cm-diff-host.cm-diff-fill .cm-mergeViewEditors { height: 100% !important; }
+.cm-diff-host.cm-diff-fill .cm-mergeView { overflow: hidden !important; }
+.cm-diff-host.cm-diff-fill .cm-mergeView .cm-editor { height: 100% !important; }
+.cm-diff-host.cm-diff-fill .cm-mergeView .cm-scroller { height: 100% !important; overflow-y: auto !important; }
+
+/* Diff change-overview ruler (see DiffView) — VS Code's diff overview ruler, NOT a code minimap.
+   A column pinned to the editor's right edge with a red/green mark per change chunk and a
+   translucent draggable viewport thumb; it doubles as the diff's scrollbar, so it's a wide, easy
+   grab (~3× a normal scrollbar). `.cm-editor` is its positioning context. */
+.cm-diff-host.cm-diff-fill .cm-editor { position: relative; }
+.tr-diff-ruler { position: absolute; top: 0; right: 0; width: 42px; height: 100%; z-index: 6;
+  cursor: pointer; background: rgb(var(--tr-code)); border-left: 1px solid rgb(var(--tr-edge-strong)); }
+.tr-diff-ruler-marks { position: absolute; inset: 0; pointer-events: none; }
+/* Two lanes like VS Code's diff overview ruler: removed lines (red) on the left, added/changed lines
+   (green) on the right, each at the change's vertical position — so a modification reads red+green. */
+.tr-diff-mark { position: absolute; border-radius: 1px; }
+.tr-diff-mark.del { left: 2px; right: 50%; background: #792218; }
+.tr-diff-mark.add { left: 50%; right: 2px; background: #516528; }
+.tr-mm-thumb { position: absolute; left: 1px; right: 1px; border-radius: 3px;
+  background: rgb(var(--tr-text) / 0.20); border: 1px solid rgb(var(--tr-text) / 0.32); pointer-events: none; }
+.tr-diff-ruler:hover .tr-mm-thumb { background: rgb(var(--tr-text) / 0.30); }
+
+/* When the overview ruler is OFF (minimap toggle off), the diff shows a normal native scrollbar —
+   make it thick/grabbable. When the ruler is ON, JS adds `.no-scrollbar` and the ruler is the scroll
+   control, so `:not(.no-scrollbar)` keeps this rule from fighting the hide. */
+.cm-diff-host.cm-diff-fill .cm-scroller:not(.no-scrollbar) { scrollbar-width: auto; }
+.cm-diff-host.cm-diff-fill .cm-scroller:not(.no-scrollbar)::-webkit-scrollbar { width: 14px; height: 14px; }
+.cm-diff-host.cm-diff-fill .cm-scroller:not(.no-scrollbar)::-webkit-scrollbar-thumb {
+  background: rgb(var(--tr-edge-strong)); border-radius: 8px; border: 3px solid rgb(var(--tr-code)); background-clip: padding-box; }
+
+/* Diff add/remove colors — VS Code's exact diff palette (dark), from
+   vscode/src/vs/platform/theme/common/colors/editorColors.ts. @codemirror/merge ships muddy
+   brown/teal tints, a neon solid gutter bar, and only a 2px underline on changed text; this replaces
+   all of it so the diff reads exactly like VS Code's. The whole changed line gets a soft hue wash,
+   and the changed CHARACTERS get a second wash of the same hue stacked on top (≈0.36 effective) —
+   that two-level fill is how VS Code separates "this line changed" from "these chars changed".
+   Inserted = olive line rgba(155,185,85,.2) + lime text rgba(156,204,44,.2); removed = red rgba(255,0,0,.2).
+   The gutter (line-number) column gets the SAME soft line wash, not a solid bar. Scoped to
+   `.cm-diff-host`; covers split (cm-merge-a old / cm-merge-b new) and unified (cm-inlineChangedLine /
+   cm-deletedChunk). `!important` beats the package's injected baseTheme regardless of stylesheet order. */
+.cm-diff-host .cm-merge-b .cm-changedLine,
+.cm-diff-host .cm-inlineChangedLine,
+.cm-diff-host .cm-insertedLine { background-color: rgba(155, 185, 85, 0.2) !important; }
+.cm-diff-host .cm-merge-b .cm-changedText,
+.cm-diff-host .cm-inlineChangedLine .cm-changedText { background: rgba(156, 204, 44, 0.2) !important; }
+.cm-diff-host .cm-merge-b .cm-changedLineGutter,
+.cm-diff-host .cm-inlineChangedLineGutter { background: rgba(155, 185, 85, 0.2) !important; }
+
+.cm-diff-host .cm-merge-a .cm-changedLine,
+.cm-diff-host .cm-deletedChunk { background-color: rgba(255, 0, 0, 0.2) !important; }
+.cm-diff-host .cm-merge-a .cm-changedText,
+.cm-diff-host .cm-deletedChunk .cm-deletedText,
+.cm-diff-host .cm-merge-b .cm-deletedText { background: rgba(255, 0, 0, 0.2) !important; }
+.cm-diff-host .cm-merge-a .cm-changedLineGutter,
+.cm-diff-host .cm-deletedLineGutter { background: rgba(255, 0, 0, 0.2) !important; }
+
+/* Aligning filler blocks (where one side has lines the other lacks) — VS Code's diagonal hatch,
+   class `.diagonal-fill` there, `.cm-mergeSpacer` here. Exact gradient from
+   vscode/src/vs/editor/browser/widget/diffEditor/style.css (diffEditor.diagonalFill = #cccccc33). */
+.cm-diff-host .cm-mergeSpacer {
+  background-image: linear-gradient(-45deg,
+    rgba(204, 204, 204, 0.2) 12.5%, transparent 12.5%, transparent 50%,
+    rgba(204, 204, 204, 0.2) 50%, rgba(204, 204, 204, 0.2) 62.5%, transparent 62.5%, transparent 100%);
+  background-size: 8px 8px;
+}
+
+.tr-markdown { color: rgb(var(--tr-text)); }
+.tr-markdown > * + * { margin-top: 1.1rem; }
+.tr-markdown h1,
+.tr-markdown h2,
+.tr-markdown h3,
+.tr-markdown h4,
+.tr-markdown h5,
+.tr-markdown h6 { color: rgb(var(--tr-text-bright)); font-weight: 650; line-height: 1.18; }
+.tr-markdown h1 { font-size: 2rem; margin-top: 2rem; padding-bottom: .55rem; border-bottom: 1px solid rgb(var(--tr-edge)); }
+.tr-markdown h2 { font-size: 1.55rem; margin-top: 1.85rem; padding-bottom: .35rem; border-bottom: 1px solid rgb(var(--tr-elevated)); }
+.tr-markdown h3 { font-size: 1.25rem; margin-top: 1.55rem; }
+.tr-markdown h4 { font-size: 1.05rem; margin-top: 1.35rem; }
+.tr-markdown p { color: rgb(var(--tr-text)); }
+.tr-markdown a { color: rgb(var(--tr-link)); text-decoration: underline; text-decoration-color: rgba(96,165,250,.55); text-underline-offset: 3px; }
+.tr-markdown a:hover { color: rgb(var(--tr-link)); }
+.tr-markdown strong { color: rgb(var(--tr-text-bright)); font-weight: 650; }
+.tr-markdown em { color: rgb(var(--tr-text)); }
+.tr-markdown blockquote { border-left: 2px solid rgba(96,165,250,.75); background: rgb(var(--tr-surface)); color: rgb(var(--tr-text)); padding: .75rem 1rem; }
+.tr-markdown ul,
+.tr-markdown ol { padding-left: 1.5rem; }
+.tr-markdown ul { list-style: disc; }
+.tr-markdown ol { list-style: decimal; }
+.tr-markdown li + li { margin-top: .25rem; }
+.tr-markdown li > p { margin: 0; }
+.tr-markdown input[type="checkbox"] { accent-color: rgb(var(--tr-link)); margin-right: .45rem; }
+.tr-markdown code { border-radius: 4px; background: rgb(var(--tr-elevated)); color: rgb(var(--tr-text-bright)); padding: .12rem .35rem; font-size: .92em; }
+.tr-markdown pre { overflow: auto; border: 1px solid rgb(var(--tr-edge)); border-radius: 7px; background: rgb(var(--tr-code)); padding: 1rem; line-height: 1.55; }
+.tr-markdown pre code { background: transparent; padding: 0; color: rgb(var(--tr-text)); }
+.tr-markdown table { width: 100%; border-collapse: collapse; overflow: hidden; border: 1px solid rgb(var(--tr-edge)); border-radius: 7px; font-size: .92rem; }
+.tr-markdown th,
+.tr-markdown td { border: 1px solid rgb(var(--tr-edge)); padding: .5rem .65rem; }
+.tr-markdown th { background: rgb(var(--tr-surface)); color: rgb(var(--tr-text-bright)); font-weight: 600; }
+.tr-markdown tr:nth-child(even) td { background: rgb(var(--tr-bg)); }
+.tr-markdown hr { border: 0; border-top: 1px solid rgb(var(--tr-edge)); margin: 1.75rem 0; }
+.tr-markdown img { max-width: 100%; border-radius: 7px; border: 1px solid rgb(var(--tr-edge)); }
+
+.tr-mdx-editor {
+  --basePageBg: rgb(var(--tr-bg));
+  --baseBg: rgb(var(--tr-panel));
+  --baseBgSubtle: rgb(var(--tr-surface));
+  --baseBgActive: rgb(var(--tr-elevated));
+  --baseBorder: rgb(var(--tr-edge));
+  --baseBorderHover: rgb(var(--tr-edge-strong));
+  --baseText: rgb(var(--tr-text));
+  --baseTextContrast: rgb(var(--tr-text-bright));
+  --accentText: rgb(var(--tr-link));
+  /* min-height (not height) so the editor root grows to the full document height. The toolbar is a
+     sticky child of this element; with a fixed height:100% its containing block is only one viewport
+     tall, so the toolbar would scroll away past the first screen. Letting the root span all content
+     keeps the toolbar pinned for the entire scroll. */
+  min-height: 100%;
+  color: rgb(var(--tr-text));
+  background: rgb(var(--tr-bg));
+}
+.tr-mdx-editor .mdxeditor-toolbar {
+  border-bottom: 1px solid rgb(var(--tr-edge));
+  border-radius: 0;
+  background: rgb(var(--tr-code));
+  /* Pin the toolbar to the top of the scroll container on our own stable class, independent of
+     MDX's hashed _toolbarRoot_ rule. z-index above content so it overlays scrolled text. */
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.tr-mdx-editor [role="toolbar"] {
+  border-radius: 0;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.tr-mdx-editor [class*="diffSourceToggleWrapper"] {
+  margin-left: auto;
+  position: static;
+  right: auto;
+}
+.tr-mdx-editor [class*="diffSourceToggle_"] {
+  background: rgb(var(--tr-surface));
+}
+.tr-mdx-editor [class*="toolbarButton"],
+.tr-mdx-editor [class*="toolbarToggleItem"],
+.tr-mdx-editor [class*="toolbarNodeKindSelectTrigger"] {
+  cursor: pointer;
+}
+.tr-mdx-editor [data-radix-popper-content-wrapper] {
+  z-index: 80 !important;
+}
+/* Tooltips portal inside the editor root, so the room window's z-index would otherwise bury them.
+   Lift any tooltip popper to the topmost layer so a hint is never hidden behind the workspace frame.
+   The editor's other poppers (selects, dialogs) stay at 80 so they keep sitting under app modals. */
+.tr-mdx-editor [role="tooltip"],
+.tr-mdx-editor [data-radix-popper-content-wrapper]:has([role="tooltip"]) {
+  z-index: 2147483647 !important;
+}
+[data-radix-popper-content-wrapper] {
+  z-index: 1000 !important;
+}
+.tr-mdx-editor [class*="tooltipContent"] {
+  z-index: 1000;
+  border: 1px solid rgb(var(--tr-edge-strong));
+  background: rgb(var(--tr-panel));
+  color: rgb(var(--tr-text-bright));
+  box-shadow: 0 8px 24px rgb(0 0 0 / .35);
+}
+.tr-mdx-editor [class*="tooltipContent"] svg {
+  fill: rgb(var(--tr-panel));
+}
+.tr-mdx-editor [class*="codeMirrorToolbar"] {
+  background: rgb(var(--tr-code));
+  border: 1px solid rgb(var(--tr-edge));
+  border-top: 0;
+  border-right: 0;
+}
+.tr-mdx-editor [class*="codeMirrorToolbar"] [class*="selectTrigger"] {
+  background: rgb(var(--tr-panel));
+  color: rgb(var(--tr-text-bright));
+}
+.tr-mdx-editor [class*="toolbarCodeBlockLanguageSelectContent"],
+.tr-mdx-editor [class*="selectContainer"] {
+  z-index: 1000;
+  border: 1px solid rgb(var(--tr-edge));
+  background: rgb(var(--tr-panel));
+  color: rgb(var(--tr-text-bright));
+}
+.tr-mdx-editor [class*="selectItem"]:hover,
+.tr-mdx-editor [class*="selectItem"][data-highlighted] {
+  background: rgb(var(--tr-elevated));
+}
+.tr-mdx-editor [class*="codeMirrorWrapper"] {
+  border: 1px solid rgb(var(--tr-edge));
+  border-radius: 7px;
+  background: rgb(var(--tr-code));
+}
+.tr-mdx-editor .cm-editor {
+  background: rgb(var(--tr-code)) !important;
+  color: rgb(var(--tr-text)) !important;
+}
+.tr-mdx-editor .cm-content {
+  caret-color: rgb(var(--tr-text-bright));
+}
+.tr-mdx-editor .cm-line {
+  color: rgb(var(--tr-text));
+}
+.tr-mdx-editor .cm-gutters {
+  background: rgb(var(--tr-code)) !important;
+  color: rgb(var(--tr-text-muted)) !important;
+  border-right: 1px solid rgb(var(--tr-edge)) !important;
+}
+.tr-mdx-editor .cm-activeLine,
+.tr-mdx-editor .cm-activeLineGutter {
+  background: rgb(var(--tr-surface)) !important;
+}
+.tr-mdx-editor .cm-selectionBackground,
+.tr-mdx-editor .cm-content ::selection {
+  background: rgb(var(--tr-selection)) !important;
+}
+.tr-mdx-editor .cm-cursor {
+  border-left-color: rgb(var(--tr-text-bright)) !important;
+}
+.tr-mdx-content {
+  min-height: calc(100vh - 220px);
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 32px 40px 72px !important;
+  font-size: 15px;
+  line-height: 1.7;
+}
+.tr-mdx-content h1,
+.tr-mdx-content h2,
+.tr-mdx-content h3,
+.tr-mdx-content h4 { color: rgb(var(--tr-text-bright)); font-weight: 650; }
+.tr-mdx-content a { color: rgb(var(--tr-link)); text-decoration: underline; text-underline-offset: 3px; }
+.tr-mdx-content blockquote { border-left: 2px solid rgba(96,165,250,.75); background: rgb(var(--tr-surface)); color: rgb(var(--tr-text)); padding: .75rem 1rem; }
+.tr-mdx-content code { border-radius: 4px; background: rgb(var(--tr-elevated)); color: rgb(var(--tr-text-bright)); padding: .12rem .35rem; font-size: .92em; }
+.tr-mdx-content pre { border: 1px solid rgb(var(--tr-edge)); border-radius: 7px; background: rgb(var(--tr-code)); padding: 1rem; }
+.tr-mdx-content table { border-collapse: collapse; border: 1px solid rgb(var(--tr-edge)); }
+.tr-mdx-content th,
+.tr-mdx-content td { border: 1px solid rgb(var(--tr-edge)); padding: .5rem .65rem; }
+.tr-mdx-content th { background: rgb(var(--tr-surface)); color: rgb(var(--tr-text-bright)); }
+.tr-mdx-content img { max-width: 100%; border-radius: 7px; border: 1px solid rgb(var(--tr-edge)); }
+
+/* Read-only Markdown view (MarkdownReader). markdown-it emits plain HTML, so it needs the block
+   rhythm the Lexical editor theme used to supply. Scoped to .tr-md-reader so the MDXEditor (edit
+   mode) is untouched; colors, links, tables, and inline code come from the shared .tr-mdx-content
+   rules above, which read the same --tr-* vars the brightness tint overrides. */
+.tr-md-reader > *:first-child { margin-top: 0; }
+.tr-md-reader p { margin: 0 0 1rem; }
+.tr-md-reader h1 { font-size: 1.9rem; line-height: 1.25; margin: 1.8rem 0 1rem; }
+.tr-md-reader h2 { font-size: 1.5rem; line-height: 1.3; margin: 1.6rem 0 .9rem; }
+.tr-md-reader h3 { font-size: 1.25rem; margin: 1.4rem 0 .75rem; }
+.tr-md-reader h4 { font-size: 1.05rem; margin: 1.2rem 0 .6rem; }
+.tr-md-reader h5, .tr-md-reader h6 { font-size: .95rem; margin: 1rem 0 .5rem; }
+.tr-md-reader ul, .tr-md-reader ol { margin: 0 0 1rem; padding-left: 1.6rem; }
+.tr-md-reader li { margin: .25rem 0; }
+.tr-md-reader li > ul, .tr-md-reader li > ol { margin: .25rem 0; }
+.tr-md-reader blockquote { margin: 0 0 1rem; border-radius: 4px; }
+.tr-md-reader pre { margin: 0 0 1rem; overflow-x: auto; }
+.tr-md-reader pre code { background: transparent; padding: 0; color: rgb(var(--tr-text)); font-size: .88em; }
+.tr-md-reader table { margin: 0 0 1rem; display: block; overflow-x: auto; }
+.tr-md-reader img { display: block; margin: .5rem 0 1rem; }
+.tr-md-reader hr { border: 0; border-top: 1px solid rgb(var(--tr-edge)); margin: 1.5rem 0; }
+.tr-md-reader a { word-break: break-word; }
+.tr-md-reader input[type="checkbox"] { margin-right: .5rem; }
+
+/* Prompt Builder blueprint canvas — cursor reflects the active tool (set as a class on the canvas
+   wrapper). Pointer = normal arrow; Move = grab hand; Select = crosshair for box-select. */
+.bp-tool-pointer .react-flow__pane { cursor: default; }
+.bp-tool-pan .react-flow__pane { cursor: grab; }
+.bp-tool-pan .react-flow__pane.dragging { cursor: grabbing; }
+.bp-tool-select .react-flow__pane { cursor: crosshair; }
+
+/* Hide the native clear button on <input type="search"> — we render our own ✕ so it'd double up. */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
+
+/* CSV grid (react-data-grid) — map its theme vars onto the app palette so it matches every theme,
+   not just a generic dark mode. The vars inherit, so setting them on the wrapper reaches .rdg. */
+.tr-csv-grid {
+  --rdg-color: rgb(var(--tr-text));
+  --rdg-background-color: rgb(var(--tr-bg));
+  --rdg-header-background-color: rgb(var(--tr-code));
+  --rdg-row-hover-background-color: rgb(var(--tr-surface));
+  --rdg-row-selected-background-color: rgb(var(--tr-elevated));
+  --rdg-row-selected-hover-background-color: rgb(var(--tr-elevated));
+  --rdg-border-color: rgb(var(--tr-edge));
+  --rdg-summary-border-color: rgb(var(--tr-edge));
+  --rdg-selection-color: rgb(var(--tr-accent));
+  --rdg-font-size: 13px;
+}
+.tr-csv-grid .rdg { block-size: 100%; border: none; background: rgb(var(--tr-bg)); }
+/* The frozen row-number gutter: dim, centered, non-editable — reads as a row index, not data. */
+.tr-csv-grid .tr-csv-rownum {
+  background: rgb(var(--tr-code));
+  color: rgb(var(--tr-text-dim));
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  padding: 0 !important; /* let the full-height drag grip fill the gutter cell */
+}
+/* The row-number gutter doubles as a row drag handle (grab the number, drop on another row). */
+.tr-csv-grid .tr-csv-grip { display: flex; align-items: center; justify-content: center; height: 100%; cursor: grab; }
+.tr-csv-grid .tr-csv-grip:active { cursor: grabbing; }
+.tr-csv-grid .tr-csv-grip:hover { color: rgb(var(--tr-text)); background: rgb(var(--tr-surface)); }
+/* Drop indicator: a bar across the row the dragged row will land on. */
+.tr-csv-grid .tr-csv-drop { box-shadow: inset 0 2px 0 0 rgb(var(--tr-accent)); }
+
+/* Word editor (TipTap / ProseMirror). .tr-docx-content is the contenteditable surface; style it like
+   a page (centered column on the canvas) and map every node to the app palette so it reads in any theme. */
+.tr-docx-content {
+  outline: none;
+  max-width: 850px;
+  margin: 0 auto;
+  padding: 36px 44px 80px;
+  min-height: calc(100vh - 240px);
+  color: rgb(var(--tr-text));
+  font-size: 15px;
+  line-height: 1.7;
+  caret-color: rgb(var(--tr-text-bright));
+}
+.tr-docx-content :first-child { margin-top: 0; }
+.tr-docx-content p { margin: 0 0 .65rem; }
+.tr-docx-content h1, .tr-docx-content h2, .tr-docx-content h3,
+.tr-docx-content h4, .tr-docx-content h5, .tr-docx-content h6 {
+  color: rgb(var(--tr-text-bright)); font-weight: 650; line-height: 1.25; margin: 1.4rem 0 .6rem;
+}
+.tr-docx-content h1 { font-size: 1.9em; }
+.tr-docx-content h2 { font-size: 1.55em; }
+.tr-docx-content h3 { font-size: 1.3em; }
+.tr-docx-content h4 { font-size: 1.12em; }
+.tr-docx-content a { color: rgb(var(--tr-link)); text-decoration: underline; text-underline-offset: 3px; }
+.tr-docx-content ul, .tr-docx-content ol { padding-left: 1.5rem; margin: 0 0 .65rem; }
+.tr-docx-content li { margin: .15rem 0; }
+.tr-docx-content blockquote {
+  border-left: 3px solid rgba(96,165,250,.75); background: rgb(var(--tr-surface));
+  color: rgb(var(--tr-text)); padding: .6rem 1rem; margin: .8rem 0;
+}
+.tr-docx-content code {
+  border-radius: 4px; background: rgb(var(--tr-elevated)); color: rgb(var(--tr-text-bright));
+  padding: .1rem .35rem; font-size: .9em;
+}
+.tr-docx-content pre {
+  border: 1px solid rgb(var(--tr-edge)); border-radius: 7px; background: rgb(var(--tr-code));
+  padding: .9rem 1rem; margin: .8rem 0; overflow-x: auto;
+}
+.tr-docx-content pre code { background: none; padding: 0; color: inherit; }
+.tr-docx-content hr { border: none; border-top: 1px solid rgb(var(--tr-edge)); margin: 1.2rem 0; }
+.tr-docx-content img { max-width: 100%; height: auto; border-radius: 6px; }
+.tr-docx-content mark { border-radius: 2px; padding: 0 .1em; color: #1a1a1a; } /* highlight bg is light → keep text dark */
+/* Tables: bordered grid with a selectable-cell overlay and a draggable column-resize handle. */
+.tr-docx-content .tableWrapper { overflow-x: auto; margin: .8rem 0; }
+.tr-docx-content table { border-collapse: collapse; width: 100%; }
+.tr-docx-content th, .tr-docx-content td {
+  border: 1px solid rgb(var(--tr-edge)); padding: .45rem .6rem; vertical-align: top; position: relative;
+}
+.tr-docx-content th { background: rgb(var(--tr-surface)); color: rgb(var(--tr-text-bright)); font-weight: 600; text-align: left; }
+.tr-docx-content .selectedCell:after {
+  content: ""; position: absolute; inset: 0; background: rgb(var(--tr-selection)); opacity: .35; pointer-events: none;
+}
+.tr-docx-content .column-resize-handle {
+  position: absolute; right: -2px; top: 0; bottom: 0; width: 4px; background: rgb(var(--tr-accent)); cursor: var(--cur-ew-resize, col-resize);
+}
+.tr-docx-content ::selection { background: rgb(var(--tr-selection)); }
+
+/* Word-editor color picker (react-colorful) — size the saturation square + hue bar to fit the popover. */
+.tr-docx-color .react-colorful { width: 100%; height: 150px; }
+.tr-docx-color .react-colorful__saturation { border-radius: 6px 6px 0 0; }
+.tr-docx-color .react-colorful__last-control { border-radius: 0 0 6px 6px; }
+.tr-docx-color .react-colorful__hue { height: 18px; }
+.tr-docx-color .react-colorful__pointer { width: 16px; height: 16px; }

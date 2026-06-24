@@ -1,0 +1,67 @@
+Terminal Hub — Third-Party Notices
+==============================
+
+Terminal Hub bundles third-party open-source software. Their licenses are permissive
+(MIT/BSD/Apache/CC-BY) and compatible with both the AGPL-3.0 and the commercial license.
+The notices below are reproduced as required by those licenses. This file lists the
+dependencies that carry an attribution requirement; it is not the full dependency tree.
+
+Language-server (LSP) editor intelligence adds the following:
+
+--------------------------------------------------------------------------------
+@codemirror/lsp-client  (MIT)
+Copyright (C) 2025 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in the
+Software without restriction, including without limitation the rights to use, copy,
+modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+and to permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+vscode-jsonrpc  (MIT)
+vscode-languageserver-protocol  (MIT)
+Copyright (c) Microsoft Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in the
+Software without restriction, including without limitation the rights to use, copy,
+modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+and to permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+@vscode/codicons  (icon assets CC-BY-4.0; source code MIT)
+Copyright (c) Microsoft Corporation
+
+The Codicons icon font and CSS are bundled and served by the web client. The icons
+are licensed under the Creative Commons Attribution 4.0 International license
+(CC-BY-4.0); the accompanying code is MIT. No modifications were made to the icons.
+Full license text: https://creativecommons.org/licenses/by/4.0/legalcode
+
+--------------------------------------------------------------------------------
+Note: language servers themselves (typescript-language-server, pyright, gopls,
+rust-analyzer, …) are NEVER bundled or distributed with Terminal Hub. They are detected
+on the host's PATH and spawned as separate processes, communicating over the Language
+Server Protocol (arm's-length IPC). Their licenses do not attach to Terminal Hub.
