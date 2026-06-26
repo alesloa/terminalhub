@@ -327,15 +327,11 @@ export const SettingsModal = forwardRef<WindowHandle, { origin?: WinRect | null;
     debouncePatch({ tmuxStatusFg: hex });
   };
 
-  // Attention detection (server-synced, applies live): mode picker + quiet window. Optimistically patch
-  // the cached settings so the controls track instantly; the seconds stepper debounces its PATCH so the
-  // server doesn't re-arm every live session on each click. The mode change persists immediately.
-  const attentionMode = serverSettings?.attentionMode ?? "layered";
+  // Quiet window (server-synced): how long a backgrounded agent must be silent before it counts as
+  // "finished" and flags for attention. Attention detection itself is always-on layered (bell OR
+  // silence) and is NOT user-controlled. The stepper debounces its PATCH so the server doesn't re-arm
+  // every live session on each click.
   const silenceSeconds = serverSettings?.silenceSeconds ?? 10;
-  const onAttentionMode = (m: "layered" | "explicit" | "silence") => {
-    qc.setQueryData<SettingsResponse>(["settings"], (old) => old ? { ...old, attentionMode: m } : old);
-    api.updateSettings({ attentionMode: m }).catch(() => {});
-  };
   const silenceTimer = useRef<number | null>(null);
   const onSilenceSeconds = (n: number) => {
     const v = Math.max(1, Math.min(120, n));
@@ -566,18 +562,9 @@ export const SettingsModal = forwardRef<WindowHandle, { origin?: WinRect | null;
   const voice = (
     <div className="space-y-8">
       <Section title="Notifications">
-        <Row id="attention-mode" title="Detect agent attention by" hint="Layered = bell/notify codes AND going quiet (never miss). Explicit only = bell/notify codes (no false alarms). Silence only = went quiet after working (works for any tool).">
-          <div className="flex rounded border border-edge-strong bg-canvas p-0.5">
-            <Segment active={attentionMode === "layered"} onClick={() => onAttentionMode("layered")}>Layered</Segment>
-            <Segment active={attentionMode === "explicit"} onClick={() => onAttentionMode("explicit")}>Explicit</Segment>
-            <Segment active={attentionMode === "silence"} onClick={() => onAttentionMode("silence")}>Silence</Segment>
-          </div>
+        <Row id="quiet-window" title="Quiet window" hint="A terminal needs you when its agent rings the bell OR goes quiet (always on). This sets how many seconds of silence count as finished. Higher = fewer false alarms mid-task; lower = quicker notice.">
+          <Stepper value={silenceSeconds} min={1} max={120} suffix="s" onChange={onSilenceSeconds} />
         </Row>
-        {attentionMode !== "explicit" && (
-          <Row id="quiet-window" title="Quiet window" hint="How many seconds a terminal must be silent before it counts as finished. Higher = fewer false alarms mid-task; lower = quicker notice.">
-            <Stepper value={silenceSeconds} min={1} max={120} suffix="s" onChange={onSilenceSeconds} />
-          </Row>
-        )}
         <ToastPositionPicker id="toast-position" value={toastPosition} onChange={setToastPosition} />
         {speechSupported() ? (
           <>

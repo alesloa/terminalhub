@@ -125,12 +125,12 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
     if (rest.tmuxStatusFg !== undefined) {
       await ctx.tmux?.setStatusStyleAll(tmuxStatusStyle(rest.tmuxStatusFg)).catch(() => {});
     }
-    // Re-arm tmux silence monitoring across all live sessions when the attention mode or quiet window
-    // changes (explicit mode disables it with 0), so the change takes effect on open terminals now.
-    if (rest.attentionMode !== undefined || rest.silenceSeconds !== undefined) {
+    // Re-arm tmux silence monitoring across all live sessions when the quiet window changes, so it
+    // takes effect on open terminals now. Attention is always-on layered (not mode-gated): silence is
+    // never disabled — a legacy attentionMode change must never disarm it.
+    if (rest.silenceSeconds !== undefined) {
       const cur = ctx.store.getSettings();
-      const seconds = cur.attentionMode === "explicit" ? 0 : cur.silenceSeconds;
-      await ctx.tmux?.setMonitorSilenceAll(seconds).catch(() => {});
+      await ctx.tmux?.setMonitorSilenceAll(cur.silenceSeconds).catch(() => {});
     }
     return { ok: true };
   });

@@ -41,8 +41,13 @@ describe("effectiveLaunch", () => {
   it("prefers a non-empty per-terminal override over the workspace command", () => {
     expect(effectiveLaunch(tm("t", "w", "s", "codex"), ws("w", "claude"))).toBe("codex");
   });
-  it("falls back to the workspace launch command when the override is blank", () => {
-    expect(effectiveLaunch(tm("t", "w", "s", "  "), ws("w", "claude"))).toBe("claude");
+  it("treats a present-but-blank override as a plain shell — does NOT inherit the workspace agent", () => {
+    // The "Plain terminal" card stores override "" (AgentPicker `pick("", "Terminal")`); it must stay
+    // a shell even inside a claude workspace. Mirrors the web's `override ?? wsLaunch` (`??`, not `||`).
+    expect(effectiveLaunch(tm("t", "w", "s", ""), ws("w", "claude"))).toBe("");
+    expect(effectiveLaunch(tm("t", "w", "s", "  "), ws("w", "claude"))).toBe("");
+  });
+  it("inherits the workspace launch command only when the override is null (unset)", () => {
     expect(effectiveLaunch(tm("t", "w", "s", null), ws("w", "claude"))).toBe("claude");
   });
   it("is empty when neither is set", () => {

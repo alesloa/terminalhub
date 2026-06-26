@@ -1,13 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { attentionFrom } from "./attention.js";
+import { attentionFrom, computeAttention } from "./attention.js";
+import { agentBinaries } from "../activity/working.js";
+import type { AppContext } from "../context.js";
 import type { WindowFlags } from "../tmux/controller.js";
 import type { Terminal, Workspace } from "../types.js";
 
-const ws = (id: string, name: string): Workspace => ({
-  id, name, folder: "/x", launchCommand: "", color: null, x: 0, y: 0, createdAt: 0, updatedAt: 0,
+// Built-in agent binaries (claude, codex, gemini, opencode, cursor-agent); no custom agents.
+const BINS = agentBinaries([]);
+
+// `launch` is the workspace's launch command — "claude" by default so its terminals read as agent
+// sessions; pass "" for a plain shell (which must never earn attention).
+const ws = (id: string, name: string, launch = "claude"): Workspace => ({
+  id, name, folder: "/x", launchCommand: launch, color: null, x: 0, y: 0, createdAt: 0, updatedAt: 0,
 });
-const tm = (id: string, workspaceId: string, tmuxSession: string, title: string): Terminal => ({
-  id, workspaceId, title, color: null, tmuxSession, launchCommandOverride: null, createdAt: 0,
+const tm = (id: string, workspaceId: string, tmuxSession: string, title: string, launch: string | null = null): Terminal => ({
+  id, workspaceId, title, color: null, tmuxSession, launchCommandOverride: launch, createdAt: 0,
 });
 const flags = (b: boolean, s: boolean): WindowFlags => ({ bell: b, silence: s });
 
@@ -26,7 +33,7 @@ describe("attentionFrom — mode-aware picker", () => {
     ["tr_ws_a_tm_idle", flags(false, false)],
   ]);
   const ids = (mode: "layered" | "explicit" | "silence") =>
-    attentionFrom(map, terminals, workspaces, mode).map(i => i.terminalId).sort();
+    attentionFrom(map, terminals, workspaces, mode, BINS).map(i => i.terminalId).sort();
 
   it("explicit mode flags only the bell (and both), never silence-only", () => {
     expect(ids("explicit")).toEqual(["tm_bell", "tm_both"]);
@@ -41,13 +48,51 @@ describe("attentionFrom — mode-aware picker", () => {
   });
 
   it("carries the workspace name, falling back to empty when the workspace is missing", () => {
-    const orphan = [tm("tm_x", "ws_gone", "tr_ws_a_tm_bell", "x")];
-    const out = attentionFrom(map, orphan, [], "explicit");
+    // Agent via per-terminal override, so a missing workspace doesn't strip its agent status.
+    const orphan = [tm("tm_x", "ws_gone", "tr_ws_a_tm_bell", "x", "claude")];
+    const out = attentionFrom(map, orphan, [], "explicit", BINS);
     expect(out).toEqual([{ terminalId: "tm_x", workspaceId: "ws_gone", workspaceName: "", title: "x" }]);
   });
 
   it("ignores a terminal with no entry in the flags map", () => {
-    const out = attentionFrom(new Map(), [tm("tm_1", "ws_a", "tr_ws_a_tm_1", "x")], workspaces, "layered");
+    const out = attentionFrom(new Map(), [tm("tm_1", "ws_a", "tr_ws_a_tm_1", "x")], workspaces, "layered", BINS);
     expect(out).toEqual([]);
+  });
+
+  it("never flags a plain-shell terminal — only AI-agent sessions earn attention", () => {
+    // A regular shell ringing the bell or going quiet must not notify, in any mode. Two shapes:
+    //  • a plain WORKSPACE (launchCommand ""), inherited by a null-override terminal, and
+    //  • the "Plain terminal" card (override "") living inside a CLAUDE workspace — the screenshot bug.
+    const shells = [
+      tm("tm_sh_bell", "ws_sh", "tr_ws_sh_tm_bell", "zsh"),                 // plain ws, inherited
+      tm("tm_sh_quiet", "ws_sh", "tr_ws_sh_tm_quiet", "bash"),              // plain ws, inherited
+      tm("tm_sh_in_agent", "ws_agent", "tr_ws_a_tm_shell", "Terminal", ""), // override "" in a claude ws
+    ];
+    const workspaces = [ws("ws_sh", "Scratch", ""), ws("ws_agent", "API", "claude")];
+    const fl = new Map<string, WindowFlags>([
+      ["tr_ws_sh_tm_bell", flags(true, false)],
+      ["tr_ws_sh_tm_quiet", flags(false, true)],
+      ["tr_ws_a_tm_shell", flags(true, true)],
+    ]);
+    expect(attentionFrom(fl, shells, workspaces, "layered", BINS)).toEqual([]);
+  });
+});
+
+describe("computeAttention — mode is forced layered, never read from settings", () => {
+  // Attention is always-on layered (bell OR silence). The stored attentionMode must NOT gate it:
+  // a backgrounded terminal that merely went quiet still needs you, even if settings say "explicit".
+  it("flags a silence-only terminal even when stored settings say 'explicit'", async () => {
+    const terminals = [tm("tm_silent", "ws_a", "tr_ws_a_tm_silent", "codex")];
+    const ctx = {
+      tmux: { windowFlags: async () => new Map<string, WindowFlags>([["tr_ws_a_tm_silent", flags(false, true)]]) },
+      store: {
+        listAllTerminals: () => terminals,
+        listWorkspaces: () => [ws("ws_a", "API")],
+        listCustomAgents: () => [],
+        getSettings: () => ({ attentionMode: "explicit" }),
+      },
+    } as unknown as AppContext;
+    const out = await computeAttention(ctx);
+    expect(out.map(i => i.terminalId)).toEqual(["tm_silent"]);
   });
 });

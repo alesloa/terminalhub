@@ -12,11 +12,14 @@ const ws = (over: Partial<Workspace> = {}): Workspace => ({
   layout: null, spaceId: null, config: null, x: 0, y: 0, createdAt: 0, updatedAt: 0, ...over,
 });
 
-function setup(now: () => number) {
+function setup(now: () => number, opts: { term?: Terminal; ws?: Workspace } = {}) {
   const fire = vi.fn(() => "pn_1");
+  const t = opts.term ?? term();
+  const w = opts.ws ?? ws();
   const store = {
-    getTerminal: (id: string) => (id === "tm_1" ? term() : undefined),
-    getWorkspace: (id: string) => (id === "ws_1" ? ws() : undefined),
+    getTerminal: (id: string) => (id === t.id ? t : undefined),
+    getWorkspace: (id: string) => (id === w.id ? w : undefined),
+    listCustomAgents: () => [],
   };
   const firer = createAttentionFirer({ store, pending: { fire }, cooldownMs: 4000, now });
   return { firer, fire };
@@ -73,6 +76,15 @@ describe("attentionFire", () => {
   it("ignores an unknown terminal", () => {
     const { firer, fire } = setup(() => 1000);
     expect(firer.fire("tm_nope")).toBe(false);
+    expect(fire).not.toHaveBeenCalled();
+  });
+
+  it("never fires for a plain-shell terminal — only AI-agent sessions earn attention", () => {
+    // The exact screenshot bug: a "Plain terminal" (override "") living in a CLAUDE workspace. It must
+    // NOT inherit the workspace agent, so a tab-completion bell or 10s of idle must never notify.
+    const shell = term({ id: "tm_sh", workspaceId: "ws_1", launchCommandOverride: "" });
+    const { firer, fire } = setup(() => 1000, { term: shell }); // default ws launchCommand = "claude"
+    expect(firer.fire("tm_sh")).toBe(false);
     expect(fire).not.toHaveBeenCalled();
   });
 });

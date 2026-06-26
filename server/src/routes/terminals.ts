@@ -52,14 +52,9 @@ export async function terminalRoutes(app: FastifyInstance, ctx: AppContext) {
     await seedWorkspaceEffective(ctx.store, ws);
 
     await ctx.tmux.newSession(session, ws.folder, DEFAULT_COLS, DEFAULT_ROWS);
-    // Arm silence monitoring per the current attention mode (newSession already armed the bell).
-    // Explicit mode leaves it off (0); silence/layered use the configured quiet window.
-    {
-      const settings = ctx.store.getSettings();
-      if (settings.attentionMode !== "explicit") {
-        await ctx.tmux.setMonitorSilence(session, settings.silenceSeconds).catch(() => {});
-      }
-    }
+    // Always-on layered attention (not user-controlled): arm silence monitoring with the configured
+    // quiet window so a backgrounded agent that goes quiet still flags. newSession already armed the bell.
+    await ctx.tmux.setMonitorSilence(session, ctx.store.getSettings().silenceSeconds).catch(() => {});
     const launch = b.data.launchCommandOverride ?? ws.launchCommand;
     if (launch && launch.trim()) await ctx.tmux.sendKeys(session, launch.trim());
 

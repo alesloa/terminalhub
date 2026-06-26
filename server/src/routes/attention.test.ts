@@ -17,7 +17,8 @@ function build(flagged: string[]) {
     return "";
   };
   const ctx = { store: createStore(":memory:"), tmux: createTmuxController(runner) };
-  const ws = ctx.store.createWorkspace({ name: "API", folder: "/x", launchCommand: "", color: null });
+  // Agent workspace — only AI-agent sessions earn attention (a plain shell never does).
+  const ws = ctx.store.createWorkspace({ name: "API", folder: "/x", launchCommand: "claude", color: null });
   const t1 = ctx.store.createTerminal({ workspaceId: ws.id, title: "claude", color: null, tmuxSession: "tr_ws_a_tm_1", launchCommandOverride: null });
   const t2 = ctx.store.createTerminal({ workspaceId: ws.id, title: "codex", color: null, tmuxSession: "tr_ws_a_tm_2", launchCommandOverride: null });
   const app = Fastify();

@@ -44,11 +44,11 @@ await ctx.attentionWatcher.tick();
 ctx.attentionWatcher.start();
 
 // Arm bell + silence monitoring on sessions that predate this boot (bell default is on, but a
-// user's tmux config may have disabled it; silence tracks the attention mode). New sessions arm
-// themselves on create. Silence is off (0) in explicit mode, the configured window otherwise.
+// user's tmux config may have disabled it). New sessions arm themselves on create. Attention is
+// always-on layered (not user-controlled), so silence always uses the configured quiet window.
 {
   const settings = ctx.store.getSettings();
-  const silenceSeconds = settings.attentionMode === "explicit" ? 0 : settings.silenceSeconds;
+  const silenceSeconds = settings.silenceSeconds;
   for (const s of await ctx.tmux.listSessions()) {
     try {
       await ctx.tmux.setMonitorBell(s);

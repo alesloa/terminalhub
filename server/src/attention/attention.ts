@@ -1,6 +1,7 @@
 import type { AppContext } from "../context.js";
 import type { WindowFlags } from "../tmux/controller.js";
 import type { AttentionMode, Terminal, Workspace } from "../types.js";
+import { agentBinaries, effectiveLaunch, isAgentTerminal } from "../activity/working.js";
 
 /** A terminal whose agent rang the bell — or went quiet — while you weren't looking. */
 export interface AttentionItem {
@@ -19,25 +20,33 @@ function flagged(f: WindowFlags | undefined, mode: AttentionMode): boolean {
   return (explicit && f.bell) || (silence && f.silence);
 }
 
-/** Pure: pick the terminals whose tmux session carries an unviewed signal allowed by `mode`. */
+/** Pure: pick the terminals whose tmux session carries an unviewed signal allowed by `mode`. Only
+ *  AI-agent sessions are eligible — a plain shell or dev-server terminal that rings the bell or goes
+ *  quiet must NEVER earn attention (`agentBins` is the known + custom-agent binary allowlist). */
 export function attentionFrom(
   flags: Map<string, WindowFlags>,
   terminals: Terminal[],
   workspaces: Workspace[],
   mode: AttentionMode,
+  agentBins: Set<string>,
 ): AttentionItem[] {
-  const wsName = new Map(workspaces.map(w => [w.id, w.name]));
+  const wsById = new Map(workspaces.map(w => [w.id, w]));
   return terminals
+    .filter(t => isAgentTerminal(effectiveLaunch(t, wsById.get(t.workspaceId)), agentBins))
     .filter(t => flagged(flags.get(t.tmuxSession), mode))
     .map(t => ({
       terminalId: t.id,
       workspaceId: t.workspaceId,
-      workspaceName: wsName.get(t.workspaceId) ?? "",
+      workspaceName: wsById.get(t.workspaceId)?.name ?? "",
       title: t.title,
     }));
 }
 
 export async function computeAttention(ctx: AppContext): Promise<AttentionItem[]> {
   const flags = await ctx.tmux.windowFlags();
-  return attentionFrom(flags, ctx.store.listAllTerminals(), ctx.store.listWorkspaces(), ctx.store.getSettings().attentionMode);
+  // Attention is always-on "layered" (bell OR silence). It is NOT user-controlled — a backgrounded
+  // terminal that rang the bell OR simply went quiet always needs you. The stored attentionMode is
+  // intentionally ignored here so the space/card dots blink on a finished agent, not just a bell.
+  const agentBins = agentBinaries(ctx.store.listCustomAgents());
+  return attentionFrom(flags, ctx.store.listAllTerminals(), ctx.store.listWorkspaces(), "layered", agentBins);
 }

@@ -84,12 +84,11 @@ export function useTerminalSocket(
   const onTitleRef = useRef(autoTitle?.onTitle);
   onTitleRef.current = autoTitle?.onTitle;
 
-  // Attention-detection mode + quiet window (server settings, app-wide; react-query dedups this).
-  // Held in refs so the long-lived terminal effect reads the latest without re-creating the terminal.
-  // The 10s fallback mirrors the server default while settings load — not a stopgap.
+  // Quiet-window length (server setting, app-wide; react-query dedups this). Held in a ref so the
+  // long-lived terminal effect reads the latest without re-creating the terminal. The 10s fallback
+  // mirrors the server default while settings load — not a stopgap. Attention itself is always-on
+  // layered (bell AND silence both fire) and not user-controlled, so the mode is no longer read.
   const { data: attentionSettings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
-  const attentionModeRef = useRef<"layered" | "explicit" | "silence">("layered");
-  attentionModeRef.current = attentionSettings?.attentionMode ?? "layered";
   const silenceSecondsRef = useRef(10);
   silenceSecondsRef.current = attentionSettings?.silenceSeconds ?? 10;
 
@@ -297,11 +296,10 @@ export function useTerminalSocket(
     // Silence detection (OPEN room). The attached PTY clears tmux's silence flag, so the server-side
     // watcher can't see "went quiet" here — run the quiet-window timer client-side instead. Reset on
     // every output frame; fire ONCE when the pane has been quiet for the window (next output re-arms
-    // it). Off in explicit mode (silence isn't one of its signals). Suppressed for the pane you're in.
+    // it). Always on (layered attention, not user-controlled). Suppressed for the pane you're in.
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
     const clearIdle = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
     const armIdle = () => {
-      if (attentionModeRef.current === "explicit") return;
       clearIdle();
       idleTimer = setTimeout(() => {
         idleTimer = null;
@@ -384,10 +382,9 @@ export function useTerminalSocket(
     // you'd get if the room were closed. (A closed/detached terminal goes through tmux's bell flag
     // server-side instead; this covers the open+attached case, where the attach clears that flag so the
     // watcher is blind to it. The two paths partition by attach state, so one bell never double-fires.)
-    // The bell + OSC-notify codes are EXPLICIT signals — live in explicit/layered, off in silence-only.
+    // The bell + OSC-notify codes always fire (layered attention, not user-controlled) — same toast.
     const notFocused = () => !(isTabActive() && useUi.getState().focusedTerminalId === terminalId);
     const fireExplicit = (message?: string) => {
-      if (attentionModeRef.current === "silence") return; // explicit signals disabled in silence-only mode
       if (!notFocused()) return; // you're in it → no toast
       api.notifyTerminalAttention(terminalId, message).catch(() => {});
     };

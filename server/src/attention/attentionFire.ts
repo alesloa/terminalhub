@@ -1,5 +1,6 @@
 import type { Store } from "../db/store.js";
 import type { PendingNotifier } from "../notify/pending.js";
+import { agentBinaries, effectiveLaunch, isAgentTerminal } from "../activity/working.js";
 
 // Fire a "needs attention" notification for a terminal whose agent rang the bell while its pane was
 // NOT focused. This is the case the bell-flag watcher (attention/attentionWatcher.ts) is blind to:
@@ -23,7 +24,7 @@ export interface AttentionFirer {
 }
 
 export function createAttentionFirer(deps: {
-  store: Pick<Store, "getTerminal" | "getWorkspace">;
+  store: Pick<Store, "getTerminal" | "getWorkspace" | "listCustomAgents">;
   pending: Pick<PendingNotifier, "fire">;
   cooldownMs?: number;
   now?: () => number;
@@ -38,12 +39,17 @@ export function createAttentionFirer(deps: {
       const term = store.getTerminal(terminalId);
       if (!term) return false;
 
+      // Only AI-agent sessions notify — a plain shell or dev-server terminal ringing the bell or going
+      // quiet must never fire (same agent test as the attention list / working indicator).
+      const ws = store.getWorkspace(term.workspaceId);
+      if (!isAgentTerminal(effectiveLaunch(term, ws), agentBinaries(store.listCustomAgents()))) return false;
+
       const t = now();
       const prev = lastFired.get(terminalId);
       if (prev !== undefined && t - prev < cooldownMs) return false;
       lastFired.set(terminalId, t);
 
-      const wsName = store.getWorkspace(term.workspaceId)?.name ?? "";
+      const wsName = ws?.name ?? "";
       const msg = message?.trim();
       pending.fire({
         title: term.title || "Terminal",

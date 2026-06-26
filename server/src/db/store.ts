@@ -136,7 +136,7 @@ function rowToAccessKey(row: any): AccessKey {
 const DEFAULT_SETTINGS: Settings = {
   defaultLaunchCommand: "claude",
   defaultShell: process.env.SHELL ?? "/bin/bash",
-  attentionMode: "explicit",
+  attentionMode: "layered",
   silenceSeconds: 10,
   token: null,
   autoSave: false,
@@ -171,7 +171,7 @@ function parseSetting(key: string, value: string): unknown {
     const n = Number(value);
     return Number.isFinite(n) ? n : DEFAULT_SETTINGS.silenceSeconds;
   }
-  if (key === "attentionMode") return ["layered", "explicit", "silence"].includes(value) ? value : "explicit";
+  if (key === "attentionMode") return ["layered", "explicit", "silence"].includes(value) ? value : "layered";
   if (key === "sidebarPosition") return ["bottom", "left", "right", "top"].includes(value) ? value : "bottom";
   if (key === "stageManagerPosition") return ["left", "right", "top", "bottom"].includes(value) ? value : "left";
   if (key === "sttProvider") return value === "openai" ? "openai" : "local";

@@ -49,10 +49,13 @@ export function agentBinary(cmd: string): string {
 }
 
 /** The command a terminal actually launched: its per-terminal override if set, else the workspace
- *  default. "" for a plain shell. */
+ *  default. "" for a plain shell. A NON-NULL override is authoritative — even "" (the "Plain terminal"
+ *  card stores override "" and must stay a shell, never inheriting the workspace's agent). Only a null
+ *  override (unset) inherits the workspace command. Mirrors the web's `override ?? wsLaunch` (`??`,
+ *  NOT `||`) — collapsing "" into the fallback is exactly what misclassified plain shells as agents. */
 export function effectiveLaunch(t: Terminal, ws: Workspace | undefined): string {
-  const override = t.launchCommandOverride?.trim();
-  return override || ws?.launchCommand || "";
+  if (t.launchCommandOverride != null) return t.launchCommandOverride.trim();
+  return ws?.launchCommand?.trim() ?? "";
 }
 
 /** The set of binaries we treat as agents: the built-ins plus every registered custom agent's. */
