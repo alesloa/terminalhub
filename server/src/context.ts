@@ -16,7 +16,7 @@ import { createMcpHub, type McpHub } from "./copilot/mcp/client.js";
 import { createAttentionWatcher, type AttentionWatcher } from "./attention/attentionWatcher.js";
 import { createAttentionFirer, type AttentionFirer } from "./attention/attentionFire.js";
 import { attentionFrom } from "./attention/attention.js";
-import { agentBinaries } from "./activity/working.js";
+import { builtinAgentBinaries } from "./activity/working.js";
 import { createDriveController, type DriveController } from "./drive/controller.js";
 import { createSessionsController, type SessionsController } from "./presence/sessions.js";
 import { createTunnelController, type TunnelController } from "./tunnel/controller.js";
@@ -42,8 +42,9 @@ export function createContext(dbPath: string, google: GoogleConfig | null = null
   const attentionWatcher = createAttentionWatcher({
     pending,
     // Always-on "layered" (bell OR silence), never the stored attentionMode — attention is not
-    // user-controlled (mirrors computeAttention in attention/attention.ts). Agent sessions only.
-    getAttention: async () => attentionFrom(await tmux.windowFlags(), store.listAllTerminals(), store.listWorkspaces(), "layered", agentBinaries(store.listCustomAgents())),
+    // user-controlled (mirrors computeAttention in attention/attention.ts). Built-in coding agents
+    // ONLY — a registered custom launcher (npm run dev, codegraph) must never notify.
+    getAttention: async () => attentionFrom(await tmux.windowFlags(), store.listAllTerminals(), store.listWorkspaces(), "layered", builtinAgentBinaries()),
   });
   // Fires "needs attention" for an OPEN terminal whose bell the watcher above can't see (an attached
   // PTY clears tmux's bell flag); the browser detects that bell and pings POST /api/terminals/:id/attention.

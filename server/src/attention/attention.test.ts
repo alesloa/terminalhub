@@ -95,4 +95,20 @@ describe("computeAttention — mode is forced layered, never read from settings"
     const out = await computeAttention(ctx);
     expect(out.map(i => i.terminalId)).toEqual(["tm_silent"]);
   });
+
+  it("does NOT flag a terminal running a registered custom launcher (npm run dev) — built-in agents only", async () => {
+    // The user's bug: an "npm run dev" custom agent folded "npm" into the allowlist, so dev terminals
+    // notified. Attention uses ONLY the built-in coding agents now; custom launchers never notify.
+    const terminals = [tm("tm_dev", "ws_a", "tr_ws_a_tm_dev", "npm run dev", "npm run dev")];
+    const ctx = {
+      tmux: { windowFlags: async () => new Map<string, WindowFlags>([["tr_ws_a_tm_dev", flags(false, true)]]) },
+      store: {
+        listAllTerminals: () => terminals,
+        listWorkspaces: () => [ws("ws_a", "page-build", "claude")],
+        listCustomAgents: () => [{ id: "ag1", name: "npm run dev", command: "npm run dev", icon: null, category: "Other", createdAt: 0 }],
+        getSettings: () => ({ attentionMode: "layered" }),
+      },
+    } as unknown as AppContext;
+    expect(await computeAttention(ctx)).toEqual([]);
+  });
 });

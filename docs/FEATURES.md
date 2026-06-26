@@ -828,11 +828,12 @@ over loopback (no token needed locally; `TERMINALHUB_TOKEN` Bearer when exposed)
   terminal that went quiet after working). Detection is **always-on layered** — bell/notify codes *and*
   silence both fire, so you never miss either an explicit "done" signal or a tool that goes quiet without
   signalling. It is **not user-controlled** (there's no mode toggle); only the **Quiet window** stepper
-  (**Settings → Notifications**, default 10s) tunes how long silent counts as finished. Only **AI-agent
-  sessions** (claude/codex/gemini/… or a registered custom agent) earn attention — a plain shell or
-  dev-server terminal ringing the bell or sitting idle never notifies. Closed rooms use tmux's bell +
-  silence flags; open rooms catch the bell, OSC codes, and a client-side idle timer — so the same
-  notification fires either way. Makes the Claude bell hook optional.
+  (**Settings → Notifications**, default 10s) tunes how long silent counts as finished. Only the
+  **built-in coding agents** (claude/codex/gemini/opencode/cursor-agent) earn attention — a plain shell,
+  dev server, or a user-registered custom launcher (e.g. `npm run dev`, `codegraph`) ringing the bell or
+  sitting idle never notifies. Closed rooms use tmux's bell + silence flags; open rooms catch the bell,
+  OSC codes, and a client-side idle timer — so the same notification fires either way. Makes the Claude
+  bell hook optional.
 - **Task board API** — `GET /api/board`, `POST /api/board/cards`, `PATCH /api/board/cards/:id`
   (placement + edits in one call), `DELETE /api/board/cards/:id`. The floating board reflects changes
   within a couple of seconds.

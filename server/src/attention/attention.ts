@@ -1,7 +1,7 @@
 import type { AppContext } from "../context.js";
 import type { WindowFlags } from "../tmux/controller.js";
 import type { AttentionMode, Terminal, Workspace } from "../types.js";
-import { agentBinaries, effectiveLaunch, isAgentTerminal } from "../activity/working.js";
+import { builtinAgentBinaries, effectiveLaunch, isAgentTerminal } from "../activity/working.js";
 
 /** A terminal whose agent rang the bell — or went quiet — while you weren't looking. */
 export interface AttentionItem {
@@ -47,6 +47,6 @@ export async function computeAttention(ctx: AppContext): Promise<AttentionItem[]
   // Attention is always-on "layered" (bell OR silence). It is NOT user-controlled — a backgrounded
   // terminal that rang the bell OR simply went quiet always needs you. The stored attentionMode is
   // intentionally ignored here so the space/card dots blink on a finished agent, not just a bell.
-  const agentBins = agentBinaries(ctx.store.listCustomAgents());
-  return attentionFrom(flags, ctx.store.listAllTerminals(), ctx.store.listWorkspaces(), "layered", agentBins);
+  // Built-in agents ONLY — a registered custom launcher (npm run dev, codegraph) must never notify.
+  return attentionFrom(flags, ctx.store.listAllTerminals(), ctx.store.listWorkspaces(), "layered", builtinAgentBinaries());
 }

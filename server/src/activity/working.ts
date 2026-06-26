@@ -58,6 +58,14 @@ export function effectiveLaunch(t: Terminal, ws: Workspace | undefined): string 
   return ws?.launchCommand?.trim() ?? "";
 }
 
+/** Just the built-in coding agents (claude/codex/gemini/opencode/cursor-agent) as a Set. This is the
+ *  allowlist for ATTENTION, which must fire ONLY for real detected agents — never a user-registered
+ *  custom launcher (an "npm run dev" or "codegraph" custom agent would otherwise fold its binary into
+ *  the agent set and make every such terminal notify). The working indicator still uses agentBinaries. */
+export function builtinAgentBinaries(): Set<string> {
+  return new Set(KNOWN_AGENT_BINARIES);
+}
+
 /** The set of binaries we treat as agents: the built-ins plus every registered custom agent's. */
 export function agentBinaries(customAgents: CustomAgent[]): Set<string> {
   const bins = new Set(KNOWN_AGENT_BINARIES);

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createAttentionFirer } from "./attentionFire.js";
-import type { Terminal, Workspace } from "../types.js";
+import type { CustomAgent, Terminal, Workspace } from "../types.js";
 
 const term = (over: Partial<Terminal> = {}): Terminal => ({
   id: "tm_1", workspaceId: "ws_1", title: "Claude - SEO", color: null, icon: null,
@@ -12,14 +12,14 @@ const ws = (over: Partial<Workspace> = {}): Workspace => ({
   layout: null, spaceId: null, config: null, x: 0, y: 0, createdAt: 0, updatedAt: 0, ...over,
 });
 
-function setup(now: () => number, opts: { term?: Terminal; ws?: Workspace } = {}) {
+function setup(now: () => number, opts: { term?: Terminal; ws?: Workspace; customAgents?: CustomAgent[] } = {}) {
   const fire = vi.fn(() => "pn_1");
   const t = opts.term ?? term();
   const w = opts.ws ?? ws();
   const store = {
     getTerminal: (id: string) => (id === t.id ? t : undefined),
     getWorkspace: (id: string) => (id === w.id ? w : undefined),
-    listCustomAgents: () => [],
+    listCustomAgents: () => opts.customAgents ?? [],
   };
   const firer = createAttentionFirer({ store, pending: { fire }, cooldownMs: 4000, now });
   return { firer, fire };
@@ -85,6 +85,16 @@ describe("attentionFire", () => {
     const shell = term({ id: "tm_sh", workspaceId: "ws_1", launchCommandOverride: "" });
     const { firer, fire } = setup(() => 1000, { term: shell }); // default ws launchCommand = "claude"
     expect(firer.fire("tm_sh")).toBe(false);
+    expect(fire).not.toHaveBeenCalled();
+  });
+
+  it("never fires for a registered non-agent custom launcher (e.g. 'npm run dev') — built-in agents only", () => {
+    // Attention is for the built-in coding agents the app detects (claude/codex/…), NOT user-registered
+    // custom launchers. A "npm run dev" custom agent must not turn npm/dev terminals into notifiers.
+    const devTerm = term({ id: "tm_dev", workspaceId: "ws_1", launchCommandOverride: "npm run dev" });
+    const customAgents: CustomAgent[] = [{ id: "ag1", name: "npm run dev", command: "npm run dev", icon: null, category: "Other", createdAt: 0 }];
+    const { firer, fire } = setup(() => 1000, { term: devTerm, customAgents });
+    expect(firer.fire("tm_dev")).toBe(false);
     expect(fire).not.toHaveBeenCalled();
   });
 });
