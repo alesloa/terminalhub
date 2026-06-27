@@ -8,6 +8,7 @@ interface Props {
   day: number;                                                  // selected day (ms) — manual defaults land here
   onStart: (b: { client: string; project?: string; task?: string; notes?: string }) => void;
   onAdd: (b: { client: string; project?: string; task?: string; notes?: string; startedAt: number; stoppedAt: number }) => void;
+  onDone?: () => void;   // fired after a successful submit — lets the popup close itself
 }
 
 /**
@@ -16,7 +17,7 @@ interface Props {
  * Start timer button. The "Add past entry" toggle swaps Start for two date/time pickers + an Add
  * button so you can log time you forgot to track.
  */
-export function NewEntryForm({ catalog, accent, day, onStart, onAdd }: Props) {
+export function NewEntryForm({ catalog, accent, day, onStart, onAdd, onDone }: Props) {
   const [client, setClient] = useState("");
   const [project, setProject] = useState("");
   const [task, setTask] = useState("");
@@ -44,6 +45,7 @@ export function NewEntryForm({ catalog, accent, day, onStart, onAdd }: Props) {
       onStart(base);
     }
     reset();
+    onDone?.();
   };
 
   const field = "w-full px-2 py-1.5 bg-elevated border border-edge rounded text-sm focus:outline-none focus:border-edge-strong";

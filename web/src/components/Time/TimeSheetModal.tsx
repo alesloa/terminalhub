@@ -8,6 +8,7 @@ import { useTimeCatalog } from "./useTimeCatalog";
 import { useTimePrefs, type TimeView } from "./prefs";
 import { DAY_MS, dayRange, dayStart, fmtDayLabel, monthGrid, useNow, weekDays, weekRange } from "./util";
 import { DateNav } from "./DateNav";
+import { NewEntryDialog } from "./NewEntryDialog";
 import { DayView } from "./views/DayView";
 import { WeekView } from "./views/WeekView";
 import { CalendarView } from "./views/CalendarView";
@@ -56,6 +57,7 @@ export const TimeSheetModal = forwardRef<WindowHandle, { origin?: WinRect | null
   const [tab, setTab] = useState<"sheet" | "settings">("sheet");
   const [view, setView] = useState<TimeView>(prefs.defaultView);
   const [selected, setSelected] = useState(() => Date.now());
+  const [addOpen, setAddOpen] = useState(false);
   const now = useNow(1000);
   const catalog = useTimeCatalog();
 
@@ -145,7 +147,14 @@ export const TimeSheetModal = forwardRef<WindowHandle, { origin?: WinRect | null
 
       {tab === "sheet" && (
         <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2 border-b border-edge">
-          <DateNav label={label} onPrev={() => step(-1)} onNext={() => step(1)} onToday={() => setSelected(Date.now())} />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setAddOpen(true)} title="New time entry"
+              style={prefs.accent ? { backgroundColor: prefs.accent } : undefined}
+              className={`w-9 h-9 shrink-0 inline-flex items-center justify-center rounded-md text-white ${prefs.accent ? "" : "bg-green-600 hover:bg-green-500"}`}>
+              <PlusIcon />
+            </button>
+            <DateNav label={label} onPrev={() => step(-1)} onNext={() => step(1)} onToday={() => setSelected(Date.now())} />
+          </div>
           <div className="flex items-center gap-1">{(["day", "week", "calendar"] as TimeView[]).map(viewBtn)}</div>
         </div>
       )}
@@ -159,6 +168,19 @@ export const TimeSheetModal = forwardRef<WindowHandle, { origin?: WinRect | null
       </div>
 
       <ResizeHandles onStart={beginResize} />
+
+      {addOpen && tab === "sheet" && (
+        <NewEntryDialog catalog={catalog} sheet={sheet} accent={prefs.accent} day={dayStart(selected)} onClose={() => setAddOpen(false)} />
+      )}
     </div>
   );
 });
+
+/** Plus glyph for the green "new time entry" button. */
+function PlusIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}

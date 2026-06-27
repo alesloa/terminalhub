@@ -137,7 +137,41 @@ const CALENDAR_SNIPPET = [
 const CALENDAR_TEST =
   "curl -sS -X POST http://127.0.0.1:8189/api/reminders -H 'content-type: application/json' -d '{\"title\":\"hello from your agent\",\"fireInMinutes\":1}'";
 
-type Tab = "messaging" | "board" | "calendar" | "secrets" | "sharing" | "copilot";
+// CLAUDE.md / AGENTS.md block teaching an agent to track work time on the Timesheet. The time API is
+// plain JSON, so only the JSON " need escaping; \\ is a shell line-continuation. Start auto-adds any
+// unknown client/project/task to the catalog, so there's no setup step. Mirrors docs/FEATURES.md.
+const TIMESHEET_SNIPPET = [
+  "## Track my work time in Terminal Hub",
+  "",
+  "You're running inside a Terminal Hub terminal. When I tell you to start working on something for a",
+  "client, start a timer; when it's done or I say stop, stop it. It's the Timesheet tool, server-backed",
+  "on 127.0.0.1 with no token. Unknown client/project/task names are auto-added to the catalog — no setup.",
+  "",
+  "```bash",
+  "# start a timer (client required; project/task/notes optional) — returns the entry with its \"id\"",
+  "curl -sS -X POST http://127.0.0.1:8189/api/time/start \\",
+  "  -H 'content-type: application/json' \\",
+  "  -d '{\"client\":\"Acme Co\",\"project\":\"Website\",\"task\":\"Programming\",\"notes\":\"hero section\"}'",
+  "",
+  "# stop a timer: by id, OR by \"client\" (stops every running timer for that client), OR {} (stops the latest)",
+  "curl -sS -X POST http://127.0.0.1:8189/api/time/stop \\",
+  "  -H 'content-type: application/json' \\",
+  "  -d '{\"id\":\"te_...\"}'",
+  "",
+  "# see today's entries — each has an \"id\", a \"startedAt\", and \"stoppedAt\" (null = still running)",
+  "curl -sS http://127.0.0.1:8189/api/time/entries",
+  "```",
+  "",
+  "- Only client is required to start; project, task, and notes are optional. Grab the id from the start call.",
+  "- A null stoppedAt means the timer is still running. Several timers can run at once.",
+  "- Review another day with epoch-ms bounds: /api/time/entries?from=<ms>&to=<ms>.",
+].join("\n");
+
+// A bare one-liner for starting a test timer by hand from any terminal.
+const TIMESHEET_TEST =
+  "curl -sS -X POST http://127.0.0.1:8189/api/time/start -H 'content-type: application/json' -d '{\"client\":\"Test Client\",\"task\":\"Programming\"}'";
+
+type Tab = "messaging" | "board" | "calendar" | "timesheet" | "secrets" | "sharing" | "copilot";
 
 const RECT_KEY = "tr.helpRect"; // remembered window geometry (per-browser)
 const MIN_W = 520, MIN_H = 360;
@@ -229,13 +263,14 @@ export const HelpModal = forwardRef<WindowHandle, { origin?: WinRect | null; onC
         <TabButton active={tab === "messaging"} onClick={() => setTab("messaging")}>Messaging</TabButton>
         <TabButton active={tab === "board"} onClick={() => setTab("board")}>Task board</TabButton>
         <TabButton active={tab === "calendar"} onClick={() => setTab("calendar")}>Calendar</TabButton>
+        <TabButton active={tab === "timesheet"} onClick={() => setTab("timesheet")}>Timesheet</TabButton>
         <TabButton active={tab === "secrets"} onClick={() => setTab("secrets")}>Secrets</TabButton>
         <TabButton active={tab === "sharing"} onClick={() => setTab("sharing")}>Sharing</TabButton>
         <TabButton active={tab === "copilot"} onClick={() => setTab("copilot")}>Copilot</TabButton>
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto p-5 space-y-6 text-sm leading-relaxed">
-        {tab === "messaging" ? <MessagingHelp /> : tab === "board" ? <BoardHelp /> : tab === "calendar" ? <CalendarHelp /> : tab === "secrets" ? <SecretsHelp /> : tab === "sharing" ? <SharingHelp /> : <CopilotHelp />}
+        {tab === "messaging" ? <MessagingHelp /> : tab === "board" ? <BoardHelp /> : tab === "calendar" ? <CalendarHelp /> : tab === "timesheet" ? <TimesheetHelp /> : tab === "secrets" ? <SecretsHelp /> : tab === "sharing" ? <SharingHelp /> : <CopilotHelp />}
       </div>
 
       <ResizeHandles onStart={beginResize} />
@@ -378,6 +413,57 @@ function CalendarHelp() {
           <li>Repeat with <span className="text-fg">recurrence</span> (daily / weekly / monthly / yearly); <span className="text-fg">leadMinutes</span> alerts you ahead of time.</li>
           <li>Reminders fire within ~30s and survive restarts; one missed while the server was down fires on the next boot, tagged "(missed)".</li>
           <li>Full reference: <span className="text-fg">docs/AGENT-CALENDAR.md</span>.</li>
+        </ul>
+      </div>
+    </>
+  );
+}
+
+/** Tab: tracking work time on the Timesheet (start/stop timers, review totals). */
+function TimesheetHelp() {
+  return (
+    <>
+      <p className="text-fg">
+        The <code className="text-bright">Timesheet</code> (launcher → Tools) is a Harvest-style time
+        tracker, server-backed — so an agent in a room can run your clock too. Tell it to start working
+        for a client and it starts a timer; when the job's done, it stops it. It's on{" "}
+        <code className="text-bright">127.0.0.1</code> with no token, and unknown client / project /
+        task names are <span className="text-bright">auto-added to the catalog</span>, so there's no
+        setup step.
+      </p>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="font-medium text-bright">1. Teach your agent to track time</div>
+          <CopyButton text={TIMESHEET_SNIPPET} label="Copy snippet" />
+        </div>
+        <p className="text-dim">
+          Paste this into the <code className="text-fg">CLAUDE.md</code> (or{" "}
+          <code className="text-fg">AGENTS.md</code>) of any project you open as a workspace, so the
+          agent starts and stops timers as it works.
+        </p>
+        <CodeBlock text={TIMESHEET_SNIPPET} />
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="font-medium text-bright">2. Or start one yourself to test</div>
+          <CopyButton text={TIMESHEET_TEST} label="Copy command" />
+        </div>
+        <p className="text-dim">Run this in any terminal — a running timer for “Test Client” shows up in the Timesheet within a couple seconds.</p>
+        <CodeBlock text={TIMESHEET_TEST} />
+      </div>
+
+      <div className="space-y-1.5 text-dim">
+        <div className="font-medium text-bright">Good to know</div>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>Only <span className="text-fg">client</span> is required to start; <span className="text-fg">project</span>, <span className="text-fg">task</span>, and <span className="text-fg">notes</span> are optional.</li>
+          <li>Stop by <span className="text-fg">id</span>, by <span className="text-fg">client</span> (stops every running timer for that client), or with an empty body <span className="text-fg">{"{}"}</span> (stops the most recent).</li>
+          <li>A <span className="text-fg">null</span> stoppedAt means a timer is still running — and several can run at once.</li>
+          <li>Log forgotten time with <span className="text-fg">POST /api/time/entries</span> (supply <span className="text-fg">startedAt</span>, optional <span className="text-fg">stoppedAt</span>); edit or delete an entry by id with PATCH / DELETE.</li>
+          <li>Review any day, week, or month in the panel — or fetch a range with <span className="text-fg">/api/time/entries?from=&lt;ms&gt;&amp;to=&lt;ms&gt;</span> (epoch ms).</li>
+          <li>Manage clients, projects, and task types (and the look) in the Timesheet's own <span className="text-fg">Settings</span> tab.</li>
+          <li>Default port is <span className="text-fg">8189</span> — if you changed <span className="text-fg">PORT</span>, use that instead.</li>
         </ul>
       </div>
     </>

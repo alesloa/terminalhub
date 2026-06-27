@@ -2,7 +2,6 @@ import type { TimeEntry } from "../../../api/types";
 import type { TimeCatalog } from "../useTimeCatalog";
 import type { useTimeSheet } from "../useTimeSheet";
 import { EntryRow } from "../EntryRow";
-import { NewEntryForm } from "../NewEntryForm";
 import { entriesForDay, fmtHM, sumSeconds } from "../util";
 
 export interface DayViewProps {
@@ -14,20 +13,14 @@ export interface DayViewProps {
   showTotal?: boolean;    // WeekView hides it (the strip already shows totals)
 }
 
-/** A single day: the new-entry form, that day's rows (newest first), and a day total. Reused by
- *  WeekView for the day picked in the strip. */
-export function DayView({ sheet, catalog, now, accent, day, showTotal = true }: DayViewProps) {
+/** A single day: that day's rows (newest first) and a day total. New entries are added from the +
+ *  button in the window header (a popup), not inline. Reused by WeekView for the day in the strip. */
+export function DayView({ sheet, catalog, now, day, showTotal = true }: DayViewProps) {
   const dayEntries: TimeEntry[] = entriesForDay(sheet.entries, day);
   const total = sumSeconds(dayEntries, now);
 
   return (
     <div className="space-y-3">
-      <NewEntryForm
-        catalog={catalog} accent={accent} day={day}
-        onStart={(b) => sheet.start(b)}
-        onAdd={(b) => sheet.add(b)}
-      />
-
       {showTotal && (
         <div className="flex items-center justify-between px-1">
           <span className="text-xs text-dim">{dayEntries.length} {dayEntries.length === 1 ? "entry" : "entries"}</span>
