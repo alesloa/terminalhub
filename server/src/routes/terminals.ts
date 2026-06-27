@@ -52,9 +52,8 @@ export async function terminalRoutes(app: FastifyInstance, ctx: AppContext) {
     await seedWorkspaceEffective(ctx.store, ws);
 
     await ctx.tmux.newSession(session, ws.folder, DEFAULT_COLS, DEFAULT_ROWS);
-    // Always-on layered attention (not user-controlled): arm silence monitoring with the configured
-    // quiet window so a backgrounded agent that goes quiet still flags. newSession already armed the bell.
-    await ctx.tmux.setMonitorSilence(session, ctx.store.getSettings().silenceSeconds).catch(() => {});
+    // Bell-only attention: newSession already armed the bell (monitor-bell). Silence is NOT armed —
+    // it flagged every idle agent and flooded notifications, so a quiet pane no longer earns attention.
     const launch = b.data.launchCommandOverride ?? ws.launchCommand;
     if (launch && launch.trim()) await ctx.tmux.sendKeys(session, launch.trim());
 

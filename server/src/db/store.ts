@@ -136,7 +136,9 @@ function rowToAccessKey(row: any): AccessKey {
 const DEFAULT_SETTINGS: Settings = {
   defaultLaunchCommand: "claude",
   defaultShell: process.env.SHELL ?? "/bin/bash",
-  attentionMode: "layered",
+  // Attention is bell-only and not user-controlled (see attention/attention.ts); these two fields are
+  // dormant — kept so silence detection can be re-enabled later without a migration.
+  attentionMode: "explicit",
   silenceSeconds: 10,
   token: null,
   autoSave: false,
@@ -171,7 +173,7 @@ function parseSetting(key: string, value: string): unknown {
     const n = Number(value);
     return Number.isFinite(n) ? n : DEFAULT_SETTINGS.silenceSeconds;
   }
-  if (key === "attentionMode") return ["layered", "explicit", "silence"].includes(value) ? value : "layered";
+  if (key === "attentionMode") return ["layered", "explicit", "silence"].includes(value) ? value : "explicit";
   if (key === "sidebarPosition") return ["bottom", "left", "right", "top"].includes(value) ? value : "bottom";
   if (key === "stageManagerPosition") return ["left", "right", "top", "bottom"].includes(value) ? value : "left";
   if (key === "sttProvider") return value === "openai" ? "openai" : "local";

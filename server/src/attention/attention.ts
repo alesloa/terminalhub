@@ -44,9 +44,10 @@ export function attentionFrom(
 
 export async function computeAttention(ctx: AppContext): Promise<AttentionItem[]> {
   const flags = await ctx.tmux.windowFlags();
-  // Attention is always-on "layered" (bell OR silence). It is NOT user-controlled — a backgrounded
-  // terminal that rang the bell OR simply went quiet always needs you. The stored attentionMode is
-  // intentionally ignored here so the space/card dots blink on a finished agent, not just a bell.
-  // Built-in agents ONLY — a registered custom launcher (npm run dev, codegraph) must never notify.
-  return attentionFrom(flags, ctx.store.listAllTerminals(), ctx.store.listWorkspaces(), "layered", builtinAgentBinaries());
+  // Attention is BELL-ONLY ("explicit"). It is NOT user-controlled — a backgrounded agent earns
+  // attention when it RINGS THE BELL on finishing, never when it merely goes quiet. Silence flagged
+  // every idle session (they all look "quiet"), which flooded notifications, so the stored
+  // attentionMode is ignored and the silence flag never counts. Built-in coding agents ONLY — a
+  // registered custom launcher (npm run dev, codegraph) must never notify.
+  return attentionFrom(flags, ctx.store.listAllTerminals(), ctx.store.listWorkspaces(), "explicit", builtinAgentBinaries());
 }

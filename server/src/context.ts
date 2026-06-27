@@ -41,10 +41,11 @@ export function createContext(dbPath: string, google: GoogleConfig | null = null
   const scheduler = createReminderScheduler({ store, notify, pushover });
   const attentionWatcher = createAttentionWatcher({
     pending,
-    // Always-on "layered" (bell OR silence), never the stored attentionMode — attention is not
-    // user-controlled (mirrors computeAttention in attention/attention.ts). Built-in coding agents
-    // ONLY — a registered custom launcher (npm run dev, codegraph) must never notify.
-    getAttention: async () => attentionFrom(await tmux.windowFlags(), store.listAllTerminals(), store.listWorkspaces(), "layered", builtinAgentBinaries()),
+    // BELL-ONLY ("explicit"), never the stored attentionMode — attention is not user-controlled
+    // (mirrors computeAttention in attention/attention.ts). Silence is intentionally excluded: every
+    // idle agent looked "quiet" and re-fired toasts as the flag oscillated, flooding notifications.
+    // Built-in coding agents ONLY — a registered custom launcher (npm run dev, codegraph) never notifies.
+    getAttention: async () => attentionFrom(await tmux.windowFlags(), store.listAllTerminals(), store.listWorkspaces(), "explicit", builtinAgentBinaries()),
   });
   // Fires "needs attention" for an OPEN terminal whose bell the watcher above can't see (an attached
   // PTY clears tmux's bell flag); the browser detects that bell and pings POST /api/terminals/:id/attention.

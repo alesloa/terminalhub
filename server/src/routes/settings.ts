@@ -125,13 +125,8 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
     if (rest.tmuxStatusFg !== undefined) {
       await ctx.tmux?.setStatusStyleAll(tmuxStatusStyle(rest.tmuxStatusFg)).catch(() => {});
     }
-    // Re-arm tmux silence monitoring across all live sessions when the quiet window changes, so it
-    // takes effect on open terminals now. Attention is always-on layered (not mode-gated): silence is
-    // never disabled — a legacy attentionMode change must never disarm it.
-    if (rest.silenceSeconds !== undefined) {
-      const cur = ctx.store.getSettings();
-      await ctx.tmux?.setMonitorSilenceAll(cur.silenceSeconds).catch(() => {});
-    }
+    // No tmux silence re-arm here: attention is bell-only now (silence flagged every idle agent and
+    // flooded toasts), so the quiet-window setting is dormant and never touches tmux monitoring.
     return { ok: true };
   });
 }

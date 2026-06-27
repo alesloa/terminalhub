@@ -54,7 +54,6 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   { label: "Terminal text brightness", tab: "terminal", id: "term-text-brightness", keywords: "dim foreground contrast" },
   { label: "Terminal background", tab: "terminal", id: "term-background", keywords: "lift black gray" },
   // Voice & Speech
-  { label: "Quiet window", tab: "voice", id: "quiet-window", keywords: "silence seconds finished attention bell notify" },
   { label: "Toast position", tab: "voice", id: "toast-position", keywords: "notification popup placement" },
   { label: "Voice announcements", tab: "voice", id: "voice-announcements", keywords: "speak aloud tts" },
   { label: "Notification voice", tab: "voice", id: "notification-voice", keywords: "system voice" },

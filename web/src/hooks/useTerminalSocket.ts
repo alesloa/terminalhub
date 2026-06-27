@@ -1,5 +1,4 @@
 import { useContext, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { api, getToken } from "../api/client";
@@ -83,14 +82,6 @@ export function useTerminalSocket(
   launchCmdRef.current = autoTitle?.launchCommand ?? "";
   const onTitleRef = useRef(autoTitle?.onTitle);
   onTitleRef.current = autoTitle?.onTitle;
-
-  // Quiet-window length (server setting, app-wide; react-query dedups this). Held in a ref so the
-  // long-lived terminal effect reads the latest without re-creating the terminal. The 10s fallback
-  // mirrors the server default while settings load — not a stopgap. Attention itself is always-on
-  // layered (bell AND silence both fire) and not user-controlled, so the mode is no longer read.
-  const { data: attentionSettings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
-  const silenceSecondsRef = useRef(10);
-  silenceSecondsRef.current = attentionSettings?.silenceSeconds ?? 10;
 
   useEffect(() => {
     if (!container) return;
@@ -293,21 +284,6 @@ export function useTerminalSocket(
       if (pongWatch) { clearTimeout(pongWatch); pongWatch = null; }
     };
 
-    // Silence detection (OPEN room). The attached PTY clears tmux's silence flag, so the server-side
-    // watcher can't see "went quiet" here — run the quiet-window timer client-side instead. Reset on
-    // every output frame; fire ONCE when the pane has been quiet for the window (next output re-arms
-    // it). Always on (layered attention, not user-controlled). Suppressed for the pane you're in.
-    let idleTimer: ReturnType<typeof setTimeout> | null = null;
-    const clearIdle = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
-    const armIdle = () => {
-      clearIdle();
-      idleTimer = setTimeout(() => {
-        idleTimer = null;
-        if (isTabActive() && useUi.getState().focusedTerminalId === terminalId) return; // you're in it
-        api.notifyTerminalAttention(terminalId).catch(() => {});
-      }, silenceSecondsRef.current * 1000);
-    };
-
     const connect = () => {
       if (closed || ended) return;
       const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -330,7 +306,7 @@ export function useTerminalSocket(
 
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
-        if (msg.type === "output") { term.write(msg.data); armIdle(); }
+        if (msg.type === "output") { term.write(msg.data); }
         else if (msg.type === "pong") { if (pongWatch) { clearTimeout(pongWatch); pongWatch = null; } }
         else if (msg.type === "exit") { ended = true; term.write("\r\n[session ended]\r\n"); }
       };
@@ -382,7 +358,8 @@ export function useTerminalSocket(
     // you'd get if the room were closed. (A closed/detached terminal goes through tmux's bell flag
     // server-side instead; this covers the open+attached case, where the attach clears that flag so the
     // watcher is blind to it. The two paths partition by attach state, so one bell never double-fires.)
-    // The bell + OSC-notify codes always fire (layered attention, not user-controlled) — same toast.
+    // Attention is bell-only: the bell + OSC-notify codes are the deliberate "I'm done" signal that
+    // fires the toast. A pane merely going quiet no longer notifies (it flagged every idle agent).
     const notFocused = () => !(isTabActive() && useUi.getState().focusedTerminalId === terminalId);
     const fireExplicit = (message?: string) => {
       if (!notFocused()) return; // you're in it → no toast
@@ -624,7 +601,6 @@ export function useTerminalSocket(
       bellSub.dispose();
       osc9.dispose();
       osc777.dispose();
-      clearIdle();
       linkProvider.dispose();
       container.removeEventListener("mouseup", onMouseUp);
       container.removeEventListener("wheel", onWheel, true);

@@ -829,18 +829,17 @@ over loopback (no token needed locally; `TERMINALHUB_TOKEN` Bearer when exposed)
   (tmux's bell flag is cleared by the live attach, so the server can't see it directly) and fires the
   same notification, deduped server-side across browsers. Coming back and focusing that terminal clears
   its alert just like viewing it does.
-- **Universal attention detection** — you don't need a per-agent bell hook to get notified. Three
-  signals feed the one attention pipeline: the terminal **bell** (`\a`), **OSC notify** escape codes
-  (`OSC 9` / `OSC 777` — many TUIs emit these, and the text rides into the toast), and **silence** (a
-  terminal that went quiet after working). Detection is **always-on layered** — bell/notify codes *and*
-  silence both fire, so you never miss either an explicit "done" signal or a tool that goes quiet without
-  signalling. It is **not user-controlled** (there's no mode toggle); only the **Quiet window** stepper
-  (**Settings → Notifications**, default 10s) tunes how long silent counts as finished. Only the
-  **built-in coding agents** (claude/codex/gemini/opencode/cursor-agent) earn attention — a plain shell,
-  dev server, or a user-registered custom launcher (e.g. `npm run dev`, `codegraph`) ringing the bell or
-  sitting idle never notifies. Closed rooms use tmux's bell + silence flags; open rooms catch the bell,
-  OSC codes, and a client-side idle timer — so the same notification fires either way. Makes the Claude
-  bell hook optional.
+- **Agent-finish attention detection** — a backgrounded coding agent pings you when it **finishes**.
+  The signal is the deliberate one an agent emits on completion: the terminal **bell** (`\a`) or an
+  **OSC notify** escape code (`OSC 9` / `OSC 777` — many TUIs emit these, and the text rides into the
+  toast). Detection is **bell-only** and **not user-controlled** (no mode toggle, no settings). A pane
+  merely going **quiet** does *not* notify — silence flagged every idle session indiscriminately (an
+  agent finished 10s ago looks identical to one idle for an hour), which flooded notifications, so it's
+  excluded. Only the **built-in coding agents** (claude/codex/gemini/opencode/cursor-agent) earn
+  attention — a plain shell, dev server, or a user-registered custom launcher (e.g. `npm run dev`,
+  `codegraph`) ringing the bell never notifies. Closed rooms use tmux's bell flag; open rooms catch the
+  bell + OSC codes (the live attach clears the tmux flag, so the browser fires it instead) — same
+  notification either way, deduped server-side across browsers.
 - **Task board API** — `GET /api/board`, `POST /api/board/cards`, `PATCH /api/board/cards/:id`
   (placement + edits in one call), `DELETE /api/board/cards/:id`. The floating board reflects changes
   within a couple of seconds.

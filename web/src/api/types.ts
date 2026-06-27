@@ -237,8 +237,8 @@ export interface SettingsResponse {
   openaiKeySet: boolean; // whether an OpenAI key is stored (the key itself is never sent)
   pushoverConfigured: boolean; // whether BOTH Pushover keys are stored (the keys themselves are never sent)
   micMode: "toggle" | "hold"; // mic button: click-to-toggle vs hold-to-talk (push-to-talk)
-  attentionMode: "layered" | "explicit" | "silence"; // which signals fire an attention toast
-  silenceSeconds: number; // quiet window (s) before silence counts as "finished" (silence/layered)
+  attentionMode: "layered" | "explicit" | "silence"; // DORMANT — attention is bell-only now, not user-controlled
+  silenceSeconds: number; // DORMANT — quiet-window (s); silence no longer fires attention (flooded every idle agent)
   headroomLauncherHidden: boolean; // user dismissed the "Claude (Headroom)" launcher card in the picker
   focusBarColor: string; // hex color of the focused-terminal bar (rendered client-side via a CSS var)
   tmuxStatusFg: string;  // hex foreground color of each terminal's tmux status bar (applied server-side)

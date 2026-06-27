@@ -43,18 +43,14 @@ ctx.copilotScheduler.start();
 await ctx.attentionWatcher.tick();
 ctx.attentionWatcher.start();
 
-// Arm bell + silence monitoring on sessions that predate this boot (bell default is on, but a
-// user's tmux config may have disabled it). New sessions arm themselves on create. Attention is
-// always-on layered (not user-controlled), so silence always uses the configured quiet window.
-{
-  const settings = ctx.store.getSettings();
-  const silenceSeconds = settings.silenceSeconds;
-  for (const s of await ctx.tmux.listSessions()) {
-    try {
-      await ctx.tmux.setMonitorBell(s);
-      await ctx.tmux.setMonitorSilence(s, silenceSeconds);
-    } catch { /* session vanished mid-boot */ }
-  }
+// Attention is bell-only. Arm bell monitoring on sessions that predate this boot (bell default is on,
+// but a user's tmux config may have disabled it), and DISARM silence monitoring (set to 0) so sessions
+// armed by an older build stop flagging — a quiet pane must no longer earn attention.
+for (const s of await ctx.tmux.listSessions()) {
+  try {
+    await ctx.tmux.setMonitorBell(s);
+    await ctx.tmux.setMonitorSilence(s, 0);
+  } catch { /* session vanished mid-boot */ }
 }
 
 // Wipe any pasted-clipboard images left over from a previous run — they're single-use, and

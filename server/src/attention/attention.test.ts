@@ -78,30 +78,38 @@ describe("attentionFrom — mode-aware picker", () => {
   });
 });
 
-describe("computeAttention — mode is forced layered, never read from settings", () => {
-  // Attention is always-on layered (bell OR silence). The stored attentionMode must NOT gate it:
-  // a backgrounded terminal that merely went quiet still needs you, even if settings say "explicit".
-  it("flags a silence-only terminal even when stored settings say 'explicit'", async () => {
-    const terminals = [tm("tm_silent", "ws_a", "tr_ws_a_tm_silent", "codex")];
+describe("computeAttention — bell-only (explicit), never silence", () => {
+  // Attention is bell-only: a backgrounded agent earns attention when it RINGS THE BELL on finishing —
+  // NOT when it merely goes quiet. Silence flagged EVERY idle session (they all look "quiet"), which
+  // flooded notifications, so silence-only never counts. The stored attentionMode is ignored (forced
+  // explicit); attention is not user-controlled; built-in coding agents only.
+  it("flags a bell terminal but NOT a silence-only one, even when settings say 'layered'", async () => {
+    const terminals = [
+      tm("tm_bell", "ws_a", "tr_ws_a_tm_bell", "claude"),
+      tm("tm_silent", "ws_a", "tr_ws_a_tm_silent", "codex"),
+    ];
     const ctx = {
-      tmux: { windowFlags: async () => new Map<string, WindowFlags>([["tr_ws_a_tm_silent", flags(false, true)]]) },
+      tmux: { windowFlags: async () => new Map<string, WindowFlags>([
+        ["tr_ws_a_tm_bell", flags(true, false)],
+        ["tr_ws_a_tm_silent", flags(false, true)],
+      ]) },
       store: {
         listAllTerminals: () => terminals,
         listWorkspaces: () => [ws("ws_a", "API")],
         listCustomAgents: () => [],
-        getSettings: () => ({ attentionMode: "explicit" }),
+        getSettings: () => ({ attentionMode: "layered" }), // ignored — bell-only is forced
       },
     } as unknown as AppContext;
     const out = await computeAttention(ctx);
-    expect(out.map(i => i.terminalId)).toEqual(["tm_silent"]);
+    expect(out.map(i => i.terminalId)).toEqual(["tm_bell"]);
   });
 
-  it("does NOT flag a terminal running a registered custom launcher (npm run dev) — built-in agents only", async () => {
-    // The user's bug: an "npm run dev" custom agent folded "npm" into the allowlist, so dev terminals
-    // notified. Attention uses ONLY the built-in coding agents now; custom launchers never notify.
+  it("does NOT flag a registered custom launcher (npm run dev) even on a bell — built-in agents only", async () => {
+    // An "npm run dev" custom agent folded "npm" into the allowlist, so dev terminals notified.
+    // Attention uses ONLY the built-in coding agents now; custom launchers never notify — bell or not.
     const terminals = [tm("tm_dev", "ws_a", "tr_ws_a_tm_dev", "npm run dev", "npm run dev")];
     const ctx = {
-      tmux: { windowFlags: async () => new Map<string, WindowFlags>([["tr_ws_a_tm_dev", flags(false, true)]]) },
+      tmux: { windowFlags: async () => new Map<string, WindowFlags>([["tr_ws_a_tm_dev", flags(true, false)]]) },
       store: {
         listAllTerminals: () => terminals,
         listWorkspaces: () => [ws("ws_a", "page-build", "claude")],

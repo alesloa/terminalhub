@@ -16,7 +16,7 @@ import { ThemePicker } from "./ThemePicker";
 import { speak, useVoices, speechSupported } from "../lib/speech";
 import { describeEvent, formatHotkey, hotkeyFromEvent, type Hotkey } from "../lib/hotkey";
 import { langLabel } from "../lib/langName";
-import { Section, Row, Toggle, Segment, Stepper, ColorField, Code } from "./Settings/controls";
+import { Section, Row, Toggle, Segment, ColorField, Code } from "./Settings/controls";
 import { PaletteIcon, CodeIcon, TerminalIcon, SpeakerIcon, SparkIcon, KeyIcon, PlugIcon, EyeIcon } from "./Settings/icons";
 import { TerminalAppearance } from "./Settings/TerminalAppearance";
 import { SettingsSearch, type TabId } from "./Settings/settingsSearch";
@@ -327,20 +327,6 @@ export const SettingsModal = forwardRef<WindowHandle, { origin?: WinRect | null;
     debouncePatch({ tmuxStatusFg: hex });
   };
 
-  // Quiet window (server-synced): how long a backgrounded agent must be silent before it counts as
-  // "finished" and flags for attention. Attention detection itself is always-on layered (bell OR
-  // silence) and is NOT user-controlled. The stepper debounces its PATCH so the server doesn't re-arm
-  // every live session on each click.
-  const silenceSeconds = serverSettings?.silenceSeconds ?? 10;
-  const silenceTimer = useRef<number | null>(null);
-  const onSilenceSeconds = (n: number) => {
-    const v = Math.max(1, Math.min(120, n));
-    qc.setQueryData<SettingsResponse>(["settings"], (old) => old ? { ...old, silenceSeconds: v } : old);
-    if (silenceTimer.current) window.clearTimeout(silenceTimer.current);
-    silenceTimer.current = window.setTimeout(() => { api.updateSettings({ silenceSeconds: v }).catch(() => {}); }, 250);
-  };
-  useEffect(() => () => { if (silenceTimer.current) window.clearTimeout(silenceTimer.current); }, []);
-
   // Persist the picked Activity Bar Position to the server (the ui-store change already applied it
   // live for the open room).
   const persistSidebar = useMutation({
@@ -562,9 +548,6 @@ export const SettingsModal = forwardRef<WindowHandle, { origin?: WinRect | null;
   const voice = (
     <div className="space-y-8">
       <Section title="Notifications">
-        <Row id="quiet-window" title="Quiet window" hint="A terminal needs you when its agent rings the bell OR goes quiet (always on). This sets how many seconds of silence count as finished. Higher = fewer false alarms mid-task; lower = quicker notice.">
-          <Stepper value={silenceSeconds} min={1} max={120} suffix="s" onChange={onSilenceSeconds} />
-        </Row>
         <ToastPositionPicker id="toast-position" value={toastPosition} onChange={setToastPosition} />
         {speechSupported() ? (
           <>

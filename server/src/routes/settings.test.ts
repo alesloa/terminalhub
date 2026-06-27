@@ -278,9 +278,9 @@ describe("settings routes — attention detection", () => {
   let h: ReturnType<typeof build>;
   beforeEach(() => { h = build(); });
 
-  it("defaults attentionMode to layered with a 10s quiet window", async () => {
+  it("defaults attentionMode to explicit (bell-only); silenceSeconds stays dormant at 10", async () => {
     const body = (await h.app.inject({ method: "GET", url: "/api/settings" })).json();
-    expect(body.attentionMode).toBe("layered");
+    expect(body.attentionMode).toBe("explicit");
     expect(body.silenceSeconds).toBe(10);
   });
 
@@ -298,21 +298,14 @@ describe("settings routes — attention detection", () => {
     expect((await h.app.inject({ method: "PATCH", url: "/api/settings", payload: { silenceSeconds: 999 } })).statusCode).toBe(400);
   });
 
-  it("re-arms monitor-silence with the configured quiet window", async () => {
+  it("does NOT arm monitor-silence on a quiet-window change — attention is bell-only, silence is dormant", async () => {
     const armed: number[] = [];
     h.ctx.tmux = { setMonitorSilenceAll: async (sec: number) => { armed.push(sec); } };
+    // Silence detection no longer fires attention (every idle agent looked "quiet" and flooded toasts),
+    // so changing the dormant quiet window must NOT touch tmux monitoring.
     const res = await h.app.inject({ method: "PATCH", url: "/api/settings", payload: { silenceSeconds: 12 } });
     expect(res.statusCode).toBe(200);
-    expect(armed).toEqual([12]);
-  });
-
-  it("never disables monitor-silence — attention is always-on layered, never mode-gated", async () => {
-    const armed: number[] = [];
-    h.ctx.tmux = { setMonitorSilenceAll: async (sec: number) => { armed.push(sec); } };
-    // A legacy 'explicit' mode PATCH must NOT disarm silence (no 0) — it arms the quiet window like any other.
-    const res = await h.app.inject({ method: "PATCH", url: "/api/settings", payload: { attentionMode: "explicit", silenceSeconds: 15 } });
-    expect(res.statusCode).toBe(200);
-    expect(armed).toEqual([15]);
+    expect(armed).toEqual([]);
   });
 });
 
