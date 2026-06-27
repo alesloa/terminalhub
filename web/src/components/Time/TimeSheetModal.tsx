@@ -6,7 +6,7 @@ import { ResizeHandles } from "../ResizeHandles";
 import { useTimeSheet } from "./useTimeSheet";
 import { useTimeCatalog } from "./useTimeCatalog";
 import { useTimePrefs, type TimeView } from "./prefs";
-import { DAY_MS, dayRange, dayStart, fmtDayLabel, monthGrid, useNow, weekDays, weekRange } from "./util";
+import { DAY_MS, dayRange, dayStart, useNow, weekDays, weekRange } from "./util";
 import { DateNav } from "./DateNav";
 import { NewEntryDialog } from "./NewEntryDialog";
 import { DayView } from "./views/DayView";
@@ -61,28 +61,22 @@ export const TimeSheetModal = forwardRef<WindowHandle, { origin?: WinRect | null
   const now = useNow(1000);
   const catalog = useTimeCatalog();
 
-  // Visible range + nav label, derived from the view + selected day + week-start preference.
-  const { from, to, days, label } = useMemo(() => {
+  // Visible range + nav label, derived from the view + selected day + week-start preference. Week and
+  // Calendar both scope to the week of the selected day; only Day is a single day.
+  const { from, to, days, label, prefix } = useMemo(() => {
     if (view === "day") {
       const r = dayRange(selected);
-      const lbl = (dayStart(selected) === dayStart(now) ? "Today, " : "") + fmtDayLabel(selected);
-      return { ...r, days: [] as number[], label: lbl };
+      const lbl = new Date(dayStart(selected)).toLocaleDateString([], { weekday: "long", day: "numeric", month: "short" });
+      return { ...r, days: [] as number[], label: lbl, prefix: dayStart(selected) === dayStart(now) ? "Today" : undefined };
     }
-    if (view === "week") {
-      const d = weekDays(selected, prefs.weekStart);
-      return { ...weekRange(selected, prefs.weekStart), days: d, label: `${shortDay(d[0])} – ${shortDay(d[6])}` };
-    }
-    const cells = monthGrid(selected, prefs.weekStart);
-    return { from: cells[0], to: cells[41] + DAY_MS, days: [] as number[], label: new Date(selected).toLocaleDateString([], { month: "long", year: "numeric" }) };
+    const d = weekDays(selected, prefs.weekStart);
+    return { ...weekRange(selected, prefs.weekStart), days: d, label: `${shortDay(d[0])} – ${shortDay(d[6])}`, prefix: undefined as string | undefined };
   }, [view, selected, prefs.weekStart, now]);
 
   const sheet = useTimeSheet(from, to);
 
-  const step = (dir: 1 | -1) => setSelected((cur) => {
-    if (view === "day") return cur + dir * DAY_MS;
-    if (view === "week") return cur + dir * 7 * DAY_MS;
-    const d = new Date(cur); return new Date(d.getFullYear(), d.getMonth() + dir, Math.min(d.getDate(), 28)).getTime();
-  });
+  // Day steps a day; Week and Calendar step a week.
+  const step = (dir: 1 | -1) => setSelected((cur) => cur + dir * (view === "day" ? DAY_MS : 7 * DAY_MS));
 
   // Grow-from-icon / minimize-to-icon animation (same as NotesModal).
   const reduce = typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -123,8 +117,8 @@ export const TimeSheetModal = forwardRef<WindowHandle, { origin?: WinRect | null
   const viewBtn = (v: TimeView) => {
     const active = view === v;
     return (
-      <button key={v} onClick={() => setView(v)} style={active && prefs.accent ? { backgroundColor: prefs.accent, color: "#fff" } : undefined}
-        className={`px-2.5 h-7 inline-flex items-center rounded text-xs capitalize ${active ? (prefs.accent ? "" : "bg-orange-600 text-white") : "bg-elevated hover:bg-edge text-dim"}`}>{v}</button>
+      <button key={v} onClick={() => setView(v)} style={active ? { backgroundColor: prefs.accent ?? "#2563eb", color: "#fff" } : undefined}
+        className={`px-2.5 h-7 inline-flex items-center rounded text-xs capitalize ${active ? "" : "bg-elevated hover:bg-edge text-dim"}`}>{v}</button>
     );
   };
 
@@ -153,7 +147,7 @@ export const TimeSheetModal = forwardRef<WindowHandle, { origin?: WinRect | null
               className={`w-9 h-9 shrink-0 inline-flex items-center justify-center rounded-md text-white ${prefs.accent ? "" : "bg-green-600 hover:bg-green-500"}`}>
               <PlusIcon />
             </button>
-            <DateNav label={label} onPrev={() => step(-1)} onNext={() => step(1)} onToday={() => setSelected(Date.now())} />
+            <DateNav label={label} prefix={prefix} onPrev={() => step(-1)} onNext={() => step(1)} onToday={() => setSelected(Date.now())} />
           </div>
           <div className="flex items-center gap-1">{(["day", "week", "calendar"] as TimeView[]).map(viewBtn)}</div>
         </div>
@@ -163,8 +157,8 @@ export const TimeSheetModal = forwardRef<WindowHandle, { origin?: WinRect | null
         {tab === "settings"
           ? <SettingsTab catalog={catalog} prefs={prefs} setPrefs={setPrefs} />
           : view === "day" ? <DayView sheet={sheet} catalog={catalog} now={now} accent={prefs.accent} day={dayStart(selected)} />
-          : view === "week" ? <WeekView sheet={sheet} catalog={catalog} now={now} accent={prefs.accent} day={dayStart(selected)} days={days} onSelectDay={(d) => setSelected(d)} />
-          : <CalendarView monthTs={selected} entries={sheet.entries} now={now} weekStart={prefs.weekStart} accent={prefs.accent} onPickDay={(d) => { setSelected(d); setView("day"); }} />}
+          : view === "week" ? <WeekView sheet={sheet} now={now} accent={prefs.accent} days={days} onPickDay={(d) => { setSelected(d); setView("day"); }} onAddRow={() => setAddOpen(true)} />
+          : <CalendarView days={days} entries={sheet.entries} now={now} accent={prefs.accent} onPickDay={(d) => { setSelected(d); setView("day"); }} />}
       </div>
 
       <ResizeHandles onStart={beginResize} />

@@ -98,6 +98,14 @@ export function entriesForDay(entries: TimeEntry[], dayStartMs: number): TimeEnt
   return entries.filter((e) => e.startedAt >= dayStartMs && e.startedAt < end);
 }
 
+/** A translucent rgba() from a #rgb / #rrggbb hex — used for the blue "today" column/row tints. */
+export function tint(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const n = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const r = parseInt(n.slice(0, 2), 16), g = parseInt(n.slice(2, 4), 16), b = parseInt(n.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 /** Build the `datetime-local` input value for an epoch ms in local time. */
 export function toLocalInput(ts: number): string {
   const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60000);
