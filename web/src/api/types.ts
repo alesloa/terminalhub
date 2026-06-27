@@ -98,6 +98,12 @@ export interface StickyNote { id: string; spaceId: string | null; content: strin
 // Task-board (kanban) card (mirrors server/src/types.ts; keep in sync by hand).
 export type BoardColumn = "todo" | "doing" | "done";
 export interface BoardCard { id: string; column: BoardColumn; position: number; title: string; body: string; color: string | null; createdAt: number; updatedAt: number; }
+
+// Timesheet (mirrors server/src/types.ts; keep in sync by hand). `stoppedAt` null = still running.
+export interface TimeEntry { id: string; client: string; project: string; task: string; notes: string; startedAt: number; stoppedAt: number | null; createdAt: number; updatedAt: number; }
+export interface TimeClient { id: string; name: string; archived: boolean; position: number; createdAt: number; updatedAt: number; }
+export interface TimeProject { id: string; clientId: string; name: string; archived: boolean; position: number; createdAt: number; updatedAt: number; }
+export interface TimeTask { id: string; name: string; archived: boolean; position: number; createdAt: number; updatedAt: number; }
 export interface BuiltinAgent { id: string; name: string; command: string; blurb: string; installed: boolean; }
 export interface CustomAgent { id: string; name: string; command: string; icon: string | null; category: string; createdAt: number; }
 export interface AgentsResponse { builtin: BuiltinAgent[]; custom: CustomAgent[]; }

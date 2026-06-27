@@ -2,7 +2,7 @@ import type {
   Workspace, Folder, Space, SpaceConfig, SpaceCatalog, SpacePreset, SpaceSeedReport, SeedResult, InstalledSet, InstallKind, CanvasBackground, Wallpaper, WallpaperData, Terminal, FsListing, FsFile, FsFileBytes, DriveAccountPublic, DriveEntry, AgentsResponse, HeadroomStatus, HeadroomSavings, CustomAgent, ProcessInfo, PortInfo, AttentionResponse, WorkingResponse, ClaudeUsageResult, CodexUsageResult,
   GitInfo, GitStatus, GitCommit, GitBranch, GitWorktree, StashEntry, CommitFile, MergePreview, PrMergeMethod, GithubInfo, GithubOwners, GithubRepo, GithubAccount, GithubIdentity, GitignorePreview, PullRequest, ActionRun,
   SystemStats,
-  AiProvider, AiProviderKind, AiProvidersResponse, PromptBuilderInputs, AiBuilderResponse, AiChatMessage, AiChatResponse, SettingsResponse, KeptVoice, Bookmark, FavoriteGroup, Favorite, Note, Link, LinkFolder, StickyNote, SpaceWidget, SpaceWidgetKind, BoardCard, BoardColumn, SttStatus, TranscribeResult,
+  AiProvider, AiProviderKind, AiProvidersResponse, PromptBuilderInputs, AiBuilderResponse, AiChatMessage, AiChatResponse, SettingsResponse, KeptVoice, Bookmark, FavoriteGroup, Favorite, Note, Link, LinkFolder, StickyNote, SpaceWidget, SpaceWidgetKind, BoardCard, BoardColumn, TimeEntry, TimeClient, TimeProject, TimeTask, SttStatus, TranscribeResult,
   Blueprint, BlueprintSummary, BlueprintGraph,
   ClaudeAgent, ClaudeSessionsResponse, SessionMessagesResponse, SessionUsage, SessionEntryLite,
   SkillScope, InstalledSkill, SkillScanResult, SkillUpdateStatus, RegistrySkill, CatalogSource, CatalogEntry,
@@ -569,6 +569,39 @@ export const api = {
     update: (id: string, patch: { title?: string; body?: string; color?: string | null; column?: BoardColumn; position?: number }) =>
       req<{ card: BoardCard }>("PATCH", `/api/board/cards/${id}`, patch),
     remove: (id: string) => req<{ ok: true }>("DELETE", `/api/board/cards/${id}`),
+  },
+  // Timesheet (Harvest-style tracker). Entries are range-scoped; catalog drives the dropdowns. The
+  // server auto-adds unknown client/project/task names on start/create. See server/src/routes/time.ts.
+  time: {
+    entries: (from?: number, to?: number) => {
+      const qs = [from !== undefined ? `from=${from}` : "", to !== undefined ? `to=${to}` : ""].filter(Boolean).join("&");
+      return req<{ entries: TimeEntry[] }>("GET", `/api/time/entries${qs ? `?${qs}` : ""}`);
+    },
+    start: (b: { client: string; project?: string; task?: string; notes?: string }) =>
+      req<{ entry: TimeEntry }>("POST", "/api/time/start", b),
+    stop: (b: { id?: string; client?: string } = {}) =>
+      req<{ entries: TimeEntry[]; entry: TimeEntry | null }>("POST", "/api/time/stop", b),
+    create: (b: { client: string; project?: string; task?: string; notes?: string; startedAt: number; stoppedAt?: number | null }) =>
+      req<{ entry: TimeEntry }>("POST", "/api/time/entries", b),
+    update: (id: string, patch: { client?: string; project?: string; task?: string; notes?: string; startedAt?: number; stoppedAt?: number | null }) =>
+      req<{ entry: TimeEntry }>("PATCH", `/api/time/entries/${id}`, patch),
+    remove: (id: string) => req<{ ok: true }>("DELETE", `/api/time/entries/${id}`),
+    clients: () => req<{ clients: TimeClient[] }>("GET", "/api/time/clients"),
+    createClient: (name: string) => req<{ client: TimeClient }>("POST", "/api/time/clients", { name }),
+    updateClient: (id: string, patch: { name?: string; archived?: boolean; position?: number }) =>
+      req<{ client: TimeClient }>("PATCH", `/api/time/clients/${id}`, patch),
+    removeClient: (id: string) => req<{ ok: true }>("DELETE", `/api/time/clients/${id}`),
+    projects: (clientId?: string) =>
+      req<{ projects: TimeProject[] }>("GET", `/api/time/projects${clientId ? `?clientId=${clientId}` : ""}`),
+    createProject: (clientId: string, name: string) => req<{ project: TimeProject }>("POST", "/api/time/projects", { clientId, name }),
+    updateProject: (id: string, patch: { name?: string; archived?: boolean; position?: number }) =>
+      req<{ project: TimeProject }>("PATCH", `/api/time/projects/${id}`, patch),
+    removeProject: (id: string) => req<{ ok: true }>("DELETE", `/api/time/projects/${id}`),
+    tasks: () => req<{ tasks: TimeTask[] }>("GET", "/api/time/tasks"),
+    createTask: (name: string) => req<{ task: TimeTask }>("POST", "/api/time/tasks", { name }),
+    updateTask: (id: string, patch: { name?: string; archived?: boolean; position?: number }) =>
+      req<{ task: TimeTask }>("PATCH", `/api/time/tasks/${id}`, patch),
+    removeTask: (id: string) => req<{ ok: true }>("DELETE", `/api/time/tasks/${id}`),
   },
   // Calendar reminders / scheduled notifications. `image` is a base64 data URL (sent on create/patch);
   // patching `image:null` clears it. The calendar passes from/to (epoch ms) to fetch a visible range.

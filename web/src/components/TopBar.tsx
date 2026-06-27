@@ -3,6 +3,7 @@ import { SettingsModal } from "./SettingsModal";
 import { PromptBuilderModal } from "./PromptBuilder/PromptBuilderModal";
 import { NotesModal } from "./Notes/NotesModal";
 import { BoardModal } from "./Board/BoardModal";
+import { TimeSheetModal } from "./Time/TimeSheetModal";
 import { HelpModal } from "./HelpModal";
 import { FileBrowserModal } from "./FileBrowser/FileBrowserModal";
 import { SecretModal } from "./Secret/SecretModal";
@@ -52,6 +53,9 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
   const boardOpen = !!panels.board;
   const [boardOrigin, setBoardOrigin] = useState<WinRect | null>(null);
   const openBoard = () => { setBoardOrigin(launcherOrigin()); openPanel("board"); };
+  const timesheetOpen = !!panels.timesheet;
+  const [timesheetOrigin, setTimesheetOrigin] = useState<WinRect | null>(null);
+  const openTimesheet = () => { setTimesheetOrigin(launcherOrigin()); openPanel("timesheet"); };
   const helpOpen = !!panels.help;
   const [helpOrigin, setHelpOrigin] = useState<WinRect | null>(null);
   const openHelp = (origin: WinRect | null) => { setHelpOrigin(origin); openPanel("help"); };
@@ -75,6 +79,7 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
   const notesWin = useRef<WindowHandle>(null);
   const browserWin = useRef<WindowHandle>(null);
   const boardWin = useRef<WindowHandle>(null);
+  const timesheetWin = useRef<WindowHandle>(null);
   const helpWin = useRef<WindowHandle>(null);
   const secretWin = useRef<WindowHandle>(null);
   const accessWin = useRef<WindowHandle>(null);
@@ -134,6 +139,7 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
     { id: "breaks", label: "Breaks", description: "Recurring break reminders that nudge you to step away.", section: "tools", icon: <CoffeeIcon />, active: breaksOpen, onSelect: () => breaksOpen ? breaksWin.current?.close() : openBreaks() },
     { id: "notes", label: "Notes", description: "A quick scratchpad for notes that stick around.", section: "tools", icon: <NoteIcon />, active: notesOpen, onSelect: () => notesOpen ? notesWin.current?.close() : openNotes() },
     { id: "board", label: "Board", description: "A kanban board to track tasks across columns.", section: "tools", icon: <BoardIcon />, active: boardOpen, onSelect: () => boardOpen ? boardWin.current?.close() : openBoard() },
+    { id: "timesheet", label: "Timesheet", description: "Track work time by client, project, and task — start/stop timers (or let an agent do it) and review day, week, or month totals.", section: "tools", icon: <TimesheetIcon />, active: timesheetOpen, onSelect: () => timesheetOpen ? timesheetWin.current?.close() : openTimesheet() },
     { id: "prompt", label: "Prompt", description: "Turn a rough idea into a polished prompt for your agent.", section: "tools", icon: <PromptBubbleIcon />, active: builderOpen, onSelect: () => builderOpen ? closePanel("prompt") : openPanel("prompt") },
     { id: "secret", label: "Secret", description: "Share a password or key as a one-time, self-destructing link.", section: "tools", icon: <BurnIcon />, active: secretOpen, onSelect: () => secretOpen ? secretWin.current?.close() : openSecret() },
     { id: "access", label: "Share", description: "Share a temporary link so a friend can join your session. Accept them, set a time limit, revoke anytime.", section: "system", icon: <LinkIcon />, active: accessOpen, onSelect: () => accessOpen ? accessWin.current?.close() : openAccess() },
@@ -204,6 +210,7 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
       {browserOpen && <FileBrowserModal ref={browserWin} origin={browserOrigin} onClose={() => closePanel("files")} />}
       {notesOpen && <NotesModal ref={notesWin} origin={notesOrigin} onClose={() => closePanel("notes")} />}
       {boardOpen && <BoardModal ref={boardWin} origin={boardOrigin} onClose={() => closePanel("board")} />}
+      {timesheetOpen && <TimeSheetModal ref={timesheetWin} origin={timesheetOrigin} onClose={() => closePanel("timesheet")} />}
       {helpOpen && <HelpModal ref={helpWin} origin={helpOrigin} onClose={() => closePanel("help")} />}
       {secretOpen && <SecretModal ref={secretWin} origin={secretOrigin} onClose={() => closePanel("secret")} />}
       {accessOpen && <AccessLinksModal ref={accessWin} origin={accessOrigin} onClose={() => closePanel("access")} />}
@@ -311,6 +318,18 @@ function NoteIcon() {
       <path d="M8.5 8h7" />
       <path d="M8.5 12h7" />
       <path d="M8.5 16h4" />
+    </svg>
+  );
+}
+
+/** Stopwatch — the Timesheet time tracker. */
+function TimesheetIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 13V9" />
+      <path d="M9 2h6" />
+      <path d="M19 6l1.5-1.5" />
     </svg>
   );
 }

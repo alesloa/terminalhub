@@ -479,3 +479,49 @@ CREATE TABLE IF NOT EXISTS copilot_mcp_servers (
   createdAt  INTEGER NOT NULL,
   updatedAt  INTEGER NOT NULL
 );
+
+-- Timesheet: Harvest-style work-time tracking. `tt_entries` is one work session, started/stopped
+-- either by a terminal agent over the loopback REST API or by hand in the Timesheet panel. The
+-- client / project / task NAMES are stored denormalised on the entry (NOT foreign keys), so renaming
+-- or deleting a catalog item never rewrites history; the tt_clients / tt_projects / tt_tasks tables
+-- exist only to populate the dropdowns + the Settings tab. `stoppedAt` NULL = the timer is still
+-- running (several may run at once). Duration is always DERIVED (stoppedAt − startedAt, or
+-- now − startedAt while running) — never stored, so edits + live timers stay correct.
+CREATE TABLE IF NOT EXISTS tt_clients (
+  id        TEXT PRIMARY KEY,
+  name      TEXT NOT NULL,
+  archived  INTEGER NOT NULL DEFAULT 0,   -- hidden from dropdowns when 1 (history keeps the name)
+  position  INTEGER NOT NULL DEFAULT 0,
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tt_projects (
+  id        TEXT PRIMARY KEY,
+  clientId  TEXT NOT NULL,                -- owning client (plain column, no FK — store owns the cascade)
+  name      TEXT NOT NULL,
+  archived  INTEGER NOT NULL DEFAULT 0,
+  position  INTEGER NOT NULL DEFAULT 0,
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tt_projects_client ON tt_projects(clientId);
+CREATE TABLE IF NOT EXISTS tt_tasks (
+  id        TEXT PRIMARY KEY,
+  name      TEXT NOT NULL,                -- task type, e.g. Programming, Creating ads, Generating images
+  archived  INTEGER NOT NULL DEFAULT 0,
+  position  INTEGER NOT NULL DEFAULT 0,
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tt_entries (
+  id        TEXT PRIMARY KEY,
+  client    TEXT NOT NULL DEFAULT '',     -- snapshot names (denormalised on purpose — see above)
+  project   TEXT NOT NULL DEFAULT '',
+  task      TEXT NOT NULL DEFAULT '',
+  notes     TEXT NOT NULL DEFAULT '',
+  startedAt INTEGER NOT NULL,
+  stoppedAt INTEGER,                       -- NULL = still running
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tt_entries_started ON tt_entries(startedAt);

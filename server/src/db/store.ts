@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import type { Workspace, Terminal, Settings, CustomAgent, AccessKey, Bookmark, BetterCommentsConfig, BreakSettings, FavoriteGroup, Favorite, Blueprint, Note, Link, LinkFolder, StickyNote, SpaceWidget, SpaceWidgetKind, MeterBaseline, BoardCard, BoardColumn, Space, Folder, KeptVoice, CanvasBackground, StageDock, Wallpaper, WallpaperData, Reminder, AppNotification, ReminderStatus, NotifyChannels, Recurrence, CopilotSettings, CopilotConversation, CopilotStoredMessage, CopilotSkillState, CopilotSkillAccount, CopilotJob, CopilotReportMode, CopilotMcpServer, CopilotMcpServerConfig, CopilotMcpToolInfo, CopilotMcpTransport } from "../types.js";
+import type { Workspace, Terminal, Settings, CustomAgent, AccessKey, Bookmark, BetterCommentsConfig, BreakSettings, FavoriteGroup, Favorite, Blueprint, Note, Link, LinkFolder, StickyNote, SpaceWidget, SpaceWidgetKind, MeterBaseline, BoardCard, BoardColumn, Space, Folder, KeptVoice, CanvasBackground, StageDock, Wallpaper, WallpaperData, Reminder, AppNotification, ReminderStatus, NotifyChannels, Recurrence, CopilotSettings, CopilotConversation, CopilotStoredMessage, CopilotSkillState, CopilotSkillAccount, CopilotJob, CopilotReportMode, CopilotMcpServer, CopilotMcpServerConfig, CopilotMcpToolInfo, CopilotMcpTransport, TimeEntry, TimeClient, TimeProject, TimeTask } from "../types.js";
 import type { SpaceConfig, SpacePreset } from "../spaces/types.js";
 import { normalizeSpaceConfig } from "../spaces/types.js";
 import type { NotifyLevel, NotifyCategory } from "../notify/bus.js";
@@ -361,6 +361,30 @@ export interface Store {
   updateBoardCard(id: string, patch: Partial<Pick<BoardCard, "title" | "body" | "color">>): void;
   moveBoardCard(id: string, column: BoardColumn, position: number): void;
   deleteBoardCard(id: string): void;
+  // Timesheet (Harvest-style tracker). Entries store client/project/task NAMES (not FKs); the catalog
+  // tables only power the dropdowns. start/create auto-add any unknown name to the catalog so an agent
+  // never has to set it up first. listTimeEntries returns entries started within [from,to) plus any
+  // still-running entry. stopTimeEntry stops by id, by client (all running for it), or the latest
+  // running when given neither — returning the entries it stopped. See db/schema.sql.
+  listTimeEntries(from: number, to: number): TimeEntry[];
+  getTimeEntry(id: string): TimeEntry | undefined;
+  startTimeEntry(e: { client: string; project?: string; task?: string; notes?: string }): TimeEntry;
+  createTimeEntry(e: { client: string; project?: string; task?: string; notes?: string; startedAt: number; stoppedAt?: number | null }): TimeEntry;
+  stopTimeEntry(opts: { id?: string; client?: string; now: number }): TimeEntry[];
+  updateTimeEntry(id: string, patch: Partial<Pick<TimeEntry, "client" | "project" | "task" | "notes" | "startedAt" | "stoppedAt">>): TimeEntry | undefined;
+  deleteTimeEntry(id: string): void;
+  listTimeClients(): TimeClient[];
+  createTimeClient(name: string): TimeClient;
+  updateTimeClient(id: string, patch: Partial<Pick<TimeClient, "name" | "archived" | "position">>): TimeClient | undefined;
+  deleteTimeClient(id: string): void;            // also drops the client's projects (history keeps the names)
+  listTimeProjects(clientId?: string): TimeProject[];
+  createTimeProject(clientId: string, name: string): TimeProject;
+  updateTimeProject(id: string, patch: Partial<Pick<TimeProject, "name" | "archived" | "position">>): TimeProject | undefined;
+  deleteTimeProject(id: string): void;
+  listTimeTasks(): TimeTask[];
+  createTimeTask(name: string): TimeTask;
+  updateTimeTask(id: string, patch: Partial<Pick<TimeTask, "name" | "archived" | "position">>): TimeTask | undefined;
+  deleteTimeTask(id: string): void;
   createReminder(r: {
     title: string; body?: string; fireAt: number; allDay?: boolean; endAt?: number | null;
     leadMinutes?: number; color?: string | null; imagePath?: string | null;
@@ -638,6 +662,54 @@ export function createStore(path: string): Store {
     pushoverOk: r.pushoverOk === null || r.pushoverOk === undefined ? null : r.pushoverOk === 1,
     read: r.read === 1, firedAt: r.firedAt, createdAt: r.createdAt,
   });
+
+  // Timesheet row mappers. Entries keep stoppedAt as null when running; catalog rows store archived
+  // as 0/1, exposed as a boolean to the rest of the app.
+  const mapTimeEntry = (r: any): TimeEntry => ({
+    id: r.id, client: r.client, project: r.project, task: r.task, notes: r.notes,
+    startedAt: r.startedAt, stoppedAt: r.stoppedAt ?? null, createdAt: r.createdAt, updatedAt: r.updatedAt,
+  });
+  const mapTimeCat = (r: any) => ({ ...r, archived: r.archived === 1 });
+
+  // Catalog upserts: find a row by name (case-insensitive, trimmed) or create it. Used by start/create
+  // (so an agent naming a brand-new client/project/task auto-fills the dropdowns) AND by the catalog
+  // create endpoints (idempotent — POSTing the same name twice returns the existing row).
+  const ensureClient = (name: string): TimeClient | null => {
+    const n = (name ?? "").trim(); if (!n) return null;
+    const found = db.prepare(`SELECT * FROM tt_clients WHERE name=? COLLATE NOCASE`).get(n) as any;
+    if (found) return mapTimeCat(found);
+    const now = Date.now();
+    const position = (db.prepare(`SELECT COUNT(*) AS c FROM tt_clients`).get() as { c: number }).c;
+    const row = { id: id("cl_"), name: n, archived: 0, position, createdAt: now, updatedAt: now };
+    db.prepare(`INSERT INTO tt_clients (id,name,archived,position,createdAt,updatedAt) VALUES (@id,@name,@archived,@position,@createdAt,@updatedAt)`).run(row);
+    return mapTimeCat(row);
+  };
+  const ensureProject = (clientId: string, name: string): TimeProject | null => {
+    const n = (name ?? "").trim(); if (!n || !clientId) return null;
+    const found = db.prepare(`SELECT * FROM tt_projects WHERE clientId=? AND name=? COLLATE NOCASE`).get(clientId, n) as any;
+    if (found) return mapTimeCat(found);
+    const now = Date.now();
+    const position = (db.prepare(`SELECT COUNT(*) AS c FROM tt_projects WHERE clientId=?`).get(clientId) as { c: number }).c;
+    const row = { id: id("pj_"), clientId, name: n, archived: 0, position, createdAt: now, updatedAt: now };
+    db.prepare(`INSERT INTO tt_projects (id,clientId,name,archived,position,createdAt,updatedAt) VALUES (@id,@clientId,@name,@archived,@position,@createdAt,@updatedAt)`).run(row);
+    return mapTimeCat(row);
+  };
+  const ensureTask = (name: string): TimeTask | null => {
+    const n = (name ?? "").trim(); if (!n) return null;
+    const found = db.prepare(`SELECT * FROM tt_tasks WHERE name=? COLLATE NOCASE`).get(n) as any;
+    if (found) return mapTimeCat(found);
+    const now = Date.now();
+    const position = (db.prepare(`SELECT COUNT(*) AS c FROM tt_tasks`).get() as { c: number }).c;
+    const row = { id: id("tk_"), name: n, archived: 0, position, createdAt: now, updatedAt: now };
+    db.prepare(`INSERT INTO tt_tasks (id,name,archived,position,createdAt,updatedAt) VALUES (@id,@name,@archived,@position,@createdAt,@updatedAt)`).run(row);
+    return mapTimeCat(row);
+  };
+  // Auto-add an entry's client, its project (under that client), and its task to the catalog.
+  const ensureCatalog = (client?: string, project?: string, task?: string) => {
+    const c = ensureClient(client ?? "");
+    if (c && project) ensureProject(c.id, project);
+    ensureTask(task ?? "");
+  };
 
   const store: Store = {
     createWorkspace(w) {
@@ -1499,6 +1571,101 @@ export function createStore(path: string): Store {
       (db.prepare(`SELECT id FROM board_cards WHERE "column"=? ORDER BY position, createdAt`).all(cur.column) as { id: string }[])
         .forEach((r, i) => setPos.run(i, r.id));
     },
+    listTimeEntries(from, to) {
+      // Entries started within the range, PLUS any still-running entry (so a live timer always shows).
+      return (db.prepare(`SELECT * FROM tt_entries WHERE (startedAt >= @from AND startedAt < @to) OR stoppedAt IS NULL ORDER BY startedAt DESC`).all({ from, to }) as any[]).map(mapTimeEntry);
+    },
+    getTimeEntry(eid) {
+      const r = db.prepare(`SELECT * FROM tt_entries WHERE id=?`).get(eid);
+      return r ? mapTimeEntry(r) : undefined;
+    },
+    startTimeEntry(e) {
+      const now = Date.now();
+      ensureCatalog(e.client, e.project, e.task);
+      const row: TimeEntry = {
+        id: id("te_"), client: (e.client ?? "").trim(), project: (e.project ?? "").trim(),
+        task: (e.task ?? "").trim(), notes: e.notes ?? "", startedAt: now, stoppedAt: null, createdAt: now, updatedAt: now,
+      };
+      db.prepare(`INSERT INTO tt_entries (id,client,project,task,notes,startedAt,stoppedAt,createdAt,updatedAt)
+        VALUES (@id,@client,@project,@task,@notes,@startedAt,@stoppedAt,@createdAt,@updatedAt)`).run(row);
+      return row;
+    },
+    createTimeEntry(e) {
+      const now = Date.now();
+      ensureCatalog(e.client, e.project, e.task);
+      const row: TimeEntry = {
+        id: id("te_"), client: (e.client ?? "").trim(), project: (e.project ?? "").trim(),
+        task: (e.task ?? "").trim(), notes: e.notes ?? "", startedAt: e.startedAt, stoppedAt: e.stoppedAt ?? null, createdAt: now, updatedAt: now,
+      };
+      db.prepare(`INSERT INTO tt_entries (id,client,project,task,notes,startedAt,stoppedAt,createdAt,updatedAt)
+        VALUES (@id,@client,@project,@task,@notes,@startedAt,@stoppedAt,@createdAt,@updatedAt)`).run(row);
+      return row;
+    },
+    stopTimeEntry(opts) {
+      const { id: eid, client, now } = opts;
+      const stop = (r: any): TimeEntry => {
+        db.prepare(`UPDATE tt_entries SET stoppedAt=@now, updatedAt=@now WHERE id=@id`).run({ now, id: r.id });
+        return mapTimeEntry({ ...r, stoppedAt: now, updatedAt: now });
+      };
+      if (eid) {
+        const r = db.prepare(`SELECT * FROM tt_entries WHERE id=? AND stoppedAt IS NULL`).get(eid);
+        return r ? [stop(r)] : [];
+      }
+      if (client) {
+        const rows = db.prepare(`SELECT * FROM tt_entries WHERE stoppedAt IS NULL AND client=? COLLATE NOCASE ORDER BY startedAt DESC`).all(client) as any[];
+        return rows.map(stop);
+      }
+      const latest = db.prepare(`SELECT * FROM tt_entries WHERE stoppedAt IS NULL ORDER BY startedAt DESC LIMIT 1`).get();
+      return latest ? [stop(latest)] : [];
+    },
+    updateTimeEntry(eid, patch) {
+      const cur = store.getTimeEntry(eid); if (!cur) return undefined;
+      const next = { ...cur, ...patch, updatedAt: Date.now() };
+      db.prepare(`UPDATE tt_entries SET client=@client, project=@project, task=@task, notes=@notes, startedAt=@startedAt, stoppedAt=@stoppedAt, updatedAt=@updatedAt WHERE id=@id`)
+        .run({ id: eid, client: next.client, project: next.project, task: next.task, notes: next.notes, startedAt: next.startedAt, stoppedAt: next.stoppedAt, updatedAt: next.updatedAt });
+      return store.getTimeEntry(eid);
+    },
+    deleteTimeEntry(eid) { db.prepare(`DELETE FROM tt_entries WHERE id=?`).run(eid); },
+    listTimeClients() { return (db.prepare(`SELECT * FROM tt_clients ORDER BY position, name COLLATE NOCASE`).all() as any[]).map(mapTimeCat); },
+    createTimeClient(name) { return ensureClient(name)!; },
+    updateTimeClient(cid, patch) {
+      const cur = db.prepare(`SELECT * FROM tt_clients WHERE id=?`).get(cid) as any; if (!cur) return undefined;
+      const next = { ...cur, ...patch, archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : cur.archived, updatedAt: Date.now() };
+      db.prepare(`UPDATE tt_clients SET name=@name, archived=@archived, position=@position, updatedAt=@updatedAt WHERE id=@id`)
+        .run({ id: cid, name: next.name, archived: next.archived, position: next.position, updatedAt: next.updatedAt });
+      return mapTimeCat(db.prepare(`SELECT * FROM tt_clients WHERE id=?`).get(cid));
+    },
+    deleteTimeClient(cid) {
+      db.transaction(() => {
+        db.prepare(`DELETE FROM tt_projects WHERE clientId=?`).run(cid);
+        db.prepare(`DELETE FROM tt_clients WHERE id=?`).run(cid);
+      })();
+    },
+    listTimeProjects(clientId) {
+      const rows = (clientId
+        ? db.prepare(`SELECT * FROM tt_projects WHERE clientId=? ORDER BY position, name COLLATE NOCASE`).all(clientId)
+        : db.prepare(`SELECT * FROM tt_projects ORDER BY position, name COLLATE NOCASE`).all()) as any[];
+      return rows.map(mapTimeCat);
+    },
+    createTimeProject(clientId, name) { return ensureProject(clientId, name)!; },
+    updateTimeProject(pid, patch) {
+      const cur = db.prepare(`SELECT * FROM tt_projects WHERE id=?`).get(pid) as any; if (!cur) return undefined;
+      const next = { ...cur, ...patch, archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : cur.archived, updatedAt: Date.now() };
+      db.prepare(`UPDATE tt_projects SET name=@name, archived=@archived, position=@position, updatedAt=@updatedAt WHERE id=@id`)
+        .run({ id: pid, name: next.name, archived: next.archived, position: next.position, updatedAt: next.updatedAt });
+      return mapTimeCat(db.prepare(`SELECT * FROM tt_projects WHERE id=?`).get(pid));
+    },
+    deleteTimeProject(pid) { db.prepare(`DELETE FROM tt_projects WHERE id=?`).run(pid); },
+    listTimeTasks() { return (db.prepare(`SELECT * FROM tt_tasks ORDER BY position, name COLLATE NOCASE`).all() as any[]).map(mapTimeCat); },
+    createTimeTask(name) { return ensureTask(name)!; },
+    updateTimeTask(tid, patch) {
+      const cur = db.prepare(`SELECT * FROM tt_tasks WHERE id=?`).get(tid) as any; if (!cur) return undefined;
+      const next = { ...cur, ...patch, archived: patch.archived !== undefined ? (patch.archived ? 1 : 0) : cur.archived, updatedAt: Date.now() };
+      db.prepare(`UPDATE tt_tasks SET name=@name, archived=@archived, position=@position, updatedAt=@updatedAt WHERE id=@id`)
+        .run({ id: tid, name: next.name, archived: next.archived, position: next.position, updatedAt: next.updatedAt });
+      return mapTimeCat(db.prepare(`SELECT * FROM tt_tasks WHERE id=?`).get(tid));
+    },
+    deleteTimeTask(tid) { db.prepare(`DELETE FROM tt_tasks WHERE id=?`).run(tid); },
     createReminder(r) {
       const now = Date.now();
       const rem: Reminder = {

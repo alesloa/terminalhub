@@ -559,6 +559,13 @@ floating window that grows from its launcher tile and minimizes back into it.
 - **Notes** — a scratchpad: a list of notes with a rich editor, auto-save, and optional dictation.
 - **Board** — a server-backed kanban (To Do / In Progress / Done) you drag cards across. Because it's
   server-backed, agents in your terminals can read and move cards too (see API below).
+- **Timesheet** — a Harvest-style time tracker. Log work by **client → project → task → notes**; start
+  and stop timers (several can run at once) or add past entries by hand. **Day / Week / Calendar** views
+  with per-day, week, and month totals so you can go back and see how long you worked on any day. A
+  **Settings tab** manages the client / project / task catalog (the dropdown sources) and the window's
+  appearance (background, accent) and view defaults. Because it's server-backed, agents in your
+  terminals can start/stop timers too (see API below) — naming a brand-new client/project/task
+  auto-adds it to the catalog, so no setup is needed first.
 - **Prompt builder** — two modes: a Quick Prompt wizard (idea → refine → paste-ready prompt) and a
   Blueprint Canvas, a node-graph where you map a program as connected boxes and compile it to a
   detailed implementation prompt. Blueprints are saved.
@@ -837,6 +844,20 @@ over loopback (no token needed locally; `TERMINALHUB_TOKEN` Bearer when exposed)
 - **Task board API** — `GET /api/board`, `POST /api/board/cards`, `PATCH /api/board/cards/:id`
   (placement + edits in one call), `DELETE /api/board/cards/:id`. The floating board reflects changes
   within a couple of seconds.
+- **Timesheet API** — an agent can clock a job in one curl; unknown client/project/task names are
+  auto-added to the catalog, so no setup is needed first. Start, then stop:
+  ```bash
+  curl -sX POST localhost:8189/api/time/start -H 'content-type: application/json' \
+    -d '{"client":"National Disability Alliance","project":"NDA Brain","task":"Programming","notes":"landing page"}'
+  # → {"entry":{"id":"te_…", …}} — capture the id, then stop it:
+  curl -sX POST localhost:8189/api/time/stop -H 'content-type: application/json' -d '{"id":"te_…"}'
+  # stop fallbacks: {"client":"National Disability Alliance"} stops every running timer for that client;
+  #                 {} stops the most recently started running timer.
+  ```
+  Also: `GET /api/time/entries?from=<ms>&to=<ms>` (defaults to today; always includes running),
+  `POST /api/time/entries` (manual add with `startedAt`/`stoppedAt`), `PATCH`/`DELETE /api/time/entries/:id`,
+  and catalog CRUD under `/api/time/clients`, `/api/time/projects` (`?clientId=`), `/api/time/tasks`.
+  The floating Timesheet panel reflects changes within ~30s (or instantly on its own actions).
 - **One-time secrets** — agents can mint and burn encrypted links via the onetime service; the Help
   modal ships the gpg + curl recipe.
 

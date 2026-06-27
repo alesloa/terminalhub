@@ -334,6 +334,26 @@ export interface BoardCard {
   updatedAt: number;
 }
 
+// Timesheet (Harvest-style time tracker). One work session; `stoppedAt` null = still running. The
+// client/project/task NAMES are stored on the entry, not foreign keys — see db/schema.sql. Mirrored
+// by hand in web/src/api/types.ts.
+export interface TimeEntry {
+  id: string;
+  client: string;
+  project: string;
+  task: string;
+  notes: string;
+  startedAt: number;
+  stoppedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+// Timesheet catalog rows — the dropdown sources, managed in the panel's Settings tab. `archived`
+// hides a row from the dropdowns without touching past entries. Mirrored by hand in web types.
+export interface TimeClient { id: string; name: string; archived: boolean; position: number; createdAt: number; updatedAt: number; }
+export interface TimeProject { id: string; clientId: string; name: string; archived: boolean; position: number; createdAt: number; updatedAt: number; }
+export interface TimeTask { id: string; name: string; archived: boolean; position: number; createdAt: number; updatedAt: number; }
+
 export interface ProcessInfo {
   pid: number;
   ppid: number;
