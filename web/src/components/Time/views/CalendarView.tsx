@@ -6,16 +6,18 @@ interface Props {
   entries: TimeEntry[];    // entries fetched for the visible week
   now: number;
   accent: string | null;
-  onPickDay: (dayMs: number) => void;   // click a day header → open it in the Day view
+  onPickDay: (dayMs: number) => void;       // click a day header → open it in the Day view
+  onAddDay: (dayMs: number) => void;        // click empty space in a day column → add an entry there
+  onEditEntry: (entry: TimeEntry) => void;  // click a block → edit/delete that entry
 }
 
 const PX = 48;             // pixels per hour on the vertical axis
-const MIN_BLOCK = 16;      // a short entry still gets a tappable block
+const MIN_BLOCK = 18;      // a short entry still gets a clickable block
 
 /** The week as a Harvest-style calendar: a column per day, entries stacked from the top with height
  *  proportional to their duration, an hour axis on the left, per-day totals up top, and the week total.
- *  Blocks use the accent (blue). Clicking a day header drills into that day's view. */
-export function CalendarView({ days, entries, now, accent, onPickDay }: Props) {
+ *  Click a block to edit/delete it, empty space in a column to add time there, a day header to drill in. */
+export function CalendarView({ days, entries, now, accent, onPickDay, onAddDay, onEditEntry }: Props) {
   const ACCENT = accent ?? "#2563eb";
   const todayMs = dayStart(now);
 
@@ -27,20 +29,20 @@ export function CalendarView({ days, entries, now, accent, onPickDay }: Props) {
 
   return (
     <div className="overflow-auto">
-      <div className="min-w-[640px]">
+      <div className="min-w-[660px]">
         {/* Day headers with per-day totals; far right shows the week total. */}
         <div className="flex border-b border-edge">
           <div className="w-11 shrink-0" />
           {days.map((d, i) => {
-            const isToday = d === todayMs;
+            const today = d === todayMs;
             return (
-              <button key={d} onClick={() => onPickDay(d)}
+              <button key={d} onClick={() => onPickDay(d)} title="Open this day"
                 className="flex-1 min-w-0 text-left px-2 py-1.5 hover:bg-panel/40">
-                <div className="text-sm" style={isToday ? { color: ACCENT, fontWeight: 600 } : undefined}>
+                <div className="text-sm" style={today ? { color: ACCENT, fontWeight: 600 } : undefined}>
                   {new Date(d).toLocaleDateString([], { weekday: "short", day: "numeric" })}
                 </div>
-                <div className="text-xs tabular-nums" style={isToday ? { color: ACCENT } : undefined}>
-                  <span className={isToday ? "" : "text-dim"}>{fmtHM(dayTotals[i])}</span>
+                <div className="text-xs tabular-nums" style={today ? { color: ACCENT } : undefined}>
+                  <span className={today ? "" : "text-dim"}>{fmtHM(dayTotals[i])}</span>
                 </div>
               </button>
             );
@@ -59,10 +61,12 @@ export function CalendarView({ days, entries, now, accent, onPickDay }: Props) {
             ))}
           </div>
           {perDay.map((es, i) => {
-            const isToday = days[i] === todayMs;
+            const today = days[i] === todayMs;
             let top = 0;
             return (
-              <div key={days[i]} className="flex-1 min-w-0 relative border-l border-surface" style={isToday ? { backgroundColor: "rgba(37,99,235,0.06)" } : undefined}>
+              <div key={days[i]} onClick={() => onAddDay(days[i])} title="Click to add time"
+                className="flex-1 min-w-0 relative border-l border-surface cursor-pointer"
+                style={today ? { backgroundColor: "rgba(37,99,235,0.06)" } : undefined}>
                 {/* hour gridlines */}
                 {Array.from({ length: maxHours }, (_, h) => (
                   <div key={h} className="absolute left-0 right-0 border-t border-surface" style={{ top: (h + 1) * PX }} />
@@ -73,8 +77,8 @@ export function CalendarView({ days, entries, now, accent, onPickDay }: Props) {
                   const blockTop = top;
                   top += (sec / 3600) * PX;
                   return (
-                    <div key={e.id} title={`${e.project || e.client}${e.task ? " · " + e.task : ""}`}
-                      className="absolute left-0 right-0 mx-0.5 rounded px-1.5 py-0.5 text-white overflow-hidden text-[11px] leading-tight"
+                    <button key={e.id} onClick={(ev) => { ev.stopPropagation(); onEditEntry(e); }} title="Edit entry"
+                      className="absolute left-0 right-0 mx-0.5 rounded px-1.5 py-0.5 text-left text-white overflow-hidden text-[11px] leading-tight hover:brightness-110"
                       style={{ top: blockTop, height: h, backgroundColor: ACCENT }}>
                       <div className="flex items-baseline justify-between gap-1">
                         <span className="font-medium truncate">{e.project || e.client || "—"}</span>
@@ -82,7 +86,7 @@ export function CalendarView({ days, entries, now, accent, onPickDay }: Props) {
                       </div>
                       {e.task && h > 30 && <div className="opacity-90 truncate">{e.task}</div>}
                       {e.project && e.client && h > 46 && <div className="opacity-75 truncate">{e.client}</div>}
-                    </div>
+                    </button>
                   );
                 })}
               </div>

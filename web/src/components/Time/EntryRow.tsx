@@ -39,7 +39,8 @@ export function EntryRow({ entry, now, catalog, onStop, onSave, onDelete }: Prop
       {running
         ? <button onClick={() => onStop(entry.id)} className="px-2 py-1 rounded bg-red-600/80 hover:bg-red-500 text-white text-xs">Stop</button>
         : <span className="w-9" />}
-      <button onClick={() => setEditing(true)} title="Edit" className="opacity-0 group-hover:opacity-100 text-dim hover:text-fg text-xs px-1">✎</button>
+      <button onClick={() => setEditing(true)} title="Edit" className="opacity-0 group-hover:opacity-100 text-dim hover:text-fg text-sm px-1">✎</button>
+      <button onClick={() => onDelete(entry.id)} title="Delete entry" className="opacity-0 group-hover:opacity-100 text-dim hover:text-red-400 text-sm px-1">✕</button>
     </div>
   );
 }

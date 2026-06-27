@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState, type CSSProperties, type TransitionEventHandler } from "react";
+import type { TimeEntry } from "../../api/types";
 import type { WinRect } from "../../store/ui";
 import { spacesBarBottom } from "../../store/ui";
 import { useDraggableWindow, type WindowHandle } from "../../hooks/useDraggableWindow";
@@ -57,7 +58,8 @@ export const TimeSheetModal = forwardRef<WindowHandle, { origin?: WinRect | null
   const [tab, setTab] = useState<"sheet" | "settings">("sheet");
   const [view, setView] = useState<TimeView>(prefs.defaultView);
   const [selected, setSelected] = useState(() => Date.now());
-  const [addOpen, setAddOpen] = useState(false);
+  // One popup drives both add and edit. entry → edit; defaults/day → prefilled add; {} → blank add.
+  const [dialog, setDialog] = useState<null | { entry?: TimeEntry; defaults?: { client?: string; project?: string; task?: string; manual?: boolean }; day?: number }>(null);
   const now = useNow(1000);
   const catalog = useTimeCatalog();
 
@@ -142,11 +144,12 @@ export const TimeSheetModal = forwardRef<WindowHandle, { origin?: WinRect | null
       {tab === "sheet" && (
         <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2 border-b border-edge">
           <div className="flex items-center gap-2">
-            <button onClick={() => setAddOpen(true)} title="New time entry"
-              style={prefs.accent ? { backgroundColor: prefs.accent } : undefined}
-              className={`w-9 h-9 shrink-0 inline-flex items-center justify-center rounded-md text-white ${prefs.accent ? "" : "bg-green-600 hover:bg-green-500"}`}>
-              <PlusIcon />
-            </button>
+            {view !== "week" && (
+              <button onClick={() => setDialog({})} title="New time entry"
+                className="w-9 h-9 shrink-0 inline-flex items-center justify-center rounded-md text-white bg-green-600 hover:bg-green-500">
+                <PlusIcon />
+              </button>
+            )}
             <DateNav label={label} prefix={prefix} onPrev={() => step(-1)} onNext={() => step(1)} onToday={() => setSelected(Date.now())} />
           </div>
           <div className="flex items-center gap-1">{(["day", "week", "calendar"] as TimeView[]).map(viewBtn)}</div>
@@ -157,14 +160,20 @@ export const TimeSheetModal = forwardRef<WindowHandle, { origin?: WinRect | null
         {tab === "settings"
           ? <SettingsTab catalog={catalog} prefs={prefs} setPrefs={setPrefs} />
           : view === "day" ? <DayView sheet={sheet} catalog={catalog} now={now} accent={prefs.accent} day={dayStart(selected)} />
-          : view === "week" ? <WeekView sheet={sheet} now={now} accent={prefs.accent} days={days} onPickDay={(d) => { setSelected(d); setView("day"); }} onAddRow={() => setAddOpen(true)} />
-          : <CalendarView days={days} entries={sheet.entries} now={now} accent={prefs.accent} onPickDay={(d) => { setSelected(d); setView("day"); }} />}
+          : view === "week" ? <WeekView sheet={sheet} now={now} accent={prefs.accent} days={days} onAddRow={() => setDialog({})} />
+          : <CalendarView days={days} entries={sheet.entries} now={now} accent={prefs.accent}
+              onPickDay={(d) => { setSelected(d); setView("day"); }}
+              onAddDay={(d) => setDialog({ defaults: { manual: true }, day: d })}
+              onEditEntry={(e) => setDialog({ entry: e })} />}
       </div>
 
       <ResizeHandles onStart={beginResize} />
 
-      {addOpen && tab === "sheet" && (
-        <NewEntryDialog catalog={catalog} sheet={sheet} accent={prefs.accent} day={dayStart(selected)} onClose={() => setAddOpen(false)} />
+      {dialog && tab === "sheet" && (
+        <NewEntryDialog catalog={catalog} sheet={sheet} accent={prefs.accent}
+          day={dialog.day ?? dayStart(selected)}
+          editEntry={dialog.entry} defaults={dialog.defaults}
+          onClose={() => setDialog(null)} />
       )}
     </div>
   );
