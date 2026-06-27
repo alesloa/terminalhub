@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { EditorView as CMView, keymap } from "@codemirror/view";
 import { EditorState, Compartment, Prec } from "@codemirror/state";
 import { indentWithTab } from "@codemirror/commands";
@@ -6,7 +6,7 @@ import { search } from "@codemirror/search";
 import { basicSetup } from "codemirror";
 import { api } from "../../api/client";
 import type { FsFile } from "../../api/types";
-import { useRoom } from "../../store/room";
+import { useRoom, RoomContext } from "../../store/room";
 import { useUi } from "../../store/ui";
 import { useToasts } from "../../store/toasts";
 import { editorTheme, loadLanguage, minimapExt, languageIdFor } from "../../lib/codeMirror";
@@ -24,6 +24,11 @@ import { FindWidget } from "./FindWidget";
 // rather than fighting the bundle. Other gutters (fold) stay.
 const hideLineNumbers = CMView.theme({ ".cm-lineNumbers": { display: "none" } });
 
+// A caret move bigger than this many lines counts as a "jump" — it records a new Back/Forward stop
+// (like clicking across the file). Smaller moves and typing just update the current stop in place,
+// so the history holds the places you navigated to, not every keystroke. VS Code uses ~10.
+const NAV_LINE_GAP = 10;
+
 export function FileEditor({ path, name, rootPath, readOnly }: { path: string; name: string; rootPath: string; readOnly?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<CMView | null>(null);
@@ -37,8 +42,17 @@ export function FileEditor({ path, name, rootPath, readOnly }: { path: string; n
   const clearPendingJump = useRoom(s => s.clearPendingJump);
   const openFile = useRoom(s => s.openFile);
   const jumpToPosition = useRoom(s => s.jumpToPosition);
-  const recordNav = useRoom(s => s.recordNav);
   const pushToast = useToasts(s => s.push);
+  // Vanilla store handle: lets the CodeMirror listeners call nav actions imperatively without
+  // re-creating the editor when those actions' identities change (they don't, but this keeps the
+  // listener closure free of stale references).
+  const roomStore = useContext(RoomContext)!;
+  // Back/Forward jump-history bookkeeping. `applyingJump` is true while WE move the caret
+  // programmatically (a pendingJump scroll), so the selection listener ignores it instead of
+  // recording a phantom navigation. `lastNavLine` is the line the current history stop sits on, used
+  // to tell a real "jump" (big move → new stop) from a nudge (small move → update the stop).
+  const applyingJump = useRef(false);
+  const lastNavLine = useRef(1);
   // The installed language server for this file's language (or null), and a toast if it's missing.
   const lspServer = useFileLanguageServer(name);
   const minimap = useUi(s => s.minimap);
@@ -157,9 +171,25 @@ export function FileEditor({ path, name, rootPath, readOnly }: { path: string; n
             lineNumComp.current.of(lineNumbers ? [] : hideLineNumbers),
             commentComp.current.of(betterCommentsExtension(betterComments)),
             CMView.updateListener.of(u => {
-              if (!u.docChanged) return;
-              setDirty(path, true);
-              setDocumentContent(path, u.state.doc.toString());
+              if (u.docChanged) {
+                setDirty(path, true);
+                setDocumentContent(path, u.state.doc.toString());
+              }
+              // Record where the caret goes for Back/Forward. Skip programmatic moves (pendingJump
+              // scrolls set applyingJump) so they don't log a phantom stop. A big move (clicking
+              // across the file) records a new stop; typing or a small move just keeps the current
+              // stop in sync so Back/Forward land where you actually left off.
+              if (applyingJump.current || (!u.selectionSet && !u.docChanged)) return;
+              const head = u.state.selection.main.head;
+              const ln = u.state.doc.lineAt(head);
+              const col = head - ln.from;
+              const store = roomStore.getState();
+              if (!u.docChanged && Math.abs(ln.number - lastNavLine.current) > NAV_LINE_GAP) {
+                store.recordJump(path, name, ln.number, col);
+              } else {
+                store.settleCursor(path, name, ln.number, col);
+              }
+              lastNavLine.current = ln.number;
             }),
           ],
         }),
@@ -196,9 +226,11 @@ export function FileEditor({ path, name, rootPath, readOnly }: { path: string; n
         const v = viewRef.current;
         if (v) {
           const ln = v.state.doc.lineAt(sourcePos);
-          recordNav({ path, name, line: ln.number, col: sourcePos - ln.from });
+          roomStore.getState().recordJump(path, name, ln.number, sourcePos - ln.from);
         }
-        openFile({ path: t.path, name: t.name, kind: "file", readOnly: isExternalTo(t.path, rootPath) });
+        // Open the target tab without its own history stop, then jumpToPosition records the exact
+        // destination — so the round-trip is two clean stops (call site → definition), no duplicate.
+        openFile({ path: t.path, name: t.name, kind: "file", readOnly: isExternalTo(t.path, rootPath) }, { recordNav: false });
         jumpToPosition({ path: t.path, name: t.name }, t.line, t.col);
       },
       onNoDefinition: () => pushToast("No definition found", { level: "info" }),
@@ -208,7 +240,7 @@ export function FileEditor({ path, name, rootPath, readOnly }: { path: string; n
       if (viewRef.current) viewRef.current.dispatch({ effects: lspComp.current.reconfigure([]) });
       releaseLspClient(workspaceId, languageId);
     };
-  }, [status, lspServer, workspaceId, rootPath, path, name, openFile, jumpToPosition, recordNav, pushToast]);
+  }, [status, lspServer, workspaceId, rootPath, path, name, openFile, jumpToPosition, roomStore, pushToast]);
 
   // Bookmark navigation / panel clicks / go-to-def ask this tab to scroll to a line (+ optional
   // column). Consume the request once the matching editor is ready: center + select the position,
@@ -220,10 +252,29 @@ export function FileEditor({ path, name, rootPath, readOnly }: { path: string; n
     const lineNo = Math.min(Math.max(1, pendingJump.line), view.state.doc.lines);
     const line = view.state.doc.line(lineNo);
     const pos = pendingJump.col != null ? Math.min(line.from + pendingJump.col, line.to) : line.from;
+    // Programmatic move: flag it so the caret listener doesn't log this as a user navigation. The
+    // stop itself was already recorded by whatever set pendingJump (jumpTo* / Back/Forward).
+    applyingJump.current = true;
     view.dispatch({ selection: { anchor: pos }, effects: CMView.scrollIntoView(pos, { y: "center" }) });
+    applyingJump.current = false;
     view.focus();
+    lastNavLine.current = lineNo;
     clearPendingJump();
   }, [pendingJump, path, status, clearPendingJump]);
+
+  // When this tab becomes the active editor, sync the current history stop to the caret it actually
+  // shows — refining the file-level stop recorded on the tab switch to the real position, so Back/
+  // Forward restore where you left off. Skipped while a jump is steering the caret (it sets the line).
+  useEffect(() => {
+    if (activeFile !== path || status !== "ready") return;
+    if (pendingJump?.path === path) return;
+    const view = viewRef.current;
+    if (!view) return;
+    const head = view.state.selection.main.head;
+    const ln = view.state.doc.lineAt(head);
+    lastNavLine.current = ln.number;
+    roomStore.getState().settleCursor(path, name, ln.number, head - ln.from);
+  }, [activeFile, path, status, pendingJump, name, roomStore]);
 
   useEffect(() => {
     if (!autoSave || !dirty || status !== "ready") return;

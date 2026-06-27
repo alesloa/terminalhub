@@ -28,6 +28,11 @@ export function EditorArea({ rootPath }: { rootPath: string }) {
   const activeFile = useRoom(s => s.activeFile);
   const pinned = useRoom(s => s.pinnedFiles);
   const setActiveFile = useRoom(s => s.setActiveFile);
+  // Editor Back/Forward — the complete file/caret navigation history (VS Code / Zed style).
+  const navBack = useRoom(s => s.navBack);
+  const navForward = useRoom(s => s.navForward);
+  const canBack = useRoom(s => s.navIndex > 0);
+  const canForward = useRoom(s => s.navIndex >= 0 && s.navIndex < s.navStack.length - 1);
   const closeFile = useRoom(s => s.closeFile);
   const closeMany = useRoom(s => s.closeMany);
   const togglePin = useRoom(s => s.togglePin);
@@ -116,6 +121,15 @@ export function EditorArea({ rootPath }: { rootPath: string }) {
   return (
     <div className="flex-1 min-h-[120px] flex flex-col bg-canvas">
       <div className="flex items-stretch h-9 border-b border-edge text-sm">
+        {/* Back / Forward sit to the LEFT of the tabs (where you reach for them), and walk the room's
+            file + caret navigation history — clicking through files, jumping to definitions, and
+            moving around inside a file all record stops. */}
+        <div className="shrink-0 flex items-center gap-0.5 px-1.5 border-r border-edge">
+          <button onClick={() => navBack()} disabled={!canBack} title="Go Back" aria-label="Go Back"
+            className="w-7 h-7 inline-flex items-center justify-center rounded text-base leading-none text-muted hover:bg-surface hover:text-bright disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-default">←</button>
+          <button onClick={() => navForward()} disabled={!canForward} title="Go Forward" aria-label="Go Forward"
+            className="w-7 h-7 inline-flex items-center justify-center rounded text-base leading-none text-muted hover:bg-surface hover:text-bright disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-default">→</button>
+        </div>
         <div className="flex items-stretch flex-1 min-w-0 overflow-x-auto">
           {ordered.map(f => (
             <Tab key={f.path} active={activeFile === f.path}

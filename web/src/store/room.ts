@@ -171,7 +171,7 @@ export interface RoomState {
   setEditorMirror(openFiles: OpenFile[], activeFile: string): void; // viewer: adopt the host's exact open tabs + active tab
   setViewMirror(v: RoomViewState): void; // viewer: adopt the host's sidebar/panel chrome (active view, panels, sizes)
 
-  openFile(f: OpenFile): void;
+  openFile(f: OpenFile, opts?: { recordNav?: boolean }): void; // recordNav:false skips the history stop (go-to-def opens the tab then records via jumpToPosition)
   openMarkdownPreview(f: { path: string; name: string }): void;
   openCsvPreview(f: { path: string; name: string }): void;   // (re)open a file in the CSV grid editor
   openDocxPreview(f: { path: string; name: string }): void;  // (re)open a file in the Word rich editor
@@ -210,7 +210,8 @@ export interface RoomState {
   jumpToLine(file: { path: string; name: string }, line: number): void; // open the tab + scroll to a line
   jumpToPosition(file: { path: string; name: string }, line: number, col?: number): void; // open the tab + scroll to line:col (go-to-def)
   clearPendingJump(): void;
-  recordNav(loc: NavLoc): void;  // push a location onto the jump history (e.g. the spot a go-to-def jumped FROM)
+  recordJump(path: string, name: string, line: number, col: number): void;   // push a new history stop (go-to-def FROM-spot, or a big in-file caret jump)
+  settleCursor(path: string, name: string, line: number, col: number): void; // keep the current stop's caret synced (typing / small caret moves), no new stop
   navBack(): void;               // Back: revisit the previous location in the jump history
   navForward(): void;            // Forward: revisit the next location in the jump history
   setBookmarkView(view: BookmarkView): void;
@@ -238,13 +239,25 @@ function pushNav(s: RoomState, loc: NavLoc): Pick<RoomState, "navStack" | "navIn
   return { navStack, navIndex: navStack.length - 1 };
 }
 
-/** Apply a Back/Forward step: focus `loc` (re-opening its tab if it was closed) and ask the editor to
- *  scroll there — WITHOUT recording a new history entry. */
+/** Record that `path` became the active file (a tab click / open / jump target): push a file-level
+ *  history stop, refined to the real caret line later by the editor (settleCursor). No-op if we're
+ *  already on that file, or it's a synthetic tab (a diff) that can't be faithfully revisited. */
+function navTab(s: RoomState, path: string, name: string): Pick<RoomState, "navStack" | "navIndex"> | object {
+  if (path.startsWith("∆")) return {}; // diff / synthetic tab — not a real file location
+  const cur = s.navIndex >= 0 ? s.navStack[s.navIndex] : null;
+  if (cur && cur.path === path) return {}; // already the current location
+  return pushNav(s, { path, name, line: 1, col: 0 });
+}
+
+/** Apply a Back/Forward step: focus `loc` (re-opening its tab — faithfully, as its rich/preview kind —
+ *  if it was closed) and ask the editor to scroll there, WITHOUT recording a new history entry. */
 function applyNav(s: RoomState, navIndex: number): Partial<RoomState> {
   const loc = s.navStack[navIndex];
+  const rk = richKindFor(loc.name);
+  const reopened: OpenFile = rk ? { path: loc.path, name: loc.name, kind: rk, sourcePath: loc.path } : { path: loc.path, name: loc.name };
   return {
     navIndex,
-    openFiles: s.openFiles.some(o => o.path === loc.path) ? s.openFiles : [...s.openFiles, { path: loc.path, name: loc.name }],
+    openFiles: s.openFiles.some(o => o.path === loc.path) ? s.openFiles : [...s.openFiles, reopened],
     activeFile: loc.path,
     pendingJump: { path: loc.path, line: loc.line, col: loc.col },
   };
@@ -261,6 +274,13 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
   const touched = !!L?.windowMoved;
   const windowed = touched ? (!!L?.windowed && !!saved) : init.windowed;
   const windowRect = (touched ? saved : null) ?? init.windowRect;
+  // Seed the (ephemeral) jump history with the restored active tab, so Back can return to where you
+  // were when the room reopens — not just to wherever your first click lands.
+  const seedActive = L?.activeFile ?? "";
+  const seedName = (L?.openFiles ?? []).find(o => o.path === seedActive)?.name;
+  const navSeed = seedActive && seedName && !seedActive.startsWith("∆")
+    ? { navStack: [{ path: seedActive, name: seedName, line: 1, col: 0 }], navIndex: 0 }
+    : { navStack: [] as NavLoc[], navIndex: -1 };
   return createStore<RoomState>((set, get) => ({
     workspaceId: init.workspaceId,
     // Restore the last-selected terminal; Room's keep-active effect drops it back to the first
@@ -299,8 +319,8 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
     pinnedFiles: new Set<string>(),
     agentPickerOpen: false,
     pendingJump: null,
-    navStack: [],
-    navIndex: -1,
+    navStack: navSeed.navStack,
+    navIndex: navSeed.navIndex,
     bookmarkView: "tree",
     search: EMPTY_SEARCH,
 
@@ -329,7 +349,7 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
     // is open, the SCM sub-tab, panel open/collapsed state, and panel sizes) so the viewer's frame matches.
     setViewMirror: (v) => set(v),
 
-    openFile: (f) => set((s) => {
+    openFile: (f, opts) => set((s) => {
       // Markdown / CSV / Word / image / PDF / video open directly in their rich reader/viewer by
       // default (see richKindFor); a caller that wants the raw code editor passes kind:"file"
       // explicitly. Other kinds (diff) pass through as-is.
@@ -338,6 +358,9 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
       return {
         openFiles: s.openFiles.some(o => o.path === entry.path) ? s.openFiles : [...s.openFiles, entry],
         activeFile: entry.path,
+        // go-to-definition opens the target tab itself then records the destination via jumpToPosition,
+        // so it passes recordNav:false here to avoid a duplicate file-level stop.
+        ...(opts?.recordNav === false ? {} : navTab(s, entry.path, entry.name)),
       };
     }),
     openMarkdownPreview: (f) => set((s) => {
@@ -351,14 +374,15 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
             .map(o => o.path === f.path ? { ...o, ...entry } : o)
           : [...s.openFiles.filter(o => o.path !== oldSyntheticKey), entry],
         activeFile: f.path,
+        ...navTab(s, f.path, f.name),
       };
     }),
     // CSV / Word / "edit as code" all just flip an existing tab's kind in place (the tab key is the
     // real file path for these), or open a fresh tab of that kind. One tab per file path.
-    openCsvPreview: (f) => set((s) => reKindTab(s, f, "csv-preview")),
-    openDocxPreview: (f) => set((s) => reKindTab(s, f, "docx-preview")),
-    openHtmlPreview: (f) => set((s) => reKindTab(s, f, "html-preview")),
-    openAsCode: (f) => set((s) => reKindTab(s, f, "file")),
+    openCsvPreview: (f) => set((s) => ({ ...reKindTab(s, f, "csv-preview"), ...navTab(s, f.path, f.name) })),
+    openDocxPreview: (f) => set((s) => ({ ...reKindTab(s, f, "docx-preview"), ...navTab(s, f.path, f.name) })),
+    openHtmlPreview: (f) => set((s) => ({ ...reKindTab(s, f, "html-preview"), ...navTab(s, f.path, f.name) })),
+    openAsCode: (f) => set((s) => ({ ...reKindTab(s, f, "file"), ...navTab(s, f.path, f.name) })),
     // Diff tabs get a synthetic key so they coexist with a normal editor tab for the
     // same file (and staged vs worktree diffs are distinct tabs).
     openDiff: (d) => set((s) => {
@@ -417,7 +441,7 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
       pinnedFiles.has(path) ? pinnedFiles.delete(path) : pinnedFiles.add(path);
       return { pinnedFiles };
     }),
-    setActiveFile: (path) => set({ activeFile: path }),
+    setActiveFile: (path) => set((s) => ({ activeFile: path, ...navTab(s, path, s.openFiles.find(o => o.path === path)?.name ?? path) })),
     // Clicking the already-active view collapses the sidebar (VS Code behaviour); any
     // other click opens the sidebar and switches to it.
     selectView: (view) => set((s) => (view === s.activeView && s.leftOpen ? { leftOpen: false } : { activeView: view, leftOpen: true })),
@@ -513,9 +537,19 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
       ...pushNav(s, { path: file.path, name: file.name, line, col: col ?? 0 }),
     })),
     clearPendingJump: () => set({ pendingJump: null }),
-    // Record a location in the jump history without navigating (the editor calls this with the spot a
-    // go-to-def jumped FROM, so Back returns there). jumpToPosition then records the destination.
-    recordNav: (loc) => set((s) => pushNav(s, loc)),
+    // Push a new history stop (a "jump": go-to-def FROM-spot, or a big in-file caret move the editor
+    // detects). pushNav truncates any forward entries and dedupes the same file+line.
+    recordJump: (path, name, line, col) => set((s) => pushNav(s, { path, name, line, col })),
+    // Keep the CURRENT stop's caret position in sync as you type / nudge the caret within the same
+    // file, so Back/Forward land where you actually left — without adding a new stop. No-op if the
+    // current stop is a different file (a file switch is recorded by navTab, not here).
+    settleCursor: (path, name, line, col) => set((s) => {
+      const cur = s.navIndex >= 0 ? s.navStack[s.navIndex] : null;
+      if (!cur || cur.path !== path || (cur.line === line && cur.col === col)) return s;
+      const navStack = s.navStack.slice();
+      navStack[s.navIndex] = { path, name, line, col };
+      return { navStack };
+    }),
     navBack: () => set((s) => (s.navIndex > 0 ? applyNav(s, s.navIndex - 1) : s)),
     navForward: () => set((s) => (s.navIndex >= 0 && s.navIndex < s.navStack.length - 1 ? applyNav(s, s.navIndex + 1) : s)),
     setBookmarkView: (bookmarkView) => set({ bookmarkView }),

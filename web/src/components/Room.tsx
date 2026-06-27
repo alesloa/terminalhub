@@ -144,11 +144,6 @@ function RoomBody({ room }: { room: OpenRoom }) {
   const windowRect = useRoom(s => s.windowRect);
   const setWindowRect = useRoom(s => s.setWindowRect);
   const toggleWindowed = useRoom(s => s.toggleWindowed);
-  // Editor jump history (Back/Forward) — primarily the go-to-definition round-trip.
-  const navBack = useRoom(s => s.navBack);
-  const navForward = useRoom(s => s.navForward);
-  const canBack = useRoom(s => s.navIndex > 0);
-  const canForward = useRoom(s => s.navIndex >= 0 && s.navIndex < s.navStack.length - 1);
   // True only while a live drag/resize is in flight — drops the window's transform transition so it
   // tracks the pointer 1:1 instead of easing behind it (see the transition string below).
   const [dragging, setDragging] = useState(false);
@@ -375,15 +370,9 @@ function RoomBody({ room }: { room: OpenRoom }) {
         <div className="flex-1 min-w-0 flex justify-center px-2">
           <span dir="rtl" title={ws.folder} className="truncate text-xs text-dim max-w-full">{ws.folder}</span>
         </div>
-        {/* right: window controls */}
+        {/* right: window controls. (Editor Back / Forward now live at the left of the editor tab
+            strip — see EditorArea.) */}
         <div className="flex items-center gap-2 shrink-0" onPointerDown={(e) => e.stopPropagation()}>
-          {/* editor Back / Forward — traverse the go-to-definition jump history */}
-          <div className="flex items-center gap-1">
-            <button onClick={navBack} disabled={!canBack} title="Go Back" aria-label="Go Back"
-              className="px-2 h-6 inline-flex items-center peacock-btn rounded text-sm leading-none disabled:opacity-30 disabled:cursor-default">←</button>
-            <button onClick={navForward} disabled={!canForward} title="Go Forward" aria-label="Go Forward"
-              className="px-2 h-6 inline-flex items-center peacock-btn rounded text-sm leading-none disabled:opacity-30 disabled:cursor-default">→</button>
-          </div>
           {micPos === "top" && <MicButton />}
           <button onClick={minimize} title="Minimize to dock" aria-label="Minimize to dock"
             className="px-2 h-6 inline-flex items-center peacock-btn rounded text-sm leading-none">—</button>
