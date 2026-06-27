@@ -360,6 +360,7 @@ export const api = {
     fetch: (p: string) => req<{ message: string }>("POST", "/api/git/fetch", { path: p }),
     pull: (p: string) => req<{ message: string }>("POST", "/api/git/pull", { path: p }),
     push: (p: string, setUpstream?: boolean) => req<{ message: string }>("POST", "/api/git/push", { path: p, setUpstream }),
+    forcePush: (p: string, setUpstream?: boolean) => req<{ message: string }>("POST", "/api/git/force-push", { path: p, setUpstream }),
     sync: (p: string) => req<{ message: string }>("POST", "/api/git/sync", { path: p }),
     stashSave: (p: string, message: string, includeUntracked: boolean) => req<{ ok: true }>("POST", "/api/git/stash", { path: p, message, includeUntracked }),
     stashFile: (p: string, file: string | string[], message?: string) => req<{ ok: true }>("POST", "/api/git/stash/file", { path: p, file, message }),

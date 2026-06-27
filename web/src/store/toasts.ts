@@ -7,11 +7,14 @@ import { create } from "zustand";
  *  history — and a cross-browser "removed" broadcast drops the toast here by this id too.
  *  `leaving` is set while the slide-out animation plays, just before the toast is removed. */
 export type ToastLevel = "info" | "success" | "warn" | "error";
-export interface Toast { id: string; text: string; title?: string; level?: ToastLevel; notifId?: string; workspaceId?: string; terminalId?: string; imageUrl?: string; leaving?: boolean }
+/** An optional button on a toast (e.g. "Force Push" on a diverged-push error). In-memory only — the
+ *  callback can't be persisted/broadcast, so action toasts are ephemeral UI toasts (no notifId). */
+export interface ToastAction { label: string; onClick: () => void }
+export interface Toast { id: string; text: string; title?: string; level?: ToastLevel; notifId?: string; workspaceId?: string; terminalId?: string; imageUrl?: string; action?: ToastAction; leaving?: boolean }
 
 interface ToastState {
   toasts: Toast[];
-  push(text: string, opts?: { workspaceId?: string; terminalId?: string; sticky?: boolean; ttl?: number; title?: string; level?: ToastLevel; notifId?: string; imageUrl?: string }): void;
+  push(text: string, opts?: { workspaceId?: string; terminalId?: string; sticky?: boolean; ttl?: number; title?: string; level?: ToastLevel; notifId?: string; imageUrl?: string; action?: ToastAction }): void;
   dismiss(id: string): void;
   dismissByNotif(notifId: string): void;
 }

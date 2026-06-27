@@ -73,6 +73,14 @@ export function Toaster() {
     dismiss(t.id);
   };
 
+  // An action toast (e.g. "Force Push" on a diverged-push error): run its callback, then clear the
+  // toast — same handled/dismiss path as a manual dismiss (a no-op for plain UI toasts with no notifId).
+  const act = (t: Toast) => {
+    t.action?.onClick();
+    handled(t.notifId);
+    dismiss(t.id);
+  };
+
   const b = band(position);
   // Newest toast sits nearest the edge it enters from: at the top for top-anchored stacks, at the
   // bottom otherwise. The store appends newest last, so reverse only for top anchors.
@@ -88,14 +96,15 @@ export function Toaster() {
           from={t.title ?? wsOf(t.workspaceId)?.name}
           onGo={() => go(t)}
           onDismiss={() => onDismiss(t)}
+          onAction={() => act(t)}
         />
       ))}
     </div>
   );
 }
 
-function ToastItem({ t, anim, from, onGo, onDismiss }: {
-  t: Toast; anim: string; from?: string; onGo: () => void; onDismiss: () => void;
+function ToastItem({ t, anim, from, onGo, onDismiss, onAction }: {
+  t: Toast; anim: string; from?: string; onGo: () => void; onDismiss: () => void; onAction: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const long = t.text.length > 64; // ~two lines at this width — anything longer gets a Show more
@@ -124,6 +133,16 @@ function ToastItem({ t, anim, from, onGo, onDismiss }: {
           className="block w-full pb-2 pl-[4rem] pr-3 text-left text-[11px] text-link hover:underline">
           {expanded ? "Show less" : "Show more"}
         </button>
+      )}
+      {/* Action button (e.g. Force Push) — a sibling of the body button, aligned under the message.
+          Runs the toast's callback, which clears this toast and (for Force Push) opens the confirm. */}
+      {t.action && (
+        <div className="pb-2.5 pl-[4rem] pr-3">
+          <button type="button" onClick={onAction}
+            className="rounded-lg border border-edge-strong bg-elevated px-2.5 py-1 text-xs font-medium text-bright hover:bg-edge">
+            {t.action.label}
+          </button>
+        </div>
       )}
       {/* Small neutral ✕ — dismiss without navigating. Always visible (not hover-gated) so it's
           findable, and neutral so it never competes with the level's accent color. */}

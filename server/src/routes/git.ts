@@ -331,6 +331,12 @@ export async function gitRoutes(app: FastifyInstance, ctx: AppContext) {
     return runValue(reply, async () => ({ message: await git.sync(b.data.path) }));
   });
 
+  app.post("/api/git/force-push", async (req, reply) => {
+    const b = z.object({ path: z.string().min(1), setUpstream: z.boolean().optional() }).safeParse(req.body);
+    if (!b.success) return reply.code(400).send({ error: "path required" });
+    return runValue(reply, async () => ({ message: await git.forcePush(b.data.path, b.data.setUpstream) }));
+  });
+
   app.post("/api/git/stash", async (req, reply) => {
     const b = z.object({ path: z.string().min(1), message: z.string().optional(), includeUntracked: z.boolean().optional() })
       .safeParse(req.body);

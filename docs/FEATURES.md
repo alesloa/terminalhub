@@ -417,6 +417,15 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
   by origin owner and injected for that one command — your active `gh` account is never switched. For
   an org-owned repo, if the active account can't authenticate it transparently retries as the other
   signed-in accounts. A genuine non-auth failure (rejected push, merge conflict) still surfaces as-is.
+- **Force Push** — in the git-ops menu (the ⌄ next to the smart-sync button): overwrites the remote
+  branch with your local one (`git push --force`). The escape hatch when a branch has diverged with
+  *unrelated histories* (a re-init'd repo, or a remote that was force-pushed elsewhere) — Sync can't
+  merge those ("refusing to merge unrelated histories") and a plain push is rejected, so a force-push
+  is the only way to make the remote match local. Gated behind a centered confirm (it discards remote
+  commits you don't have and can't be undone) and account-aware like the other network ops. When a
+  **Sync or Push fails** for exactly this reason, the error toast itself grows a **Force Push** button
+  (and sticks, so the offer doesn't time out) — one click opens that same confirm, so the dead-end
+  becomes a one-tap fix instead of sending you hunting through the menu.
 - **Resizable tabs section** — the bottom block (the `folder / branch` header + tab strip + tab
   body) is drag-to-resize against the commit/changes area above it. Grab it from the thin seam at
   its top *or* anywhere along the whole header bar (its buttons stay clickable).
@@ -427,7 +436,7 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
 - **GitHub integration** — an authenticated panel to browse repos and work with pull requests.
 - **AI commit messages** — generate a commit message for a repo via a configured AI provider (local
   CLI, OpenAI-compatible, or Anthropic). API providers (OpenAI, DeepSeek, Kimi/Moonshot, OpenRouter,
-  Gemini, …) just need an API key pasted in; a **↻ Refresh** button next to the model field fetches
+  …) just need an API key pasted in; a **↻ Refresh** button next to the model field fetches
   the provider's live model list (OpenAI-compatible `GET /models`, Anthropic `GET /v1/models`) into a
   dropdown so you pick a real model instead of typing an id. Base URL, the env-var key fallback, and a
   manual model-id field live under a collapsed **Advanced** section. Keys are stored server-side and
@@ -588,9 +597,9 @@ floating window that grows from its launcher tile and minimizes back into it.
   link you can paste into Chrome/Firefox for devtools. Caveats: live HMR doesn't tunnel through the
   proxy (the app loads and is interactive; refresh to see code changes), and a default Vite server
   needs `base: './'` to load its assets under the proxy.
-- **Copilot** — an in-app AI assistant that knows the whole app and acts on it (notes, board,
+- **Agent** — an in-app AI assistant that knows the whole app and acts on it (notes, board,
   reminders, alerts, terminals, email, and scheduled background loops). Opens from this tile or the
-  canvas orb. See the **Copilot** section below.
+  canvas orb. See the **Agent** section below.
 - **Help** — copy-paste integration blocks for `CLAUDE.md` / `AGENTS.md`, in Messaging, Task Board,
   and Secrets tabs, plus one-liners to test by hand.
 - **Share** — add a teammate with a temporary, revocable access link instead of handing out your
@@ -652,34 +661,37 @@ floating window that grows from its launcher tile and minimizes back into it.
   drops their card frames as well as their typing). This is separate from "Mirror my view" (which is the
   owner's one-way presentation): card positions are shared state, so they sync regardless of who moves them.
 
-## Copilot (in-app AI assistant)
+## Agent (in-app AI assistant)
 
 An always-available AI assistant that knows the whole app and can act on it. It lives as a **canvas
 orb** (a floating blue spark) and a **launcher tile** in the top-bar Tools group; both open the same
-floating, draggable, resizable **Copilot window** (grows from its opener, minimizes back into it). The
+floating, draggable, resizable **Agent window** (grows from its opener, minimizes back into it). The
 orb itself is **drag-to-move** — grab it and drop it anywhere so it never overlaps the canvas zoom/grid
 controls; the spot is remembered per-browser. It's **edge-anchored**, so it tracks window resizes — drop
 it on the right and it keeps its distance from the right edge (follows it as you resize), while left/middle
 placements stay put — and it clamps back into view if the window shrinks past it (a clean tap still opens
 the window). A master **enable/disable** plus the orb's on/off and its starting
-corner live in **Settings → Copilot**. The window has three tabs: **Chat**, **Skills**, and **Schedules**.
+corner live in **Settings → Agent**. The window has three tabs: **Chat**, **Skills**, and **Schedules**.
 
 - **Chat** — a conversational assistant that both **answers questions about Terminal Hub** (it carries
   a manifest of every feature drawn from this file, so "how do I share a room?" or "what's Stage
   Manager?" gets a real answer) **and takes actions** through a native **tool-use loop**: it streams a
   reply token-by-token, calls tools as needed, shows each call as an inline **chip** (name + result),
   and feeds the result back to itself until it's done. The brain is whichever **AI provider** you've
-  configured (Anthropic, or any OpenAI-compatible endpoint — the same keys the rest of the app uses);
-  CLI agents are not used here. An **engine picker** in the chat header chooses which provider answers —
-  **Auto** follows your app default, or pick a specific configured provider for this conversation
-  (matching how the comment generator and other AI tools select a provider). Dangerous actions are
-  **confirm-gated** — the copilot asks before anything that types into a terminal, and you approve in
+  configured — an **API engine** (Anthropic or any OpenAI-compatible endpoint) that streams with native
+  tool-use, **or a CLI engine** (`claude`, `codex`, …) driven over a JSON text protocol: the Agent
+  describes its tools in the prompt and the CLI replies with a `{ reply, tool_calls }` envelope that the
+  loop parses and executes, so a CLI gets full tool access too (one process per step → slower, and no
+  live token streaming — the reply lands at once). An **engine picker** in the chat header chooses which
+  provider answers — **Auto** follows your app default (preferring an API engine, falling back to any
+  enabled CLI), or pick a specific configured provider for this conversation. Dangerous actions are
+  **confirm-gated** — the Agent asks before anything that types into a terminal, and you approve in
   the chat.
 - **What it can do (Core skill, always on)** — take and list **notes**; read, add, and move **board**
   cards; set and list **reminders**; fire an in-app **alert/notification**; report on your **spaces,
   workspaces, and terminals**; **send keystrokes to a terminal** (marked dangerous → always asks
   first); explain any **feature** or answer "how do I…"; and create/list/cancel **scheduled loops**
-  (below). Disabling a skill removes its tools from the copilot.
+  (below). Disabling a skill removes its tools from the Agent.
 - **Skills** — assignable capabilities shown as cards you toggle on/off, each with a description and
   example phrasings. The built-in **Core** skill is always on; others (like Email) you enable when you
   want them. Account-managing skills surface their connected accounts right on the card.
@@ -687,9 +699,9 @@ corner live in **Settings → Copilot**. The window has three tabs: **Chat**, **
   Hotmail, Yahoo, or any generic IMAP** server. Add a mailbox on the skill card (label, provider,
   address, and an **app-specific password** — stored server-side, never returned to the browser, shown
   only as saved); then just ask in natural language ("any unread from my bank this week?") and the
-  copilot routes to the right mailbox and reports exactly what it found (`email_check` / `email_search`
+  Agent routes to the right mailbox and reports exactly what it found (`email_check` / `email_search`
   run real IMAP searches and parse the messages). Multiple mailboxes can be connected at once.
-- **Tool servers (MCP)** — connect **Model Context Protocol** servers to give the copilot extra tools
+- **Tool servers (MCP)** — connect **Model Context Protocol** servers to give the Agent extra tools
   (web search, browsers, APIs, your own servers). In the Skills tab, **import** the MCP servers already
   in your `~/.claude.json` in one click, or **add one by hand** — a local **stdio** command or a remote
   **http** URL, plus any **environment secrets** (write-only: sent to the server, only the key names
@@ -971,11 +983,11 @@ Full implementation plans (data model, file map, decisions, open questions) live
 - Full plan: [`../_todo/space-creation-wizard/`](../_todo/space-creation-wizard/plans.md).
 
 <!-- Calendar, reminders & Pushover graduated from "planned" to shipped — they're documented under
-     the Notification center / Today widget / Calendar panel above, and the Copilot can drive reminders
+     the Notification center / Today widget / Calendar panel above, and the Agent can drive reminders
      and Pushover-backed scheduled loops. -->
 
 ### Calendar, reminders & Pushover — ✅ shipped
 
 - **Calendar & reminders**, **scheduled delivery** (with "(missed)" catch-up on boot), **Pushover
   setup**, and the **Notification center** are all built — see the Notification center and Today widget
-  sections above. The Copilot's reminders and scheduled loops also report through these channels.
+  sections above. The Agent's reminders and scheduled loops also report through these channels.

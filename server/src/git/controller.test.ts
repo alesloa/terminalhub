@@ -151,6 +151,25 @@ describe("createGitController mutations", () => {
     await expect(createGitController(run).push("/x")).rejects.toThrow("rejected");
   });
 
+  it("force-pushes the current branch with a plain --force", async () => {
+    const { run, calls } = fakeRunner(() => ({ stderr: "+ abc...def main -> main (forced update)\n" }));
+    const msg = await createGitController(run).forcePush("/x");
+    expect(msg).toBe("+ abc...def main -> main (forced update)");
+    expect(calls[0]).toEqual(["push", "--force"]);
+  });
+
+  it("force-pushes with -u origin HEAD when there's no upstream yet", async () => {
+    const { run, calls } = fakeRunner(() => ({ stderr: "branch set up\n" }));
+    await createGitController(run).forcePush("/x", true);
+    expect(calls[0]).toEqual(["push", "-u", "--force", "origin", "HEAD"]);
+  });
+
+  it("throws GitError with git's stderr when a force-push is rejected (protected branch)", async () => {
+    const { run } = fakeRunner(() => ({ code: 1, stderr: "! [remote rejected] main -> main (protected branch hook declined)\n" }));
+    await expect(createGitController(run).forcePush("/x")).rejects.toThrow(GitError);
+    await expect(createGitController(run).forcePush("/x")).rejects.toThrow("protected branch");
+  });
+
   it("returns a confirmation from fetch even when nothing is new (empty output)", async () => {
     const { run, calls } = fakeRunner(() => ({ stdout: "", stderr: "" }));
     expect(await createGitController(run).fetch("/x")).toBe("Fetched.");

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { useRoom } from "../../store/room";
 import { useToasts } from "../../store/toasts";
+import { confirmModal } from "../../store/confirm";
 import { useGit } from "./useGit";
 import { PublishModal } from "./PublishModal";
 import { PrCreateModal } from "./PrCreateModal";
@@ -64,10 +65,33 @@ export function GitHeader({ rootPath, onResizeStart }:
   // Every network op toasts git's own transcript on success ("Everything up-to-date",
   // "Already up to date.", "Fetched.", "… -> main") so nothing completes in silence.
   const toastMsg = (d: unknown) => push((d as { message: string }).message);
+  // Force Push overwrites the remote with the local branch — the only way out when histories have
+  // diverged with no shared ancestor (Sync can't merge unrelated histories). Destructive on the
+  // remote, so it's gated behind a confirm (like every other destructive git action here).
+  const forcePushCur = async () => {
+    const ok = await confirmModal({
+      title: "Force push?",
+      body: `This overwrites the remote ${branch} with your local branch, discarding ${behind > 0 ? `${behind} commit${behind === 1 ? "" : "s"} on the remote you don't have` : "any remote commits you don't have"}. This can't be undone.`,
+      confirmLabel: "Force Push",
+    });
+    if (ok) run(() => api.git.forcePush(rootPath, !published), { onSuccess: toastMsg });
+  };
+  // A push/sync that fails because the branch has diverged (unrelated histories, or a
+  // non-fast-forward rejection) can ONLY be resolved by overwriting the remote — so that error
+  // toast carries a Force Push button (which opens the confirm above) instead of dead-ending on a
+  // message. It sticks (no auto-dismiss) so the offer doesn't vanish while you read it. NOT offered
+  // on a failed pull/fetch: there, force-pushing would destroy the very remote commits you wanted.
+  const divergedPushFailure = (msg: string) =>
+    /unrelated histories|non-fast-forward|\(fetch first\)|\[rejected\]|tip of your current branch is behind/i.test(msg);
+  const onNetErr = (e: Error) =>
+    divergedPushFailure(e.message)
+      ? push(e.message, { sticky: true, action: { label: "Force Push", onClick: () => void forcePushCur() } })
+      : push(e.message);
+
   const fetchAll = () => run(() => api.git.fetch(rootPath), { onSuccess: toastMsg });
   const pullCur = () => run(() => api.git.pull(rootPath), { onSuccess: toastMsg });
-  const pushCur = () => run(() => api.git.push(rootPath, !published), { onSuccess: toastMsg });
-  const syncCur = () => run(() => api.git.sync(rootPath), { onSuccess: toastMsg });
+  const pushCur = () => run(() => api.git.push(rootPath, !published), { onSuccess: toastMsg, onError: onNetErr });
+  const syncCur = () => run(() => api.git.sync(rootPath), { onSuccess: toastMsg, onError: onNetErr });
   const publishOrPush = () => (hasRemote ? pushCur() : setPublishOpen(true));
 
   // The primary button is a smart sync, like VS Code's: Publish when there's no remote or
@@ -145,7 +169,7 @@ export function GitHeader({ rootPath, onResizeStart }:
             <MenuItem onClick={close(syncCur)} disabled={pending}>Sync (Pull, Push)</MenuItem>
             <MenuItem onClick={close(publishOrPush)} disabled={pending}>Push</MenuItem>
             <MenuItem onClick={close(() => notWired("Push To"))}>Push To…</MenuItem>
-            <MenuItem onClick={close(() => notWired("Force Push"))}>Force Push</MenuItem>
+            <MenuItem onClick={close(forcePushCur)} disabled={pending}>Force Push</MenuItem>
             <MenuSep />
             <MenuItem onClick={close(() => setPrCreateOpen(true))}>Create Pull Request</MenuItem>
             <MenuItem onClick={close(() => setScmTab("prs"))}>View Pull Requests</MenuItem>

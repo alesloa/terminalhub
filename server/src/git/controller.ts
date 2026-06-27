@@ -80,6 +80,7 @@ export interface GitController {
   fetch(cwd: string): Promise<string>; // git's transcript ("Fetched." when nothing new)
   pull(cwd: string): Promise<string>; // "Already up to date." / "Fast-forward …"
   push(cwd: string, setUpstream?: boolean): Promise<string>; // git's status line ("Everything up-to-date" / "… -> main")
+  forcePush(cwd: string, setUpstream?: boolean): Promise<string>; // overwrite the remote with local (diverged / unrelated histories)
   sync(cwd: string): Promise<string>; // diverged branch: pull (merge) then push, in one go
   stashList(cwd: string): Promise<StashEntry[]>;
   stashFiles(cwd: string, ref: string): Promise<CommitFile[]>; // files a stash changed vs its base, for a side-by-side diff
@@ -344,6 +345,18 @@ export function createGitController(run: GitRunner = realRunner, resolveAuth?: G
       const r = await runNet(setUpstream ? ["push", "-u", "origin", "HEAD"] : ["push"], cwd);
       if (r.code !== 0) throw new GitError(r.stderr || r.stdout, r.code);
       return (r.stderr || r.stdout).trim() || "Pushed."; // push reports on stderr
+    },
+    // Overwrite the remote with the local branch: the escape hatch when a branch has diverged with
+    // UNRELATED histories (a re-init'd repo, a force-pushed remote) — a merge can't reconcile those,
+    // so Sync dies on "refusing to merge unrelated histories" and only a force-push can win. Plain
+    // --force (not --force-with-lease) because the whole point is "make origin match me, whatever's
+    // there" — a stale lease would just reintroduce the friction we're escaping. Destructive on the
+    // remote, so the UI gates it behind a confirm.
+    async forcePush(cwd, setUpstream) {
+      const args = setUpstream ? ["push", "-u", "--force", "origin", "HEAD"] : ["push", "--force"];
+      const r = await runNet(args, cwd);
+      if (r.code !== 0) throw new GitError(r.stderr || r.stdout, r.code);
+      return (r.stderr || r.stdout).trim() || "Force-pushed."; // push reports on stderr
     },
     // A diverged branch (ahead AND behind) can't fast-forward push — integrate first.
     // `--no-rebase` forces a merge so we never depend on the host's pull.rebase config
