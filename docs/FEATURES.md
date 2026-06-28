@@ -229,6 +229,19 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
   default but anything you can type (`codex`, a plain shell, your own wrapper).
 - **Per-terminal launch override** — a single terminal can run a different agent/command than the
   workspace default.
+- **Layered system prompts** — attach a system prompt to any agent launch, composed of three
+  independently-controllable layers that merge global → workspace → terminal:
+  - **Global (per agent)** — a base system prompt for each detected agent, set in **Settings → Agent
+    Prompts** (one textarea per CLI found on `$PATH`). Every launch of that agent starts with it.
+  - **Workspace** — a cog in the room header opens a draggable window to set a prompt for that
+    workspace. A "Build on the agent's global prompt" toggle either appends it to the global layer or
+    replaces it (use only the workspace text).
+  - **Terminal** — the New-terminal modal has a one-off "System message for this terminal" field with
+    its own "build on the layer above" toggle, layered on top of global ⊕ workspace.
+  - **Injection is per-agent.** Claude takes the merged prompt via `--append-system-prompt-file`
+    (a temp file). Codex/opencode (`AGENTS.md`), Gemini (`GEMINI.md`), and Cursor (`.cursor/rules`)
+    get it written into the workspace folder inside a non-destructive managed block, so it sits
+    alongside any existing instructions and is rewritten each launch. Empty layers inject nothing.
 - **Custom agents** — define named agents (command + icon) in the New-terminal picker, filed under a
   category you choose or name (defaults to "Other"; "Detected agents" is reserved for `$PATH`-detected
   built-ins). Hover a custom agent to remove it. Built-in agents are detected from `$PATH`.
@@ -570,7 +583,19 @@ floating window that grows from its launcher tile and minimizes back into it.
   Credentials resolve Settings-first, falling back to the `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
   env vars (with an optional `GOOGLE_OAUTH_REDIRECT`); when neither is set the *＋ Connect Google
   Drive* row opens Settings and `/api/drive/*` returns "not configured" — no fake accounts.
-- **Notes** — a scratchpad: a list of notes with a rich editor, auto-save, and optional dictation.
+- **Notes** — a macOS-Notes-style scratchpad laid out in three panes: a **group rail**, a searchable
+  note list, and the editor. **Groups** are collections you file notes into — create one in the rail
+  (inline rename, click its dot to recolor), then move a note in three ways: **drag** a list row onto a
+  group, **right-click → Move to**, or the editor's **Move to** selector. "All Notes" / "Ungrouped" are
+  always there; deleting a group keeps its notes (they fall back to Ungrouped). A collapsible **search**
+  (the ⌕ button) finds across **every note in every group** by title + body and highlights matches,
+  showing which group each hit lives in; a **sort** menu orders by Recent / Title A–Z / Created. The
+  editor has two modes: **Rich** (book icon) is a formatted WYSIWYG editor with a markdown **toolbar** —
+  bold/italic, headings (font size), lists, links, tables, images, code — and **Source** (code icon)
+  edits the raw markdown with find/replace. Both are editable and share one autosaved body, so toggling
+  never loses text; a note the rich editor can't parse falls back to Source automatically. Plus **Copy as
+  Markdown**, a live **word count**, optional dictation, and a right-click menu (Copy / Duplicate / Move
+  to group / Delete).
 - **Board** — a server-backed kanban (To Do / In Progress / Done) you drag cards across. Because it's
   server-backed, agents in your terminals can read and move cards too (see API below).
 - **Timesheet** — a Harvest-style time tracker. Log work by **client → project → task → notes**; start

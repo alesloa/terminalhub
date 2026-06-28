@@ -81,6 +81,7 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
       canvasBackground: ctx.store.getCanvasBackground(),
       stageDock: ctx.store.getStageDock(),
       breaks: ctx.store.getBreaks(),
+      agentSystemPrompts: ctx.store.getAgentSystemPrompts(),
     };
   });
   app.patch("/api/settings", async (req, reply) => {
@@ -112,13 +113,17 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
       canvasBackground: canvasBackground.optional(), // JSON blob, persisted separately
       stageDock: stageDock.optional(), // JSON blob, persisted separately
       breaks: breaks.optional(), // JSON blob, persisted separately
+      // Per-agent global system prompts (agent id → prompt text). Replaces the whole map. Persisted
+      // separately under the `agentSystemPrompts` settings key.
+      agentSystemPrompts: z.record(z.string(), z.string()).optional(),
     }).safeParse(req.body);
     if (!b.success) return reply.code(400).send({ error: "invalid body" });
-    const { betterComments: bc, canvasBackground: cb, stageDock: sd, breaks: br, ...rest } = b.data;
+    const { betterComments: bc, canvasBackground: cb, stageDock: sd, breaks: br, agentSystemPrompts: asp, ...rest } = b.data;
     if (bc) ctx.store.setBetterComments(bc);
     if (cb) ctx.store.setCanvasBackground(cb);
     if (sd) ctx.store.setStageDock(sd);
     if (br) ctx.store.setBreaks(br);
+    if (asp) ctx.store.setAgentSystemPrompts(asp);
     ctx.store.setSettings(rest);
     // Recolor every live terminal's status bar now (not just on next attach) when the status-text
     // color changes, so the change shows immediately across all open terminals.

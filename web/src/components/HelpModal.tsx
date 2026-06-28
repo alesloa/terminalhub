@@ -70,6 +70,49 @@ const BOARD_SNIPPET = [
 const BOARD_TEST =
   "curl -sS -X POST http://127.0.0.1:8189/api/board/cards -H 'content-type: application/json' -d '{\"title\":\"hello from your agent\"}'";
 
+// CLAUDE.md / AGENTS.md block teaching an agent to save notes into the Notes panel. The notes API
+// takes plain JSON, so only the JSON " need escaping; \\ is a shell line-continuation. `\\n` inside a
+// JSON string survives single quotes as the two chars backslash-n, which the server's JSON.parse then
+// turns into a real newline — so multi-line markdown content lands correctly.
+const NOTES_SNIPPET = [
+  "## Save notes to my Terminal Hub notepad",
+  "",
+  "You're running inside a Terminal Hub terminal. I keep a Notes panel — a notepad of markdown notes,",
+  "optionally filed into named groups. When you produce something worth keeping (a summary, a plan, a",
+  "snippet, findings), save it as a note so it's waiting in my dashboard. It's on the host next to the",
+  "server, so reach it on 127.0.0.1 with no token.",
+  "",
+  "```bash",
+  "# list my notes — each has an \"id\" like np_..., a title, content (markdown), and a groupId",
+  "curl -sS http://127.0.0.1:8189/api/notes",
+  "",
+  "# add a note — content is markdown; title is optional (I show the first line when it's blank)",
+  "curl -sS -X POST http://127.0.0.1:8189/api/notes \\",
+  "  -H 'content-type: application/json' \\",
+  "  -d '{\"title\":\"Auth findings\",\"content\":\"# Summary\\n- uses the existing guard\\n- token on the WS only\"}'",
+  "",
+  "# list groups (collections) — each has an \"id\" like ng_... and a name",
+  "curl -sS http://127.0.0.1:8189/api/note-groups",
+  "",
+  "# create a group, then file a note into it by its groupId (send \"groupId\":null to un-file)",
+  "curl -sS -X POST http://127.0.0.1:8189/api/note-groups \\",
+  "  -H 'content-type: application/json' -d '{\"name\":\"Research\"}'",
+  "curl -sS -X PATCH http://127.0.0.1:8189/api/notes/<id> \\",
+  "  -H 'content-type: application/json' -d '{\"groupId\":\"<groupId>\"}'",
+  "",
+  "# delete a note",
+  "curl -sS -X DELETE http://127.0.0.1:8189/api/notes/<id>",
+  "```",
+  "",
+  "- content is markdown — the note opens in the rich editor (headings, lists, bold, code, tables).",
+  "- Leave groupId off (or null) for an ungrouped note; set a ng_... id to file it in a group.",
+  "- One PATCH updates any of title, content, or groupId. Get the ids from the list calls.",
+].join("\n");
+
+// A bare one-liner for adding a test note by hand from any terminal.
+const NOTES_TEST =
+  "curl -sS -X POST http://127.0.0.1:8189/api/notes -H 'content-type: application/json' -d '{\"title\":\"hello from your agent\",\"content\":\"# Notes\\nThis note was created from a terminal.\"}'";
+
 // CLAUDE.md / AGENTS.md block teaching an agent to mint one-time, end-to-end-encrypted burnable
 // links via gpg + curl against the external onetime/Yopass service (NOT the Terminal Hub server). Plain
 // double-quoted JS strings so the shell's ${...}/$(...)/single-quotes survive; only JSON/shell " are
@@ -171,7 +214,7 @@ const TIMESHEET_SNIPPET = [
 const TIMESHEET_TEST =
   "curl -sS -X POST http://127.0.0.1:8189/api/time/start -H 'content-type: application/json' -d '{\"client\":\"Test Client\",\"task\":\"Programming\"}'";
 
-type Tab = "messaging" | "board" | "calendar" | "timesheet" | "secrets" | "sharing" | "copilot";
+type Tab = "messaging" | "board" | "notes" | "calendar" | "timesheet" | "secrets" | "sharing" | "copilot";
 
 const RECT_KEY = "tr.helpRect"; // remembered window geometry (per-browser)
 const MIN_W = 520, MIN_H = 360;
@@ -262,6 +305,7 @@ export const HelpModal = forwardRef<WindowHandle, { origin?: WinRect | null; onC
       <div className="shrink-0 flex items-center gap-1 px-4 border-b border-edge">
         <TabButton active={tab === "messaging"} onClick={() => setTab("messaging")}>Messaging</TabButton>
         <TabButton active={tab === "board"} onClick={() => setTab("board")}>Task board</TabButton>
+        <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>Notes</TabButton>
         <TabButton active={tab === "calendar"} onClick={() => setTab("calendar")}>Calendar</TabButton>
         <TabButton active={tab === "timesheet"} onClick={() => setTab("timesheet")}>Timesheet</TabButton>
         <TabButton active={tab === "secrets"} onClick={() => setTab("secrets")}>Secrets</TabButton>
@@ -270,7 +314,7 @@ export const HelpModal = forwardRef<WindowHandle, { origin?: WinRect | null; onC
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto p-5 space-y-6 text-sm leading-relaxed">
-        {tab === "messaging" ? <MessagingHelp /> : tab === "board" ? <BoardHelp /> : tab === "calendar" ? <CalendarHelp /> : tab === "timesheet" ? <TimesheetHelp /> : tab === "secrets" ? <SecretsHelp /> : tab === "sharing" ? <SharingHelp /> : <CopilotHelp />}
+        {tab === "messaging" ? <MessagingHelp /> : tab === "board" ? <BoardHelp /> : tab === "notes" ? <NotesHelp /> : tab === "calendar" ? <CalendarHelp /> : tab === "timesheet" ? <TimesheetHelp /> : tab === "secrets" ? <SecretsHelp /> : tab === "sharing" ? <SharingHelp /> : <CopilotHelp />}
       </div>
 
       <ResizeHandles onStart={beginResize} />
@@ -366,6 +410,54 @@ function BoardHelp() {
           <li>On the board itself: drag cards between lanes, double-click to edit, and <span className="text-fg">right-click</span> a card for color (the shade picker), move, or delete.</li>
           <li>Click a card to select it, then press <span className="text-fg">Delete</span> (or Backspace) to remove it.</li>
           <li>Cards live in SQLite (table <span className="text-fg">board_cards</span>) — color and all — durable across restarts and refreshes.</li>
+          <li>Default port is <span className="text-fg">8189</span> — if you changed <span className="text-fg">PORT</span>, use that instead.</li>
+        </ul>
+      </div>
+    </>
+  );
+}
+
+/** Tab: saving notes into the Notes panel (markdown notes, optionally filed into groups). */
+function NotesHelp() {
+  return (
+    <>
+      <p className="text-fg">
+        The Notes panel (the notepad window) is server-backed too, so an agent in a room can write to it —
+        save a summary, a plan, or findings as a markdown note, and file it into a group if you like. It's
+        on <code className="text-bright">127.0.0.1</code> with no token, and the panel shows the new note
+        on its own the next time it's opened.
+      </p>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="font-medium text-bright">1. Teach your agent to save notes</div>
+          <CopyButton text={NOTES_SNIPPET} label="Copy snippet" />
+        </div>
+        <p className="text-dim">
+          Paste this into the <code className="text-fg">CLAUDE.md</code> (or{" "}
+          <code className="text-fg">AGENTS.md</code>) of any project you open as a workspace, so the
+          agent jots notes into the panel as it works.
+        </p>
+        <CodeBlock text={NOTES_SNIPPET} />
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="font-medium text-bright">2. Or add one yourself to test</div>
+          <CopyButton text={NOTES_TEST} label="Copy command" />
+        </div>
+        <p className="text-dim">Run this in any terminal — a note appears in the Notes panel.</p>
+        <CodeBlock text={NOTES_TEST} />
+      </div>
+
+      <div className="space-y-1.5 text-dim">
+        <div className="font-medium text-bright">Good to know</div>
+        <ul className="list-disc pl-5 space-y-1">
+          <li><span className="text-fg">content</span> is markdown — the note opens in the rich editor (bold, headings, lists, links, tables, code), with a raw-source toggle.</li>
+          <li><span className="text-fg">groupId</span> files a note into a group (a <span className="text-fg">ng_…</span> id from <span className="text-fg">/api/note-groups</span>); omit it or send <span className="text-fg">null</span> to leave it ungrouped.</li>
+          <li>One <span className="text-fg">PATCH /api/notes/&lt;id&gt;</span> updates any of title, content, or groupId; <span className="text-fg">DELETE</span> removes a note.</li>
+          <li>In the panel itself: drag a note onto a group, <span className="text-fg">right-click</span> for Copy / Duplicate / Move / Delete, and search across every note.</li>
+          <li>Notes live in SQLite (tables <span className="text-fg">notes</span> + <span className="text-fg">note_groups</span>) — durable across restarts and refreshes.</li>
           <li>Default port is <span className="text-fg">8189</span> — if you changed <span className="text-fg">PORT</span>, use that instead.</li>
         </ul>
       </div>

@@ -1,5 +1,5 @@
-export interface Terminal { id: string; workspaceId: string; title: string; color: string | null; icon: string | null; tmuxSession: string; launchCommandOverride: string | null; position: number; createdAt: number; titleAuto: boolean; alive?: boolean; }
-export interface Workspace { id: string; name: string; folder: string; launchCommand: string; color: string | null; cardColor: string | null; layout: string | null; spaceId: string | null; folderId: string | null; config: SpaceConfig | null; x: number; y: number; createdAt: number; updatedAt: number; terminals?: Terminal[]; }
+export interface Terminal { id: string; workspaceId: string; title: string; color: string | null; icon: string | null; tmuxSession: string; launchCommandOverride: string | null; position: number; createdAt: number; titleAuto: boolean; systemPrompt: { text: string; includeParent: boolean } | null; alive?: boolean; }
+export interface Workspace { id: string; name: string; folder: string; launchCommand: string; color: string | null; cardColor: string | null; layout: string | null; spaceId: string | null; folderId: string | null; config: SpaceConfig | null; systemPrompt: { text: string; includeGlobal: boolean } | null; x: number; y: number; createdAt: number; updatedAt: number; terminals?: Terminal[]; }
 // A canvas folder: an iPhone-style group of workspace cards on one space's canvas. Holds the group's
 // name + canvas position; member cards carry workspaces.folderId. Mirrors server/src/types.ts Folder.
 export interface Folder { id: string; spaceId: string | null; name: string; x: number; y: number; createdAt: number; updatedAt: number; }
@@ -88,8 +88,10 @@ export interface Bookmark { id: string; folder: string; filePath: string; line: 
 // Favorites project-switcher (mirrors server/src/types.ts; keep in sync by hand).
 export interface FavoriteGroup { id: string; parentId: string | null; name: string; position: number; createdAt: number; updatedAt: number; }
 export interface Favorite { id: string; groupId: string | null; folder: string; label: string | null; position: number; createdAt: number; updatedAt: number; }
-// Scratchpad note (mirrors server/src/types.ts Note; keep in sync by hand).
-export interface Note { id: string; title: string; content: string; createdAt: number; updatedAt: number; }
+// Scratchpad note + its group (mirrors server/src/types.ts; keep in sync by hand). `groupId` files a
+// note into a NoteGroup collection (null = ungrouped).
+export interface Note { id: string; groupId: string | null; title: string; content: string; createdAt: number; updatedAt: number; }
+export interface NoteGroup { id: string; name: string; color: string | null; sort: number; createdAt: number; updatedAt: number; }
 // Saved web link + its folder (the top-bar Links dropdown). Mirrors server/src/types.ts; sync by hand.
 export interface LinkFolder { id: string; name: string; color: string | null; sort: number; createdAt: number; updatedAt: number; }
 export interface Link { id: string; folderId: string | null; title: string; url: string; description: string; color: string | null; sort: number; createdAt: number; updatedAt: number; }
@@ -248,6 +250,7 @@ export interface SettingsResponse {
   canvasBackground: CanvasBackground; // global canvas/spaces backdrop default
   stageDock: StageDock; // Stage Manager dock frosted-panel background
   breaks: BreakSettings; // recurring full-screen break enforcer config
+  agentSystemPrompts: Record<string, string>; // per-agent global system prompts (agent id → prompt text)
 }
 
 /** Status for the special "Claude (Headroom)" launcher (GET /api/agents/headroom). */

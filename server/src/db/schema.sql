@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   spaceId TEXT,
   folderId TEXT,
   config TEXT,
+  systemPrompt TEXT,
   x REAL NOT NULL DEFAULT 0,
   y REAL NOT NULL DEFAULT 0,
   createdAt INTEGER NOT NULL,
@@ -38,7 +39,8 @@ CREATE TABLE IF NOT EXISTS terminals (
   launchCommandOverride TEXT,
   position INTEGER NOT NULL DEFAULT 0,
   createdAt INTEGER NOT NULL,
-  titleAuto INTEGER NOT NULL DEFAULT 1
+  titleAuto INTEGER NOT NULL DEFAULT 1,
+  systemPrompt TEXT
 );
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
@@ -157,10 +159,28 @@ CREATE TABLE IF NOT EXISTS blueprints (
 
 -- Scratchpad notes: the Notes panel. Free-form text notes the user jots and edits; the list is
 -- their history, newest-edited first. `title` may be empty (the UI falls back to the first line).
+-- `groupId` files a note into a note_groups collection (NULL = ungrouped); deleting that group
+-- re-homes the note to NULL. Mirrors links.folderId.
 CREATE TABLE IF NOT EXISTS notes (
   id        TEXT PRIMARY KEY,
+  groupId   TEXT,
   title     TEXT NOT NULL DEFAULT '',
   content   TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL
+);
+-- NOTE: the idx_notes_group index is created in store.ts's migration, AFTER the groupId column is
+-- ensured — NOT here. On an existing DB this CREATE TABLE IF NOT EXISTS is a no-op (no groupId yet),
+-- so a schema-time CREATE INDEX ON notes(groupId) would throw "no such column" before the ALTER runs.
+
+-- Note groups: Mac-Notes-style collections for the scratchpad notes above, shown in the Notes panel's
+-- left rail. A note with groupId = NULL is ungrouped (the implicit top level). `sort` orders the rail;
+-- deleting a group re-homes its notes to NULL (the notes survive). Mirrors the link_folders table.
+CREATE TABLE IF NOT EXISTS note_groups (
+  id        TEXT PRIMARY KEY,
+  name      TEXT NOT NULL DEFAULT '',
+  color     TEXT,                              -- custom group-name / dot color (NULL = theme default)
+  sort      INTEGER NOT NULL DEFAULT 0,
   createdAt INTEGER NOT NULL,
   updatedAt INTEGER NOT NULL
 );

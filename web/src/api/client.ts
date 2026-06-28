@@ -2,7 +2,7 @@ import type {
   Workspace, Folder, Space, SpaceConfig, SpaceCatalog, SpacePreset, SpaceSeedReport, SeedResult, InstalledSet, InstallKind, CanvasBackground, Wallpaper, WallpaperData, Terminal, FsListing, FsFile, FsFileBytes, DriveAccountPublic, DriveEntry, AgentsResponse, HeadroomStatus, HeadroomSavings, CustomAgent, ProcessInfo, PortInfo, AttentionResponse, WorkingResponse, ClaudeUsageResult, CodexUsageResult,
   GitInfo, GitStatus, GitCommit, GitBranch, GitWorktree, StashEntry, CommitFile, MergePreview, PrMergeMethod, GithubInfo, GithubOwners, GithubRepo, GithubAccount, GithubIdentity, GitignorePreview, PullRequest, ActionRun,
   SystemStats,
-  AiProvider, AiProviderKind, AiProvidersResponse, PromptBuilderInputs, AiBuilderResponse, AiChatMessage, AiChatResponse, SettingsResponse, KeptVoice, Bookmark, FavoriteGroup, Favorite, Note, Link, LinkFolder, StickyNote, SpaceWidget, SpaceWidgetKind, BoardCard, BoardColumn, TimeEntry, TimeClient, TimeProject, TimeTask, SttStatus, TranscribeResult,
+  AiProvider, AiProviderKind, AiProvidersResponse, PromptBuilderInputs, AiBuilderResponse, AiChatMessage, AiChatResponse, SettingsResponse, KeptVoice, Bookmark, FavoriteGroup, Favorite, Note, NoteGroup, Link, LinkFolder, StickyNote, SpaceWidget, SpaceWidgetKind, BoardCard, BoardColumn, TimeEntry, TimeClient, TimeProject, TimeTask, SttStatus, TranscribeResult,
   Blueprint, BlueprintSummary, BlueprintGraph,
   ClaudeAgent, ClaudeSessionsResponse, SessionMessagesResponse, SessionUsage, SessionEntryLite,
   SkillScope, InstalledSkill, SkillScanResult, SkillUpdateStatus, RegistrySkill, CatalogSource, CatalogEntry,
@@ -96,7 +96,7 @@ export const api = {
   listWorkspaces: () => req<{ workspaces: Workspace[] }>("GET", "/api/workspaces"),
   createWorkspace: (b: { name: string; folder: string; launchCommand?: string; color?: string | null; x?: number; y?: number; spaceId?: string }) =>
     req<{ workspace: Workspace }>("POST", "/api/workspaces", b),
-  updateWorkspace: (id: string, b: Partial<{ name: string; folder: string; launchCommand: string; color: string | null; cardColor: string | null; layout: string | null; spaceId: string; folderId: string | null; config: SpaceConfig | null; x: number; y: number }>) =>
+  updateWorkspace: (id: string, b: Partial<{ name: string; folder: string; launchCommand: string; color: string | null; cardColor: string | null; layout: string | null; spaceId: string; folderId: string | null; config: SpaceConfig | null; systemPrompt: { text: string; includeGlobal: boolean } | null; x: number; y: number }>) =>
     req<{ workspace: Workspace }>("PATCH", `/api/workspaces/${id}`, b),
   deleteWorkspace: (id: string) => req<{ ok: true }>("DELETE", `/api/workspaces/${id}`),
   // Canvas folders (iPhone-style card groups). `create` can seed members in one shot (the group
@@ -136,7 +136,7 @@ export const api = {
       req<{ preset: SpacePreset }>("PATCH", `/api/space-presets/${id}`, b),
     remove: (id: string) => req<{ ok: true }>("DELETE", `/api/space-presets/${id}`),
   },
-  createTerminal: (wsId: string, b: { title?: string; color?: string | null; launchCommandOverride?: string | null; kickoff?: string | null }) =>
+  createTerminal: (wsId: string, b: { title?: string; color?: string | null; launchCommandOverride?: string | null; agentId?: string | null; systemPrompt?: { text: string; includeParent: boolean } | null; kickoff?: string | null }) =>
     req<{ terminal: Terminal }>("POST", `/api/workspaces/${wsId}/terminals`, b),
   // `auto: true` flags an auto-titler update (leaves the tab unlocked); omit it for a user rename,
   // which pins the name so the auto-titler won't overwrite it.
@@ -523,11 +523,18 @@ export const api = {
   },
   notes: {
     list: () => req<{ notes: Note[] }>("GET", "/api/notes"),
-    create: (b: { title?: string; content?: string } = {}) =>
+    create: (b: { title?: string; content?: string; groupId?: string | null } = {}) =>
       req<{ note: Note }>("POST", "/api/notes", b),
-    update: (id: string, patch: { title?: string; content?: string }) =>
+    update: (id: string, patch: { title?: string; content?: string; groupId?: string | null }) =>
       req<{ note: Note }>("PATCH", `/api/notes/${id}`, patch),
     remove: (id: string) => req<{ ok: true }>("DELETE", `/api/notes/${id}`),
+  },
+  noteGroups: {
+    list: () => req<{ groups: NoteGroup[] }>("GET", "/api/note-groups"),
+    create: (b: { name?: string }) => req<{ group: NoteGroup }>("POST", "/api/note-groups", b),
+    update: (id: string, patch: { name?: string; color?: string | null; sort?: number }) =>
+      req<{ group: NoteGroup }>("PATCH", `/api/note-groups/${id}`, patch),
+    remove: (id: string) => req<{ ok: true }>("DELETE", `/api/note-groups/${id}`),
   },
   links: {
     list: () => req<{ links: Link[]; folders: LinkFolder[] }>("GET", "/api/links"),

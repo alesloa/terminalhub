@@ -768,3 +768,37 @@ describe("store: spaces — CRUD, move, delete-reassign", () => {
     expect(s.listTerminals(w2.id)).toHaveLength(1);
   });
 });
+
+describe("store: system prompts", () => {
+  it("defaults a workspace systemPrompt to null and round-trips one", () => {
+    const ws = store.createWorkspace({ name: "A", folder: "/tmp", launchCommand: "", color: null });
+    expect(store.getWorkspace(ws.id)!.systemPrompt).toBeNull();
+    store.updateWorkspace(ws.id, { systemPrompt: { text: "Be terse.", includeGlobal: false } });
+    expect(store.getWorkspace(ws.id)!.systemPrompt).toEqual({ text: "Be terse.", includeGlobal: false });
+  });
+
+  it("accepts a workspace systemPrompt at create time", () => {
+    const ws = store.createWorkspace({
+      name: "A", folder: "/tmp", launchCommand: "", color: null,
+      systemPrompt: { text: "WS rule.", includeGlobal: true },
+    });
+    expect(store.getWorkspace(ws.id)!.systemPrompt).toEqual({ text: "WS rule.", includeGlobal: true });
+  });
+
+  it("defaults a terminal systemPrompt to null and round-trips one set at create", () => {
+    const ws = store.createWorkspace({ name: "A", folder: "/tmp", launchCommand: "", color: null });
+    const plain = store.createTerminal({ workspaceId: ws.id, title: "T", color: null, tmuxSession: "s1", launchCommandOverride: null });
+    expect(store.getTerminal(plain.id)!.systemPrompt).toBeNull();
+    const withPrompt = store.createTerminal({
+      workspaceId: ws.id, title: "T2", color: null, tmuxSession: "s2", launchCommandOverride: null,
+      systemPrompt: { text: "Term rule.", includeParent: false },
+    });
+    expect(store.getTerminal(withPrompt.id)!.systemPrompt).toEqual({ text: "Term rule.", includeParent: false });
+  });
+
+  it("round-trips the per-agent global system prompts blob", () => {
+    expect(store.getAgentSystemPrompts()).toEqual({});
+    store.setAgentSystemPrompts({ claude: "You are Claude.", codex: "You are Codex." });
+    expect(store.getAgentSystemPrompts()).toEqual({ claude: "You are Claude.", codex: "You are Codex." });
+  });
+});

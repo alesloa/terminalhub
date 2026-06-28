@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import type { Workspace, Terminal, Settings, CustomAgent, AccessKey, Bookmark, BetterCommentsConfig, BreakSettings, FavoriteGroup, Favorite, Blueprint, Note, Link, LinkFolder, StickyNote, SpaceWidget, SpaceWidgetKind, MeterBaseline, BoardCard, BoardColumn, Space, Folder, KeptVoice, CanvasBackground, StageDock, Wallpaper, WallpaperData, Reminder, AppNotification, ReminderStatus, NotifyChannels, Recurrence, CopilotSettings, CopilotConversation, CopilotStoredMessage, CopilotSkillState, CopilotSkillAccount, CopilotJob, CopilotReportMode, CopilotMcpServer, CopilotMcpServerConfig, CopilotMcpToolInfo, CopilotMcpTransport, TimeEntry, TimeClient, TimeProject, TimeTask } from "../types.js";
+import type { Workspace, Terminal, Settings, CustomAgent, AccessKey, Bookmark, BetterCommentsConfig, BreakSettings, FavoriteGroup, Favorite, Blueprint, Note, NoteGroup, Link, LinkFolder, StickyNote, SpaceWidget, SpaceWidgetKind, MeterBaseline, BoardCard, BoardColumn, Space, Folder, KeptVoice, CanvasBackground, StageDock, Wallpaper, WallpaperData, Reminder, AppNotification, ReminderStatus, NotifyChannels, Recurrence, CopilotSettings, CopilotConversation, CopilotStoredMessage, CopilotSkillState, CopilotSkillAccount, CopilotJob, CopilotReportMode, CopilotMcpServer, CopilotMcpServerConfig, CopilotMcpToolInfo, CopilotMcpTransport, TimeEntry, TimeClient, TimeProject, TimeTask } from "../types.js";
 import type { SpaceConfig, SpacePreset } from "../spaces/types.js";
 import { normalizeSpaceConfig } from "../spaces/types.js";
 import type { NotifyLevel, NotifyCategory } from "../notify/bus.js";
@@ -122,10 +122,32 @@ function id(prefix: string): string {
   return prefix + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
 }
 
-/** Map a raw terminals row to a Terminal: SQLite stores titleAuto as 1/0, the type wants a boolean.
- *  (A pre-migration row missing the column reads as auto, i.e. unlocked.) */
+/** Parse a stored workspace system-prompt blob → object (null on absent/corrupt). `includeGlobal`
+ *  defaults true when absent so an older/partial blob still inherits the agent's global prompt. */
+function parseWorkspacePrompt(raw: string | null | undefined): Workspace["systemPrompt"] {
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw);
+    if (!p || typeof p.text !== "string") return null;
+    return { text: p.text, includeGlobal: p.includeGlobal !== false };
+  } catch { return null; }
+}
+
+/** Parse a stored terminal system-prompt blob → object (null on absent/corrupt). `includeParent`
+ *  defaults true when absent so an older/partial blob still inherits global+workspace. */
+function parseTerminalPrompt(raw: string | null | undefined): Terminal["systemPrompt"] {
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw);
+    if (!p || typeof p.text !== "string") return null;
+    return { text: p.text, includeParent: p.includeParent !== false };
+  } catch { return null; }
+}
+
+/** Map a raw terminals row to a Terminal: SQLite stores titleAuto as 1/0, the type wants a boolean,
+ *  and systemPrompt is an opaque JSON column. (A pre-migration row missing a column reads as default.) */
 function rowToTerminal(row: any): Terminal {
-  return { ...row, titleAuto: row.titleAuto !== 0 };
+  return { ...row, titleAuto: row.titleAuto !== 0, systemPrompt: parseTerminalPrompt(row.systemPrompt) };
 }
 
 // access_keys stores mirror/lock as 0/1 INTEGERs; expose them as real booleans to the rest of the app.
@@ -182,10 +204,10 @@ function parseSetting(key: string, value: string): unknown {
 }
 
 export interface Store {
-  createWorkspace(w: Pick<Workspace,"name"|"folder"|"launchCommand"|"color"> & Partial<Pick<Workspace,"x"|"y"|"spaceId"|"config">>): Workspace;
+  createWorkspace(w: Pick<Workspace,"name"|"folder"|"launchCommand"|"color"> & Partial<Pick<Workspace,"x"|"y"|"spaceId"|"config"|"systemPrompt">>): Workspace;
   getWorkspace(id: string): Workspace | undefined;
   listWorkspaces(): Workspace[];
-  updateWorkspace(id: string, patch: Partial<Pick<Workspace,"name"|"folder"|"launchCommand"|"color"|"cardColor"|"layout"|"spaceId"|"folderId"|"config"|"x"|"y">>): void;
+  updateWorkspace(id: string, patch: Partial<Pick<Workspace,"name"|"folder"|"launchCommand"|"color"|"cardColor"|"layout"|"spaceId"|"folderId"|"config"|"systemPrompt"|"x"|"y">>): void;
   deleteWorkspace(id: string): void;
   // Canvas folders (iPhone-style card groups). A folder owns a name + canvas position; its members
   // carry workspaces.folderId. `createFolder` can seed members in one shot (the group gesture);
@@ -210,7 +232,7 @@ export interface Store {
   reassignTerminals(fromWorkspaceId: string, toWorkspaceId: string): void;
   getHomeSpaceId(): string | undefined;
   getDesktopWorkspaceId(): string | undefined;
-  createTerminal(t: Pick<Terminal,"workspaceId"|"title"|"color"|"tmuxSession"|"launchCommandOverride">): Terminal;
+  createTerminal(t: Pick<Terminal,"workspaceId"|"title"|"color"|"tmuxSession"|"launchCommandOverride"> & Partial<Pick<Terminal,"systemPrompt">>): Terminal;
   getTerminal(id: string): Terminal | undefined;
   listTerminals(workspaceId: string): Terminal[];
   listAllTerminals(): Terminal[];
@@ -240,6 +262,10 @@ export interface Store {
   setBetterComments(c: BetterCommentsConfig): void;
   getBreaks(): BreakSettings;
   setBreaks(b: BreakSettings): void;
+  // Per-agent global system prompts (JSON blob under the `agentSystemPrompts` settings key): a map of
+  // agent id → prompt text. The base layer the workspace/terminal layers build on. See systemPrompt.ts.
+  getAgentSystemPrompts(): Record<string, string>;
+  setAgentSystemPrompts(map: Record<string, string>): void;
   // Copilot singleton settings (JSON blob under the `copilot` settings key). getCopilotSettings
   // merges over defaults field-by-field; setCopilotSettings persists the validated whole object.
   getCopilotSettings(): CopilotSettings;
@@ -327,11 +353,17 @@ export interface Store {
   revokeAccessKey(id: string): void;
   touchAccessKey(id: string): void;
   sweepAccessKeys(): number;
-  createNote(n: { title: string; content: string }): Note;
+  createNote(n: { title: string; content: string; groupId?: string | null }): Note;
   getNote(id: string): Note | undefined;
   listNotes(): Note[];
-  updateNote(id: string, patch: Partial<Pick<Note, "title" | "content">>): void;
+  updateNote(id: string, patch: Partial<Pick<Note, "title" | "content" | "groupId">>): void;
   deleteNote(id: string): void;
+  // Note groups (the Notes panel's left-rail collections).
+  listNoteGroups(): NoteGroup[];
+  getNoteGroup(id: string): NoteGroup | undefined;
+  createNoteGroup(g: { name: string }): NoteGroup;
+  updateNoteGroup(id: string, patch: Partial<Pick<NoteGroup, "name" | "color" | "sort">>): NoteGroup | undefined;
+  deleteNoteGroup(id: string): void;
   // Web links + their folders (the top-bar Links dropdown).
   listLinks(): Link[];
   getLink(id: string): Link | undefined;
@@ -464,6 +496,9 @@ export function createStore(path: string): Store {
   // `config` is the per-workspace wizard SpaceConfig (opaque JSON; null = no own picks). It seeds
   // ADDITIVELY on top of the owning space's config — see spaces/merge.ts. Add it to older tables.
   if (!wsCols.some(c => c.name === "config")) db.exec(`ALTER TABLE workspaces ADD COLUMN config TEXT`);
+  // `systemPrompt` is the per-workspace agent system-prompt layer (opaque JSON {text,includeGlobal};
+  // null = none) — see agents/systemPrompt.ts. Add it to older workspaces tables.
+  if (!wsCols.some(c => c.name === "systemPrompt")) db.exec(`ALTER TABLE workspaces ADD COLUMN systemPrompt TEXT`);
   // `chat` holds a blueprint's saved AI-assistant transcript (opaque JSON); add it to older
   // blueprints tables so reopening a pre-existing blueprint doesn't error on the missing column.
   const bpCols = db.prepare(`PRAGMA table_info(blueprints)`).all() as { name: string }[];
@@ -476,6 +511,9 @@ export function createStore(path: string): Store {
   // agent session / placeholder) or locked by a user rename. Older rows default to 1 so the
   // auto-titler can correct any stale name; a user rename flips it to 0 and pins the name.
   if (!tmCols.some(c => c.name === "titleAuto")) db.exec(`ALTER TABLE terminals ADD COLUMN titleAuto INTEGER NOT NULL DEFAULT 1`);
+  // `systemPrompt` is the per-terminal agent system-prompt layer set at launch (opaque JSON
+  // {text,includeParent}; null = none) — see agents/systemPrompt.ts. Add it to older terminals tables.
+  if (!tmCols.some(c => c.name === "systemPrompt")) db.exec(`ALTER TABLE terminals ADD COLUMN systemPrompt TEXT`);
   // `position` orders terminals within their workspace's list (drag-reorder). Older tables ordered by
   // createdAt alone; add the column, then backfill contiguous positions per workspace IN that same
   // createdAt order so the existing visible order is preserved exactly. Only on first add — never
@@ -531,6 +569,15 @@ export function createStore(path: string): Store {
   if (lkCols.length && !lkCols.some(c => c.name === "color")) db.exec(`ALTER TABLE links ADD COLUMN color TEXT`);
   const lfCols = db.prepare(`PRAGMA table_info(link_folders)`).all() as { name: string }[];
   if (lfCols.length && !lfCols.some(c => c.name === "color")) db.exec(`ALTER TABLE link_folders ADD COLUMN color TEXT`);
+
+  // Scratchpad notes gained groups (Mac-Notes-style collections) after they shipped. The note_groups
+  // table is created by schema.sql above; older `notes` rows need the groupId column backfilled (NULL).
+  // The index is created HERE, right after the column is ensured (NOT in schema.sql) — on an existing
+  // DB the column doesn't exist until this ALTER runs, so a schema-time index on notes(groupId) throws
+  // "no such column: groupId" on boot. CREATE INDEX IF NOT EXISTS covers fresh DBs too (column from schema).
+  const noteCols = db.prepare(`PRAGMA table_info(notes)`).all() as { name: string }[];
+  if (!noteCols.some(c => c.name === "groupId")) db.exec(`ALTER TABLE notes ADD COLUMN groupId TEXT`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_notes_group ON notes(groupId)`);
 
   // Folder→color memory, so a color survives terminating + re-adding a folder. Writing a
   // real color upserts it; clearing (null) forgets it. Read back on create when none given.
@@ -590,6 +637,7 @@ export function createStore(path: string): Store {
       if (!row.config) return null;
       try { return normalizeSpaceConfig(JSON.parse(row.config)); } catch { return null; }
     })(),
+    systemPrompt: parseWorkspacePrompt(row.systemPrompt),
   } : undefined;
 
   // Spaces store `background` as an opaque JSON string (or NULL); rows come back with that raw
@@ -718,11 +766,11 @@ export function createStore(path: string): Store {
       const now = Date.now();
       const color = w.color ?? recallColor(w.folder);
       const spaceId = w.spaceId ?? store.getHomeSpaceId() ?? null;
-      const ws: Workspace = { id: id("ws_"), cardColor: null, layout: null, folderId: null, config: null, createdAt: now, updatedAt: now, ...w, color, x: w.x ?? 0, y: w.y ?? 0, spaceId };
-      // `config` is a SpaceConfig object on the row but an opaque JSON string in the column — serialize.
-      db.prepare(`INSERT INTO workspaces (id,name,folder,launchCommand,color,cardColor,layout,spaceId,config,x,y,createdAt,updatedAt)
-        VALUES (@id,@name,@folder,@launchCommand,@color,@cardColor,@layout,@spaceId,@config,@x,@y,@createdAt,@updatedAt)`)
-        .run({ ...ws, config: ws.config ? JSON.stringify(ws.config) : null });
+      const ws: Workspace = { id: id("ws_"), cardColor: null, layout: null, folderId: null, config: null, systemPrompt: null, createdAt: now, updatedAt: now, ...w, color, x: w.x ?? 0, y: w.y ?? 0, spaceId };
+      // `config`/`systemPrompt` are objects on the row but opaque JSON strings in the column — serialize.
+      db.prepare(`INSERT INTO workspaces (id,name,folder,launchCommand,color,cardColor,layout,spaceId,config,systemPrompt,x,y,createdAt,updatedAt)
+        VALUES (@id,@name,@folder,@launchCommand,@color,@cardColor,@layout,@spaceId,@config,@systemPrompt,@x,@y,@createdAt,@updatedAt)`)
+        .run({ ...ws, config: ws.config ? JSON.stringify(ws.config) : null, systemPrompt: ws.systemPrompt ? JSON.stringify(ws.systemPrompt) : null });
       if (color) rememberColor(ws.folder, color);
       return ws;
     },
@@ -731,8 +779,8 @@ export function createStore(path: string): Store {
     updateWorkspace(wid, patch) {
       const cur = this.getWorkspace(wid); if (!cur) return;
       const next = { ...cur, ...patch, updatedAt: Date.now() };
-      db.prepare(`UPDATE workspaces SET name=@name,folder=@folder,launchCommand=@launchCommand,color=@color,cardColor=@cardColor,layout=@layout,spaceId=@spaceId,folderId=@folderId,config=@config,x=@x,y=@y,updatedAt=@updatedAt WHERE id=@id`)
-        .run({ ...next, config: next.config ? JSON.stringify(next.config) : null });
+      db.prepare(`UPDATE workspaces SET name=@name,folder=@folder,launchCommand=@launchCommand,color=@color,cardColor=@cardColor,layout=@layout,spaceId=@spaceId,folderId=@folderId,config=@config,systemPrompt=@systemPrompt,x=@x,y=@y,updatedAt=@updatedAt WHERE id=@id`)
+        .run({ ...next, config: next.config ? JSON.stringify(next.config) : null, systemPrompt: next.systemPrompt ? JSON.stringify(next.systemPrompt) : null });
       if ("color" in patch) rememberColor(next.folder, next.color);
     },
     deleteWorkspace(wid) { db.prepare(`DELETE FROM workspaces WHERE id=?`).run(wid); },
@@ -863,10 +911,10 @@ export function createStore(path: string): Store {
       // New terminals append to the end of their workspace's list — positions stay contiguous, so the
       // current count is the next free slot. Fresh tabs start auto-titled (titleAuto=1).
       const position = (db.prepare(`SELECT COUNT(*) AS c FROM terminals WHERE workspaceId=?`).get(t.workspaceId) as { c: number }).c;
-      const term: Terminal = { id: id("tm_"), createdAt: Date.now(), icon: null, position, titleAuto: true, ...t };
-      db.prepare(`INSERT INTO terminals (id,workspaceId,title,color,icon,tmuxSession,launchCommandOverride,position,createdAt,titleAuto)
-        VALUES (@id,@workspaceId,@title,@color,@icon,@tmuxSession,@launchCommandOverride,@position,@createdAt,@titleAuto)`)
-        .run({ ...term, titleAuto: 1 }); // bind 1, not the boolean (better-sqlite3 won't bind booleans)
+      const term: Terminal = { id: id("tm_"), createdAt: Date.now(), icon: null, position, titleAuto: true, systemPrompt: null, ...t };
+      db.prepare(`INSERT INTO terminals (id,workspaceId,title,color,icon,tmuxSession,launchCommandOverride,position,createdAt,titleAuto,systemPrompt)
+        VALUES (@id,@workspaceId,@title,@color,@icon,@tmuxSession,@launchCommandOverride,@position,@createdAt,@titleAuto,@systemPrompt)`)
+        .run({ ...term, titleAuto: 1, systemPrompt: term.systemPrompt ? JSON.stringify(term.systemPrompt) : null }); // bind 1, not the boolean (better-sqlite3 won't bind booleans)
       return term;
     },
     getTerminal(tid) { const r = db.prepare(`SELECT * FROM terminals WHERE id=?`).get(tid); return r ? rowToTerminal(r) : undefined; },
@@ -995,6 +1043,21 @@ export function createStore(path: string): Store {
     setBreaks(b) {
       db.prepare(`INSERT INTO settings (key,value) VALUES ('breaks',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
         .run(JSON.stringify(b));
+    },
+    getAgentSystemPrompts() {
+      const row = db.prepare(`SELECT value FROM settings WHERE key='agentSystemPrompts'`).get() as { value: string } | undefined;
+      if (!row) return {};
+      try {
+        const p = JSON.parse(row.value);
+        if (!p || typeof p !== "object") return {};
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(p)) if (typeof v === "string") out[k] = v;
+        return out;
+      } catch { return {}; }
+    },
+    setAgentSystemPrompts(map) {
+      db.prepare(`INSERT INTO settings (key,value) VALUES ('agentSystemPrompts',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+        .run(JSON.stringify(map));
     },
     getCopilotSettings() {
       const row = db.prepare(`SELECT value FROM settings WHERE key='copilot'`).get() as { value: string } | undefined;
@@ -1402,19 +1465,40 @@ export function createStore(path: string): Store {
     },
     createNote(n) {
       const now = Date.now();
-      const note: Note = { id: id("np_"), title: n.title, content: n.content, createdAt: now, updatedAt: now };
-      db.prepare(`INSERT INTO notes (id,title,content,createdAt,updatedAt)
-        VALUES (@id,@title,@content,@createdAt,@updatedAt)`).run(note);
+      const note: Note = { id: id("np_"), groupId: n.groupId ?? null, title: n.title, content: n.content, createdAt: now, updatedAt: now };
+      db.prepare(`INSERT INTO notes (id,groupId,title,content,createdAt,updatedAt)
+        VALUES (@id,@groupId,@title,@content,@createdAt,@updatedAt)`).run(note);
       return note;
     },
     getNote(nid) { return db.prepare(`SELECT * FROM notes WHERE id=?`).get(nid) as Note | undefined; },
     listNotes() { return db.prepare(`SELECT * FROM notes ORDER BY updatedAt DESC, createdAt DESC`).all() as Note[]; },
     updateNote(nid, patch) {
       const cur = this.getNote(nid); if (!cur) return;
-      const next = { ...cur, ...patch, updatedAt: Date.now() };
-      db.prepare(`UPDATE notes SET title=@title, content=@content, updatedAt=@updatedAt WHERE id=@id`).run(next);
+      // `groupId` is nullable, so only overwrite it when the patch explicitly carries it (undefined = leave as-is).
+      const next = { ...cur, ...patch, groupId: patch.groupId !== undefined ? patch.groupId : cur.groupId, updatedAt: Date.now() };
+      db.prepare(`UPDATE notes SET groupId=@groupId, title=@title, content=@content, updatedAt=@updatedAt WHERE id=@id`).run(next);
     },
     deleteNote(nid) { db.prepare(`DELETE FROM notes WHERE id=?`).run(nid); },
+    listNoteGroups() { return db.prepare(`SELECT * FROM note_groups ORDER BY sort ASC, createdAt ASC`).all() as NoteGroup[]; },
+    getNoteGroup(gid) { return db.prepare(`SELECT * FROM note_groups WHERE id=?`).get(gid) as NoteGroup | undefined; },
+    createNoteGroup(g) {
+      const now = Date.now();
+      const { next } = db.prepare(`SELECT COALESCE(MAX(sort),-1)+1 AS next FROM note_groups`).get() as { next: number };
+      const group: NoteGroup = { id: id("ng_"), name: g.name, color: null, sort: next, createdAt: now, updatedAt: now };
+      db.prepare(`INSERT INTO note_groups (id,name,color,sort,createdAt,updatedAt) VALUES (@id,@name,@color,@sort,@createdAt,@updatedAt)`).run(group);
+      return group;
+    },
+    updateNoteGroup(gid, patch) {
+      const cur = this.getNoteGroup(gid); if (!cur) return undefined;
+      const next: NoteGroup = { ...cur, ...patch, updatedAt: Date.now() };
+      db.prepare(`UPDATE note_groups SET name=@name, color=@color, sort=@sort, updatedAt=@updatedAt WHERE id=@id`).run(next);
+      return next;
+    },
+    deleteNoteGroup(gid) {
+      // Non-destructive to the notes inside: re-home them to the ungrouped (null) set, then drop the group.
+      db.prepare(`UPDATE notes SET groupId=NULL, updatedAt=? WHERE groupId=?`).run(Date.now(), gid);
+      db.prepare(`DELETE FROM note_groups WHERE id=?`).run(gid);
+    },
     listLinks() { return db.prepare(`SELECT * FROM links ORDER BY sort ASC, createdAt ASC`).all() as Link[]; },
     getLink(lid) { return db.prepare(`SELECT * FROM links WHERE id=?`).get(lid) as Link | undefined; },
     createLink(l) {

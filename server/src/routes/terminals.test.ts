@@ -22,11 +22,12 @@ function build() {
     if (args[0] === "capture-pane") return "old line\nnew line\n";
     return "";
   });
-  const ctx = { store: createStore(":memory:"), tmux: createTmuxController(run), clip: createClipController() };
+  const sysPromptDir = mkdtempSync(join(tmpdir(), "tr-sysprompt-"));
+  const ctx = { store: createStore(":memory:"), tmux: createTmuxController(run), clip: createClipController(), sysPromptDir };
   const app = Fastify();
   app.register(async a => workspaceRoutes(a, ctx));
   app.register(async a => terminalRoutes(a, ctx));
-  return { app, ctx, calls, setPaneCwd: (p: string) => { paneCwd = p; } };
+  return { app, ctx, calls, sysPromptDir, setPaneCwd: (p: string) => { paneCwd = p; } };
 }
 
 describe("terminal routes", () => {
@@ -157,6 +158,60 @@ describe("terminal routes", () => {
     const del = await h.app.inject({ method: "DELETE", url: `/api/terminals/${term.id}` });
     expect(del.statusCode).toBe(200);
     expect(h.calls.find(c => c[0] === "kill-session" && c.includes(term.tmuxSession))).toBeTruthy();
+  });
+});
+
+describe("terminal routes — system prompts", () => {
+  let h: ReturnType<typeof build>;
+  beforeEach(() => { h = build(); });
+
+  it("launches Claude with --append-system-prompt-file and the merged global⊕workspace⊕terminal prompt", async () => {
+    h.ctx.store.setAgentSystemPrompts({ claude: "GLOBAL." });
+    const ws = h.ctx.store.createWorkspace({ name: "A", folder: "/work", launchCommand: "claude", color: null });
+    h.ctx.store.updateWorkspace(ws.id, { systemPrompt: { text: "WORKSPACE.", includeGlobal: true } });
+
+    const res = await h.app.inject({
+      method: "POST", url: `/api/workspaces/${ws.id}/terminals`,
+      payload: { agentId: "claude", launchCommandOverride: "claude", systemPrompt: { text: "TERMINAL.", includeParent: true } },
+    });
+    expect(res.statusCode).toBe(200);
+    const term = res.json().terminal;
+    // the terminal-level prompt was persisted
+    expect(h.ctx.store.getTerminal(term.id)!.systemPrompt).toEqual({ text: "TERMINAL.", includeParent: true });
+
+    // launch keys carry the flag pointing at the per-terminal file
+    const sendKeys = h.calls.find(c => c[0] === "send-keys" && String(c[3]).includes("--append-system-prompt-file"))!;
+    expect(sendKeys).toBeTruthy();
+    const file = join(h.sysPromptDir, `${term.id}.md`);
+    expect(String(sendKeys[3])).toContain(`'${file}'`);
+    expect(readFileSync(file, "utf8")).toBe("GLOBAL.\n\nWORKSPACE.\n\nTERMINAL.");
+  });
+
+  it("writes Codex's prompt into AGENTS.md in the folder and does NOT add a flag", async () => {
+    const folder = mkdtempSync(join(tmpdir(), "tr-codex-"));
+    try {
+      h.ctx.store.setAgentSystemPrompts({ codex: "Be careful, Codex." });
+      const ws = h.ctx.store.createWorkspace({ name: "A", folder, launchCommand: "codex", color: null });
+      const res = await h.app.inject({
+        method: "POST", url: `/api/workspaces/${ws.id}/terminals`,
+        payload: { agentId: "codex", launchCommandOverride: "codex" },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(readFileSync(join(folder, "AGENTS.md"), "utf8")).toContain("Be careful, Codex.");
+      // launch command is just `codex` — no flag for a file-based agent
+      const sendKeys = h.calls.find(c => c[0] === "send-keys")!;
+      expect(sendKeys[3]).toBe("codex");
+    } finally { rmSync(folder, { recursive: true, force: true }); }
+  });
+
+  it("no agentId → no prompt file, launch unchanged", async () => {
+    h.ctx.store.setAgentSystemPrompts({ claude: "GLOBAL." });
+    const ws = h.ctx.store.createWorkspace({ name: "A", folder: "/work", launchCommand: "claude", color: null });
+    const res = await h.app.inject({ method: "POST", url: `/api/workspaces/${ws.id}/terminals`, payload: {} });
+    const term = res.json().terminal;
+    expect(existsSync(join(h.sysPromptDir, `${term.id}.md`))).toBe(false);
+    const sendKeys = h.calls.find(c => c[0] === "send-keys")!;
+    expect(sendKeys[3]).toBe("claude");
   });
 });
 

@@ -309,6 +309,29 @@ describe("settings routes — attention detection", () => {
   });
 });
 
+describe("settings routes — agent system prompts", () => {
+  let h: ReturnType<typeof build>;
+  beforeEach(() => { h = build(); });
+
+  it("defaults agentSystemPrompts to an empty map", async () => {
+    const body = (await h.app.inject({ method: "GET", url: "/api/settings" })).json();
+    expect(body.agentSystemPrompts).toEqual({});
+  });
+
+  it("PATCH persists the per-agent map and round-trips on GET", async () => {
+    const agentSystemPrompts = { claude: "You are Claude.", codex: "You are Codex." };
+    const res = await h.app.inject({ method: "PATCH", url: "/api/settings", payload: { agentSystemPrompts } });
+    expect(res.statusCode).toBe(200);
+    const body = (await h.app.inject({ method: "GET", url: "/api/settings" })).json();
+    expect(body.agentSystemPrompts).toEqual(agentSystemPrompts);
+  });
+
+  it("rejects a non-string value in the map", async () => {
+    const res = await h.app.inject({ method: "PATCH", url: "/api/settings", payload: { agentSystemPrompts: { claude: 42 } } });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
 describe("settings routes — stage manager", () => {
   let h: ReturnType<typeof build>;
   beforeEach(() => { h = build(); });

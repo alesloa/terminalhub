@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyManagedBlock, BLOCK_START, BLOCK_END } from "./managedBlock.js";
+import { applyManagedBlock, BLOCK_START, BLOCK_END, SYSTEM_PROMPT_MARKERS } from "./managedBlock.js";
 
 describe("applyManagedBlock", () => {
   it("creates a new file with a header + delimited block when there is no existing content", () => {
@@ -59,5 +59,46 @@ describe("applyManagedBlock", () => {
   it("leaves a marker-less file untouched when asked to write empty content", () => {
     const existing = "# Untouched\n";
     expect(applyManagedBlock(existing, "", "append")).toBe(existing);
+  });
+});
+
+describe("applyManagedBlock with the system-prompt markers", () => {
+  it("writes a block delimited by the system-prompt markers, not the space-config ones", () => {
+    const out = applyManagedBlock(null, "You are terse.", "append", SYSTEM_PROMPT_MARKERS);
+    expect(out).toContain(SYSTEM_PROMPT_MARKERS.start);
+    expect(out).toContain(SYSTEM_PROMPT_MARKERS.end);
+    expect(out).toContain("You are terse.");
+    expect(out).not.toContain(BLOCK_START);
+  });
+
+  it("coexists with a space-config block — both blocks live in one file independently", () => {
+    const withSpace = applyManagedBlock("# Proj\n", "Space rules.", "append"); // default markers
+    const withBoth = applyManagedBlock(withSpace, "System prompt text.", "append", SYSTEM_PROMPT_MARKERS);
+    expect(withBoth).toContain(BLOCK_START);
+    expect(withBoth).toContain("Space rules.");
+    expect(withBoth).toContain(SYSTEM_PROMPT_MARKERS.start);
+    expect(withBoth).toContain("System prompt text.");
+    expect(withBoth).toContain("# Proj");
+  });
+
+  it("re-running the system-prompt block leaves the space-config block untouched", () => {
+    const withSpace = applyManagedBlock("# Proj\n", "Space rules.", "append");
+    const v1 = applyManagedBlock(withSpace, "Prompt v1.", "append", SYSTEM_PROMPT_MARKERS);
+    const v2 = applyManagedBlock(v1, "Prompt v2.", "append", SYSTEM_PROMPT_MARKERS);
+    expect(v2).toContain("Prompt v2.");
+    expect(v2).not.toContain("Prompt v1.");
+    expect(v2).toContain("Space rules.");
+    expect(v2.split(BLOCK_START).length - 1).toBe(1);
+    expect(v2.split(SYSTEM_PROMPT_MARKERS.start).length - 1).toBe(1);
+  });
+
+  it("removes only the system-prompt block on empty content, keeping the space-config block", () => {
+    const withSpace = applyManagedBlock("# Proj\n", "Space rules.", "append");
+    const withBoth = applyManagedBlock(withSpace, "Prompt.", "append", SYSTEM_PROMPT_MARKERS);
+    const stripped = applyManagedBlock(withBoth, "", "append", SYSTEM_PROMPT_MARKERS);
+    expect(stripped).not.toContain(SYSTEM_PROMPT_MARKERS.start);
+    expect(stripped).not.toContain("Prompt.");
+    expect(stripped).toContain("Space rules.");
+    expect(stripped).toContain(BLOCK_START);
   });
 });

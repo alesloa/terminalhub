@@ -8,8 +8,14 @@ import { runKickoff } from "../tmux/kickoff.js";
 import { statPath } from "../fs/browser.js";
 import { seedWorkspaceEffective } from "../spaces/seedSpace.js";
 import { resolveTerminalSession } from "../claude/terminalLink.js";
+import { resolveEffective, applySystemPrompt } from "../agents/systemPrompt.js";
 
 const DEFAULT_COLS = 200, DEFAULT_ROWS = 50;
+
+/** POSIX single-quote a launch-command argument so paths with spaces survive send-keys → shell. */
+function shQuote(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
 const MB = 1024 * 1024;
 const MAX_IMAGE_BYTES = 10 * MB; // pasted screenshot cap (decoded)
 
@@ -28,6 +34,11 @@ export async function terminalRoutes(app: FastifyInstance, ctx: AppContext) {
     const b = z.object({
       title: z.string().optional(), color: z.string().nullable().optional(),
       launchCommandOverride: z.string().nullable().optional(),
+      // The built-in agent id being launched (claude/codex/cursor/gemini/opencode; "claude" for the
+      // Headroom launcher). Selects the global system prompt + how it's injected. null = plain/custom.
+      agentId: z.string().nullable().optional(),
+      // The per-terminal system-prompt layer. `includeParent` false = ignore global+workspace.
+      systemPrompt: z.object({ text: z.string(), includeParent: z.boolean() }).nullable().optional(),
       // A line to type into the agent once it's up (e.g. `/loop …` / `/goal …` to start a Claude
       // loop). Sent via send-keys after the CLI is detected running — see runKickoff.
       kickoff: z.string().max(2000).nullable().optional(),
@@ -42,6 +53,7 @@ export async function terminalRoutes(app: FastifyInstance, ctx: AppContext) {
       color: b.data.color ?? null,
       tmuxSession: "pending",
       launchCommandOverride: b.data.launchCommandOverride ?? null,
+      systemPrompt: b.data.systemPrompt ?? null,
     });
     const session = sessionName(wsId, term.id);
     ctx.store.setTerminalSession(term.id, session);
@@ -54,8 +66,22 @@ export async function terminalRoutes(app: FastifyInstance, ctx: AppContext) {
     await ctx.tmux.newSession(session, ws.folder, DEFAULT_COLS, DEFAULT_ROWS);
     // Bell-only attention: newSession already armed the bell (monitor-bell). Silence is NOT armed —
     // it flagged every idle agent and flooded notifications, so a quiet pane no longer earns attention.
-    const launch = b.data.launchCommandOverride ?? ws.launchCommand;
-    if (launch && launch.trim()) await ctx.tmux.sendKeys(session, launch.trim());
+
+    // Layered agent system prompt: merge global ⊕ workspace ⊕ terminal, then inject it the way this
+    // agent reads one (a flag for claude, an instruction file in the folder for the rest). Best-effort —
+    // a bad folder/permission must never block the launch.
+    const agentId = b.data.agentId ?? null;
+    const globalPrompt = agentId ? (ctx.store.getAgentSystemPrompts()[agentId] ?? "") : "";
+    const effective = resolveEffective(globalPrompt, ws.systemPrompt, term.systemPrompt);
+    let promptArgs = "";
+    try {
+      const inj = await applySystemPrompt(agentId, effective, { folder: ws.folder, tmpDir: ctx.sysPromptDir, terminalId: term.id });
+      if (inj.kind === "flag") promptArgs = " " + inj.args.map(shQuote).join(" ");
+    } catch { /* best-effort: never block terminal creation on a prompt-injection failure */ }
+
+    const base = (b.data.launchCommandOverride ?? ws.launchCommand).trim();
+    const launch = base ? base + promptArgs : "";
+    if (launch) await ctx.tmux.sendKeys(session, launch);
 
     // Loop kickoff: once the agent is actually running, type the loop/goal command into it. Fire and
     // forget — runKickoff polls + waits in the background so the create response returns immediately.

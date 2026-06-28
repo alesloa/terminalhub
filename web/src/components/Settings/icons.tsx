@@ -53,6 +53,17 @@ export function SpeakerIcon() {
   );
 }
 
+// Speech bubble with lines — the Agent Prompts tab.
+export function ChatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.6-.8L3 21l1.8-5.4A8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5Z" />
+      <path d="M8.5 10.5h7" />
+      <path d="M8.5 13.5h4" />
+    </svg>
+  );
+}
+
 // Four-point spark — the Copilot tab.
 export function SparkIcon() {
   return (

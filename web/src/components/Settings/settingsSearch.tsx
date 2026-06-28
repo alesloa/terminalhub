@@ -6,7 +6,7 @@ import { useMemo, useRef, useState } from "react";
 // (settings that live inside child components like Copilot/Google Drive) still switch to the right
 // tab — the scroll just no-ops. KEEP IN SYNC with the rows in SettingsModal + TerminalAppearance.
 
-export type TabId = "appearance" | "editor" | "terminal" | "voice" | "copilot" | "connections" | "access";
+export type TabId = "appearance" | "editor" | "terminal" | "voice" | "copilot" | "agents" | "connections" | "access";
 
 export const TAB_LABELS: Record<TabId, string> = {
   appearance: "Appearance",
@@ -14,6 +14,7 @@ export const TAB_LABELS: Record<TabId, string> = {
   terminal: "Terminal",
   voice: "Voice & Speech",
   copilot: "Assistant",
+  agents: "Agent Prompts",
   connections: "Connections",
   access: "Remote Access",
 };
@@ -70,8 +71,9 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   { label: "OpenAI API key", tab: "voice", id: "openai-key", keywords: "transcription secret" },
   { label: "OpenAI model", tab: "voice", id: "openai-model", keywords: "transcribe whisper" },
   { label: "Pushover", tab: "voice", id: "pushover", keywords: "phone push reminders" },
-  // Copilot / Connections / Access
+  // Copilot / Agent Prompts / Connections / Access
   { label: "Assistant", tab: "copilot", id: "copilot", keywords: "skills mcp tools engine copilot agent assistant" },
+  { label: "Agent system prompts", tab: "agents", id: "agent-prompts", keywords: "claude codex cursor gemini opencode system prompt persona instructions global" },
   { label: "Google Drive", tab: "connections", id: "google-drive", keywords: "account connection" },
   { label: "Access token", tab: "access", id: "access-token", keywords: "remote tunnel cloudflare auth" },
 ];

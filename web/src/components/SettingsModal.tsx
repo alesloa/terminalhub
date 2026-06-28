@@ -7,6 +7,7 @@ import type { BetterCommentsConfig, CanvasBackground, SettingsResponse, StageDoc
 import { BetterCommentsSettings } from "./Settings/BetterCommentsSettings";
 import { GoogleDriveSettings } from "./Settings/GoogleDriveSettings";
 import { CopilotSettings } from "./Settings/CopilotSettings";
+import { AgentPromptsSettings } from "./Settings/AgentPromptsSettings";
 import { CanvasBackgroundEditor } from "./CanvasBackgroundEditor";
 import { StageDockEditor } from "./Settings/StageDockEditor";
 import { DEFAULT_CANVAS_BACKGROUND } from "../lib/wallpapers";
@@ -17,7 +18,7 @@ import { speak, useVoices, speechSupported } from "../lib/speech";
 import { describeEvent, formatHotkey, hotkeyFromEvent, type Hotkey } from "../lib/hotkey";
 import { langLabel } from "../lib/langName";
 import { Section, Row, Toggle, Segment, ColorField, Code } from "./Settings/controls";
-import { PaletteIcon, CodeIcon, TerminalIcon, SpeakerIcon, SparkIcon, KeyIcon, PlugIcon, EyeIcon } from "./Settings/icons";
+import { PaletteIcon, CodeIcon, TerminalIcon, SpeakerIcon, SparkIcon, ChatIcon, KeyIcon, PlugIcon, EyeIcon } from "./Settings/icons";
 import { TerminalAppearance } from "./Settings/TerminalAppearance";
 import { SettingsSearch, type TabId } from "./Settings/settingsSearch";
 
@@ -44,6 +45,7 @@ const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
   { id: "terminal", label: "Terminal", icon: <TerminalIcon /> },
   { id: "voice", label: "Voice & Speech", icon: <SpeakerIcon /> },
   { id: "copilot", label: "Assistant", icon: <SparkIcon /> },
+  { id: "agents", label: "Agent Prompts", icon: <ChatIcon /> },
   { id: "connections", label: "Connections", icon: <PlugIcon /> },
   { id: "access", label: "Remote Access", icon: <KeyIcon /> },
 ];
@@ -728,6 +730,8 @@ export const SettingsModal = forwardRef<WindowHandle, { origin?: WinRect | null;
 
   const copilot = <CopilotSettings />;
 
+  const agents = <AgentPromptsSettings />;
+
   const connections = (
     <div className="space-y-8">
       <GoogleDriveSettings />
@@ -786,7 +790,7 @@ export const SettingsModal = forwardRef<WindowHandle, { origin?: WinRect | null;
     </div>
   );
 
-  const panels = { appearance, editor, terminal, voice, copilot, connections, access };
+  const panels = { appearance, editor, terminal, voice, copilot, agents, connections, access };
 
   // Collapse target: scale down + slide the window's top-left onto the gear icon's top-left. Falls
   // back to a centered shrink when the opener rect is unknown. Animate transform/opacity only — never

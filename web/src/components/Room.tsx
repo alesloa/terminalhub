@@ -2,7 +2,7 @@ import { useEffect, useReducer, useRef, useState, type CSSProperties, type Point
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { Workspace } from "../api/types";
-import { useUi, rectOf, type OpenRoom, type RoomOrigin } from "../store/ui";
+import { useUi, rectOf, type OpenRoom, type RoomOrigin, type WinRect } from "../store/ui";
 import { createRoomStore, parseRoomLayout, RoomContext, useRoom } from "../store/room";
 import { useWindowDrag } from "../hooks/useWindowDrag";
 import { usePersistRoomLayout } from "../hooks/useRoomLayout";
@@ -12,6 +12,8 @@ import { BranchSwitcher } from "./Scm/BranchSwitcher";
 import { EditorArea } from "./Center/EditorArea";
 import { TerminalDock } from "./Center/TerminalDock";
 import { AgentPicker } from "./AgentPicker";
+import { WorkspacePromptWindow } from "./WorkspacePromptWindow";
+import type { WindowHandle } from "../hooks/useDraggableWindow";
 import { ResizeHandles } from "./ResizeHandles";
 import { BottomBar } from "./BottomBar";
 import { STATS_BAR_HEIGHT } from "./SystemStatsBar";
@@ -82,6 +84,17 @@ function RoomBody({ room }: { room: OpenRoom }) {
   const terminalHistory = useRoom(s => s.terminalHistory);
   const openAgentPicker = useRoom(s => s.openAgentPicker);
   const agentPickerOpen = useRoom(s => s.agentPickerOpen);
+  // Per-workspace system-prompt window — grows out of the header cog, minimizes back into it. Local
+  // (per-browser) state: origin rect to fly from, and a WindowHandle to run the same close animation
+  // when the cog is pressed a second time.
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptOrigin, setPromptOrigin] = useState<WinRect | null>(null);
+  const promptWin = useRef<WindowHandle>(null);
+  const togglePrompt = (btn: HTMLButtonElement) => {
+    if (promptOpen) { promptWin.current?.close(); return; }
+    setPromptOrigin(rectOf(btn));
+    setPromptOpen(true);
+  };
   // Save panel sizes / open-state / active view back to the DB (debounced) as they change.
   usePersistRoomLayout(workspaceId);
   const { data } = useQuery({ queryKey: ["workspaces"], queryFn: api.listWorkspaces, refetchInterval: 5000 });
@@ -374,6 +387,13 @@ function RoomBody({ room }: { room: OpenRoom }) {
             strip — see EditorArea.) */}
         <div className="flex items-center gap-2 shrink-0" onPointerDown={(e) => e.stopPropagation()}>
           {micPos === "top" && <MicButton />}
+          <button onClick={(e) => togglePrompt(e.currentTarget)} title="Workspace system message" aria-label="Workspace system message"
+            className="px-2 h-6 inline-flex items-center peacock-btn rounded text-sm leading-none">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+            </svg>
+          </button>
           <button onClick={minimize} title="Minimize to dock" aria-label="Minimize to dock"
             className="px-2 h-6 inline-flex items-center peacock-btn rounded text-sm leading-none">—</button>
           <button onClick={maximizeToggle} title={windowed ? "Maximize" : "Restore to window"}
@@ -411,6 +431,11 @@ function RoomBody({ room }: { room: OpenRoom }) {
       <BottomBar workspace={ws} />
 
       {agentPickerOpen && <AgentPicker workspaceId={ws.id} />}
+
+      {promptOpen && (
+        <WorkspacePromptWindow ref={promptWin} workspaceId={ws.id} workspaceName={ws.name}
+          origin={promptOrigin} onClose={() => setPromptOpen(false)} />
+      )}
 
       {windowed && <ResizeHandles onStart={beginResize} active={isFocused} />}
     </div>

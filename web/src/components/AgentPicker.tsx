@@ -26,16 +26,24 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
   });
   const [hrInstall, setHrInstall] = useState(false); // show install steps when the CLI is missing
 
+  // Per-terminal system-prompt layer set in this picker; applied to the next launch. `includeParent`
+  // false = ignore the workspace + global prompt and use only this text. Only built-in agents (which
+  // carry an agentId) are injected — see the server's applySystemPrompt.
+  const [sysText, setSysText] = useState("");
+  const [sysIncludeParent, setSysIncludeParent] = useState(true);
+  const [sysOpen, setSysOpen] = useState(false);
+  const termPrompt = () => sysText.trim() ? { text: sysText.trim(), includeParent: sysIncludeParent } : null;
+
   const launch = useMutation({
-    mutationFn: ({ command, title }: { command: string; title: string }) =>
-      api.createTerminal(workspaceId, { launchCommandOverride: command, title }),
+    mutationFn: ({ command, title, agentId }: { command: string; title: string; agentId: string | null }) =>
+      api.createTerminal(workspaceId, { launchCommandOverride: command, title, agentId, systemPrompt: termPrompt() }),
     // Focus the new terminal via the room's pending-focus channel, not setActive directly: the
     // workspaces query hasn't refetched yet, so the new id isn't in the list and Room's
     // "keep-active-valid" effect would snap focus back to the first terminal. The pending request
     // is honored once the terminal actually appears.
     onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["workspaces"] }); requestTerminalFocus(workspaceId, r.terminal.id); close(); },
   });
-  const pick = (command: string, title: string) => { if (!launch.isPending) launch.mutate({ command, title }); };
+  const pick = (command: string, title: string, agentId: string | null = null) => { if (!launch.isPending) launch.mutate({ command, title, agentId }); };
 
   // Which bottom panel is expanded: the add-a-CLI form, the Claude-loop wizard, or neither.
   const [panel, setPanel] = useState<"none" | "cli" | "loop">("none");
@@ -47,7 +55,7 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
   // types in once the agent is up (see runKickoff). Focus + close behave like a normal pick.
   const launchLoop = useMutation({
     mutationFn: (kickoff: string) =>
-      api.createTerminal(workspaceId, { launchCommandOverride: claudeCommand, title: "Claude Task", kickoff }),
+      api.createTerminal(workspaceId, { launchCommandOverride: claudeCommand, title: "Claude Task", kickoff, agentId: "claude", systemPrompt: termPrompt() }),
     onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["workspaces"] }); requestTerminalFocus(workspaceId, r.terminal.id); close(); },
   });
 
@@ -94,11 +102,11 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {builtins.map(a => (
               <AgentCard key={a.id} icon={`/agents/${a.id}.svg`} name={a.name} blurb={a.blurb}
-                onClick={() => pick(a.command, a.name)} />
+                onClick={() => pick(a.command, a.name, a.id)} />
             ))}
             {!headroomHidden && (
               <HeadroomCard status={hr} pending={launch.isPending || setHeadroomHidden.isPending}
-                onLaunch={() => { if (hr) pick(hr.command, "Claude (Headroom)"); }}
+                onLaunch={() => { if (hr) pick(hr.command, "Claude (Headroom)", "claude"); }}
                 onInstall={() => setHrInstall(v => !v)}
                 onHide={() => setHeadroomHidden.mutate(true)} />
             )}
@@ -124,8 +132,30 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
           <div className="text-xs uppercase tracking-wide text-dim mt-5 mb-2">Other</div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <AgentCard icon={FALLBACK_ICON} name="Plain terminal" blurb="Just a shell"
-              onClick={() => pick("", "Terminal")} />
+              onClick={() => pick("", "Terminal", null)} />
             {otherCustoms.map(customCard)}
+          </div>
+
+          <div className="mt-5 border-t border-edge pt-4">
+            <button onClick={() => setSysOpen(v => !v)} className="text-sm text-dim hover:text-fg flex items-center gap-1.5">
+              <span className="text-xs">{sysOpen ? "▾" : "▸"}</span>
+              System message for this terminal
+              {sysText.trim() && <span className="w-1.5 h-1.5 rounded-full bg-accent" title="set" />}
+            </button>
+            {sysOpen && (
+              <div className="mt-2 flex flex-col gap-2">
+                <textarea value={sysText} onChange={e => setSysText(e.target.value)} rows={4}
+                  placeholder="Extra instructions, persona, or context for the agent you launch next…"
+                  className="px-3 py-2 rounded bg-canvas border border-edge text-sm outline-none focus:border-accent/60 resize-y" />
+                <label className="flex items-center gap-2 text-xs text-dim">
+                  <input type="checkbox" checked={sysIncludeParent} onChange={e => setSysIncludeParent(e.target.checked)} />
+                  Build on the workspace + global prompt (uncheck to use only this text)
+                </label>
+                <div className="text-xs text-dim">
+                  Applies to built-in agents (Claude, Codex, Cursor, Gemini, opencode). Set it, then pick an agent above.
+                </div>
+              </div>
+            )}
           </div>
 
           {panel === "none" && (

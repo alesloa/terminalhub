@@ -14,6 +14,9 @@ export interface Workspace {
   spaceId: string | null;    // owning space (workspaces.spaceId); set on every row after the boot migration
   folderId: string | null;   // owning canvas folder (folders.id); null = loose on the canvas (the common case)
   config: SpaceConfig | null; // per-workspace wizard picks; seeds ADDITIVELY over the space config; null = none
+  // Per-workspace system-prompt layer for launched agents. `includeGlobal` false = ignore the agent's
+  // global prompt and use this text alone. null = no workspace prompt. See agents/systemPrompt.ts.
+  systemPrompt: { text: string; includeGlobal: boolean } | null;
   x: number;
   y: number;
   createdAt: number;
@@ -99,6 +102,9 @@ export interface Terminal {
   position: number; // order within the workspace's terminal list (contiguous 0..n-1)
   createdAt: number;
   titleAuto: boolean; // true = auto-titled (tracks the agent session / placeholder); false = user-renamed (pinned)
+  // Per-terminal system-prompt layer set at launch. `includeParent` false = ignore global+workspace
+  // and use this text alone. null = no terminal prompt. See agents/systemPrompt.ts.
+  systemPrompt: { text: string; includeParent: boolean } | null;
   alive?: boolean; // derived from tmux, not stored
 }
 
@@ -285,11 +291,25 @@ export interface MeterBaseline {
 }
 
 // A free-form scratchpad note from the Notes panel. `title` may be empty (the UI then shows the
-// first line of content). Mirrored by hand in web/src/api/types.ts.
+// first line of content). `groupId` files it into a note group (null = ungrouped). Mirrored by hand
+// in web/src/api/types.ts.
 export interface Note {
   id: string;
+  groupId: string | null;
   title: string;
   content: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// A group (Mac-Notes-style collection) for scratchpad notes, shown in the Notes panel's left rail.
+// Deleting a group re-homes its notes to ungrouped. Mirrors LinkFolder. Mirrored by hand in
+// web/src/api/types.ts.
+export interface NoteGroup {
+  id: string;
+  name: string;
+  color: string | null; // custom group-name / dot color (null = theme default)
+  sort: number;
   createdAt: number;
   updatedAt: number;
 }
