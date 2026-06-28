@@ -251,6 +251,7 @@ export interface SettingsResponse {
   stageDock: StageDock; // Stage Manager dock frosted-panel background
   breaks: BreakSettings; // recurring full-screen break enforcer config
   agentSystemPrompts: Record<string, string>; // per-agent global system prompts (agent id → prompt text)
+  removedAgents: string[]; // built-in agent ids the user removed from the New-terminal picker (re-addable)
 }
 
 /** Status for the special "Claude (Headroom)" launcher (GET /api/agents/headroom). */

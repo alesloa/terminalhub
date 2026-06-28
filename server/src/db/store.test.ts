@@ -801,4 +801,13 @@ describe("store: system prompts", () => {
     store.setAgentSystemPrompts({ claude: "You are Claude.", codex: "You are Codex." });
     expect(store.getAgentSystemPrompts()).toEqual({ claude: "You are Claude.", codex: "You are Codex." });
   });
+
+  it("round-trips the removed-agents blob (defaults to empty)", () => {
+    expect(store.getRemovedAgents()).toEqual([]);
+    store.setRemovedAgents(["codex", "cursor"]);
+    expect(store.getRemovedAgents()).toEqual(["codex", "cursor"]);
+    // Non-string entries are dropped so a malformed blob can't poison the picker filter.
+    store.setRemovedAgents(["claude"]);
+    expect(store.getRemovedAgents()).toEqual(["claude"]);
+  });
 });

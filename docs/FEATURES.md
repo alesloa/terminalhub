@@ -245,6 +245,12 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
 - **Custom agents** — define named agents (command + icon) in the New-terminal picker, filed under a
   category you choose or name (defaults to "Other"; "Detected agents" is reserved for `$PATH`-detected
   built-ins). Hover a custom agent to remove it. Built-in agents are detected from `$PATH`.
+- **Remove / re-add any card** — every card in the New-terminal picker has a hover ✕ to remove it:
+  detected built-ins (Claude/Codex/Cursor/…) and the Headroom launcher persist as removed (the CLI
+  stays on disk, it's just hidden from the picker); custom CLIs delete outright. **Plain terminal is the
+  one card that's always there** (no ✕). Removed built-ins/Headroom are re-addable from **"+ Add a CLI" →
+  "Detected on your computer"**, which lists every agent found on your machine with an **Add** button on
+  the ones you've removed.
 - **Add Claude Task** — a wizard in the New-terminal picker that builds one of Claude Code's built-in
   autonomous primitives: `/goal <condition>` (iterate until tests pass / lint clean / a condition holds)
   or `/loop [interval] <task>` (re-run a task every 5m, 1h…, or self-paced). It opens a fresh Claude

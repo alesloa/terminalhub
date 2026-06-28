@@ -330,6 +330,23 @@ describe("settings routes — agent system prompts", () => {
     const res = await h.app.inject({ method: "PATCH", url: "/api/settings", payload: { agentSystemPrompts: { claude: 42 } } });
     expect(res.statusCode).toBe(400);
   });
+
+  it("defaults removedAgents to an empty array", async () => {
+    const body = (await h.app.inject({ method: "GET", url: "/api/settings" })).json();
+    expect(body.removedAgents).toEqual([]);
+  });
+
+  it("PATCH persists removedAgents and round-trips on GET", async () => {
+    const res = await h.app.inject({ method: "PATCH", url: "/api/settings", payload: { removedAgents: ["codex", "cursor"] } });
+    expect(res.statusCode).toBe(200);
+    const body = (await h.app.inject({ method: "GET", url: "/api/settings" })).json();
+    expect(body.removedAgents).toEqual(["codex", "cursor"]);
+  });
+
+  it("rejects a non-string entry in removedAgents", async () => {
+    const res = await h.app.inject({ method: "PATCH", url: "/api/settings", payload: { removedAgents: ["codex", 7] } });
+    expect(res.statusCode).toBe(400);
+  });
 });
 
 describe("settings routes — stage manager", () => {

@@ -82,6 +82,7 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
       stageDock: ctx.store.getStageDock(),
       breaks: ctx.store.getBreaks(),
       agentSystemPrompts: ctx.store.getAgentSystemPrompts(),
+      removedAgents: ctx.store.getRemovedAgents(),
     };
   });
   app.patch("/api/settings", async (req, reply) => {
@@ -116,14 +117,18 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
       // Per-agent global system prompts (agent id → prompt text). Replaces the whole map. Persisted
       // separately under the `agentSystemPrompts` settings key.
       agentSystemPrompts: z.record(z.string(), z.string()).optional(),
+      // Built-in agent ids removed from the New-terminal picker. Replaces the whole list; an empty
+      // array re-adds everything. Persisted separately under the `removedAgents` settings key.
+      removedAgents: z.array(z.string()).optional(),
     }).safeParse(req.body);
     if (!b.success) return reply.code(400).send({ error: "invalid body" });
-    const { betterComments: bc, canvasBackground: cb, stageDock: sd, breaks: br, agentSystemPrompts: asp, ...rest } = b.data;
+    const { betterComments: bc, canvasBackground: cb, stageDock: sd, breaks: br, agentSystemPrompts: asp, removedAgents: ra, ...rest } = b.data;
     if (bc) ctx.store.setBetterComments(bc);
     if (cb) ctx.store.setCanvasBackground(cb);
     if (sd) ctx.store.setStageDock(sd);
     if (br) ctx.store.setBreaks(br);
     if (asp) ctx.store.setAgentSystemPrompts(asp);
+    if (ra) ctx.store.setRemovedAgents(ra);
     ctx.store.setSettings(rest);
     // Recolor every live terminal's status bar now (not just on next attach) when the status-text
     // color changes, so the change shows immediately across all open terminals.

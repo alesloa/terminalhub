@@ -26,6 +26,17 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
   });
   const [hrInstall, setHrInstall] = useState(false); // show install steps when the CLI is missing
 
+  // Built-in agent cards the user removed from the picker (persisted server-side). Plain terminal is
+  // never removable; customs delete outright; Headroom uses its own headroomLauncherHidden flag above.
+  // Removed agents are re-addable from the "+ Add a CLI" panel's detected list.
+  const removedAgents = settings?.removedAgents ?? [];
+  const setRemovedAgents = useMutation({
+    mutationFn: (ids: string[]) => api.updateSettings({ removedAgents: ids }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+  });
+  const removeAgent = (id: string) => { if (!removedAgents.includes(id)) setRemovedAgents.mutate([...removedAgents, id]); };
+  const readdAgent = (id: string) => setRemovedAgents.mutate(removedAgents.filter(x => x !== id));
+
   // Per-terminal system-prompt layer set in this picker; applied to the next launch. `includeParent`
   // false = ignore the workspace + global prompt and use only this text. Only built-in agents (which
   // carry an agentId) are injected — see the server's applySystemPrompt.
@@ -65,8 +76,23 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [close]);
 
-  const builtins = (data?.builtin ?? []).filter(a => a.installed); // only installed; missing ones are hidden
+  const installedBuiltins = (data?.builtin ?? []).filter(a => a.installed); // only installed; missing ones are hidden
+  const shownBuiltins = installedBuiltins.filter(a => !removedAgents.includes(a.id)); // minus user-removed
   const customs = data?.custom ?? [];
+
+  // Installed agents the user can re-add from the Add panel: detected built-ins + Headroom (if its CLI
+  // is present). `removed` reflects current visibility; `toggle` flips it.
+  const detected = [
+    ...installedBuiltins.map(a => ({
+      id: a.id, name: a.name, icon: `/agents/${a.id}.svg`,
+      removed: removedAgents.includes(a.id),
+      toggle: () => (removedAgents.includes(a.id) ? readdAgent(a.id) : removeAgent(a.id)),
+    })),
+    ...(hr?.installed ? [{
+      id: "headroom", name: "Claude (Headroom)", icon: "/agents/claude-headroom.svg",
+      removed: headroomHidden, toggle: () => setHeadroomHidden.mutate(!headroomHidden),
+    }] : []),
+  ];
 
   // Group custom CLIs by their chosen category. "Detected agents" is reserved for $PATH-detected
   // built-ins; user CLIs live under "Other" (the default) or any category they name. Each non-"Other"
@@ -100,9 +126,10 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
         <div className="p-5">
           <div className="text-xs uppercase tracking-wide text-dim mb-2">Detected agents</div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {builtins.map(a => (
+            {shownBuiltins.map(a => (
               <AgentCard key={a.id} icon={`/agents/${a.id}.svg`} name={a.name} blurb={a.blurb}
-                onClick={() => pick(a.command, a.name, a.id)} />
+                onClick={() => pick(a.command, a.name, a.id)}
+                onDelete={() => removeAgent(a.id)} />
             ))}
             {!headroomHidden && (
               <HeadroomCard status={hr} pending={launch.isPending || setHeadroomHidden.isPending}
@@ -110,9 +137,9 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
                 onInstall={() => setHrInstall(v => !v)}
                 onHide={() => setHeadroomHidden.mutate(true)} />
             )}
-            {builtins.length === 0 && headroomHidden && (
+            {shownBuiltins.length === 0 && headroomHidden && (
               <div className="col-span-full text-sm text-dim">
-                No agent CLIs detected on $PATH. Open a plain terminal or add one below.
+                No agents here — open a plain terminal, or add one from “+ Add a CLI” below.
               </div>
             )}
           </div>
@@ -162,13 +189,10 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
             <div className="mt-5 flex items-center gap-4">
               <button onClick={() => setPanel("cli")} className="text-sm text-blue-400 hover:text-blue-300">+ Add a CLI</button>
               <button onClick={() => setPanel("loop")} className="text-sm text-blue-400 hover:text-blue-300">+ Add Claude Task</button>
-              {headroomHidden && (
-                <button onClick={() => setHeadroomHidden.mutate(false)} className="text-sm text-blue-400 hover:text-blue-300">+ Show Claude (Headroom)</button>
-              )}
             </div>
           )}
           {panel === "cli" && (
-            <AddAgentForm knownCats={knownCats}
+            <AddAgentForm knownCats={knownCats} detected={detected}
               onClose={() => setPanel("none")}
               onAdded={() => qc.invalidateQueries({ queryKey: ["agents"] })} />
           )}
@@ -266,7 +290,11 @@ function HeadroomInstall({ status, onClose }: { status: HeadroomStatus; onClose:
   );
 }
 
-function AddAgentForm({ knownCats, onAdded, onClose }: { knownCats: string[]; onAdded: () => void; onClose: () => void }) {
+type DetectedAgent = { id: string; name: string; icon: string; removed: boolean; toggle: () => void };
+
+function AddAgentForm({ knownCats, detected, onAdded, onClose }: {
+  knownCats: string[]; detected: DetectedAgent[]; onAdded: () => void; onClose: () => void;
+}) {
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
   const [category, setCategory] = useState("Other");
@@ -295,6 +323,24 @@ function AddAgentForm({ knownCats, onAdded, onClose }: { knownCats: string[]; on
         <div className="text-sm font-medium">Add a CLI</div>
         <button onClick={onClose} className="text-dim hover:text-fg text-sm leading-none">✕</button>
       </div>
+      {/* Agents detected on this machine — re-add any you removed from the picker. */}
+      {detected.length > 0 && (
+        <div className="mb-4">
+          <div className="text-xs uppercase tracking-wide text-dim mb-2">Detected on your computer</div>
+          <div className="flex flex-col gap-1.5">
+            {detected.map(d => (
+              <div key={d.id} className="flex items-center gap-2.5 px-2.5 py-1.5 rounded border border-edge bg-canvas">
+                <img src={d.icon} alt="" className="w-5 h-5 shrink-0 object-contain" />
+                <span className="flex-1 min-w-0 truncate text-sm text-bright">{d.name}</span>
+                {d.removed
+                  ? <button onClick={d.toggle} className="shrink-0 text-xs text-blue-400 hover:text-blue-300">Add</button>
+                  : <span className="shrink-0 text-xs text-dim">Added</span>}
+              </div>
+            ))}
+          </div>
+          <div className="text-xs uppercase tracking-wide text-dim mt-4 mb-2">Or add a custom CLI</div>
+        </div>
+      )}
       <div className="flex flex-col gap-3">
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Name (e.g. Aider)"
           className="px-3 py-2 rounded bg-canvas border border-edge text-sm outline-none focus:border-accent/60" />

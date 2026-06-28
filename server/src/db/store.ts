@@ -266,6 +266,10 @@ export interface Store {
   // agent id → prompt text. The base layer the workspace/terminal layers build on. See systemPrompt.ts.
   getAgentSystemPrompts(): Record<string, string>;
   setAgentSystemPrompts(map: Record<string, string>): void;
+  // Built-in agent ids the user removed from the New-terminal picker (JSON array under the
+  // `removedAgents` settings key). The picker filters these out; re-adding clears the id.
+  getRemovedAgents(): string[];
+  setRemovedAgents(ids: string[]): void;
   // Copilot singleton settings (JSON blob under the `copilot` settings key). getCopilotSettings
   // merges over defaults field-by-field; setCopilotSettings persists the validated whole object.
   getCopilotSettings(): CopilotSettings;
@@ -1058,6 +1062,18 @@ export function createStore(path: string): Store {
     setAgentSystemPrompts(map) {
       db.prepare(`INSERT INTO settings (key,value) VALUES ('agentSystemPrompts',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
         .run(JSON.stringify(map));
+    },
+    getRemovedAgents() {
+      const row = db.prepare(`SELECT value FROM settings WHERE key='removedAgents'`).get() as { value: string } | undefined;
+      if (!row) return [];
+      try {
+        const p = JSON.parse(row.value);
+        return Array.isArray(p) ? p.filter((x): x is string => typeof x === "string") : [];
+      } catch { return []; }
+    },
+    setRemovedAgents(ids) {
+      db.prepare(`INSERT INTO settings (key,value) VALUES ('removedAgents',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+        .run(JSON.stringify(ids));
     },
     getCopilotSettings() {
       const row = db.prepare(`SELECT value FROM settings WHERE key='copilot'`).get() as { value: string } | undefined;
