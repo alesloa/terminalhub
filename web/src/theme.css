@@ -339,13 +339,28 @@ html, body, #root { height: 100%; }
   background: rgb(var(--tr-text) / 0.20); border: 1px solid rgb(var(--tr-text) / 0.32); pointer-events: none; }
 .tr-diff-ruler:hover .tr-mm-thumb { background: rgb(var(--tr-text) / 0.30); }
 
-/* When the overview ruler is OFF (minimap toggle off), the diff shows a normal native scrollbar —
-   make it thick/grabbable. When the ruler is ON, JS adds `.no-scrollbar` and the ruler is the scroll
-   control, so `:not(.no-scrollbar)` keeps this rule from fighting the hide. */
-.cm-diff-host.cm-diff-fill .cm-scroller:not(.no-scrollbar) { scrollbar-width: auto; }
-.cm-diff-host.cm-diff-fill .cm-scroller:not(.no-scrollbar)::-webkit-scrollbar { width: 14px; height: 14px; }
-.cm-diff-host.cm-diff-fill .cm-scroller:not(.no-scrollbar)::-webkit-scrollbar-thumb {
+/* The single-file diff always shows a thick, grabbable native scrollbar. When the overview ruler is
+   ON, JS adds `.cm-diff-hide-vscroll`: the ruler becomes the only VERTICAL control, but the
+   HORIZONTAL bar stays so long lines (word-wrap off) can be scrolled side to side. WebKit axis
+   pseudo-classes hide just the vertical bar; Firefox can't target one axis, so it keeps both (the
+   42px ruler overlays the vertical one anyway). */
+.cm-diff-host.cm-diff-fill .cm-scroller { scrollbar-width: auto; }
+.cm-diff-host.cm-diff-fill .cm-scroller::-webkit-scrollbar { width: 14px; height: 14px; }
+.cm-diff-host.cm-diff-fill .cm-scroller::-webkit-scrollbar-thumb {
   background: rgb(var(--tr-edge-strong)); border-radius: 8px; border: 3px solid rgb(var(--tr-code)); background-clip: padding-box; }
+.cm-diff-host.cm-diff-fill .cm-scroller.cm-diff-hide-vscroll::-webkit-scrollbar:vertical { display: none; }
+.cm-diff-host.cm-diff-fill .cm-scroller.cm-diff-hide-hscroll::-webkit-scrollbar:horizontal { display: none; }
+
+/* Single full-width horizontal scrollbar for the split diff (see DiffView): ONE bar across the whole
+   width that scrolls the left AND right panes in lock-step, so columns line up when comparing — the
+   per-pane native horizontal bars are hidden and this overlays the diff's bottom edge (like the ruler
+   overlays its right edge). `.cm-diff-fill` is the positioning context for both. */
+.cm-diff-host.cm-diff-fill { position: relative; }
+.tr-diff-hbar { position: absolute; left: 0; right: 0; bottom: 0; height: 14px; z-index: 6; cursor: pointer;
+  background: rgb(var(--tr-code)); border-top: 1px solid rgb(var(--tr-edge-strong)); }
+.tr-diff-hbar-thumb { position: absolute; top: 2px; bottom: 2px; border-radius: 6px;
+  background: rgb(var(--tr-edge-strong)); border: 1px solid rgb(var(--tr-text) / 0.12); }
+.tr-diff-hbar:hover .tr-diff-hbar-thumb { background: rgb(var(--tr-text-muted)); }
 
 /* Diff add/remove colors — VS Code's exact diff palette (dark), from
    vscode/src/vs/platform/theme/common/colors/editorColors.ts. @codemirror/merge ships muddy

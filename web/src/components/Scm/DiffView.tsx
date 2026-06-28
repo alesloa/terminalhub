@@ -253,6 +253,7 @@ function MergeFile({ oldText, newText, name, fill }: { oldText: string; newText:
 
     let syncIndicator = () => {};
     let drawMarks = () => {};
+    let syncHBar = () => {};               // resize the split diff's shared horizontal scrollbar thumb
     let mmView: EditorView | null = null; // editor the overview ruler attaches to (new side / unified)
     let cleanup = () => {};
 
@@ -269,18 +270,66 @@ function MergeFile({ oldText, newText, name, fill }: { oldText: string; newText:
       cleanup = () => mv.destroy();
       if (fill) {
         // Single-file split: the `.cm-diff-fill` CSS gives each side its own scroll (so the ruler
-        // pins); keep the two sides vertically in sync (drag the ruler → scrolls b → mirrors a).
+        // pins). Keep the two sides in sync on BOTH axes — vertical AND horizontal — so the same
+        // columns line up for comparison: scroll/drag either side and the other mirrors it.
         mv.dom.style.height = "100%";
         const a = mv.a.scrollDOM, b = mv.b.scrollDOM;
-        // With the ruler present, the left pane scrolls in sync with the right; hide its native bar so
-        // the only scroll control is the (thick) ruler on the far right, like VS Code's split diff.
-        if (wantRuler) a.classList.add("no-scrollbar");
+        // Native per-pane horizontal bars are hidden; ONE full-width bar (below) drives both sides.
+        a.classList.add("cm-diff-hide-hscroll"); b.classList.add("cm-diff-hide-hscroll");
+        // With the ruler present it's the only VERTICAL control, so hide the left pane's native
+        // vertical bar too (the right pane's is hidden in the ruler block).
+        if (wantRuler) a.classList.add("cm-diff-hide-vscroll");
         let lock = false;
-        const onA = () => { if (lock) return; lock = true; b.scrollTop = a.scrollTop; lock = false; };
-        const onB = () => { if (lock) return; lock = true; a.scrollTop = b.scrollTop; lock = false; };
+
+        // One horizontal scrollbar spanning the whole diff, scrolling left+right panes in lock-step
+        // (VS Code's split diff has independent h-scroll; the maintainer wants them locked to compare).
+        const hbar = document.createElement("div"); hbar.className = "tr-diff-hbar";
+        const hthumb = document.createElement("div"); hthumb.className = "tr-diff-hbar-thumb";
+        hbar.appendChild(hthumb);
+        if (wantRuler) hbar.style.right = "43px"; // stop before the vertical ruler (42px + its border)
+        el.appendChild(hbar);
+        const hMax = () => Math.max(a.scrollWidth - a.clientWidth, b.scrollWidth - b.clientWidth);
+        const hView = () => Math.max(a.clientWidth, b.clientWidth);
+        syncHBar = () => {
+          const max = hMax(), track = hbar.clientWidth;
+          if (max <= 1 || track <= 0) { hbar.style.display = "none"; return; }
+          hbar.style.display = "block";
+          const tw = Math.min(track, Math.max(28, (hView() / (hView() + max)) * track));
+          hthumb.style.width = tw + "px";
+          hthumb.style.left = ((b.scrollLeft / max) * (track - tw)) + "px";
+        };
+
+        const onA = () => { if (lock) return; lock = true; b.scrollTop = a.scrollTop; b.scrollLeft = a.scrollLeft; lock = false; syncHBar(); };
+        const onB = () => { if (lock) return; lock = true; a.scrollTop = b.scrollTop; a.scrollLeft = b.scrollLeft; lock = false; syncHBar(); };
         a.addEventListener("scroll", onA); b.addEventListener("scroll", onB);
+
+        // Map a thumb x-position (px within the track) to both panes' scrollLeft.
+        const setHScroll = (leftPx: number) => {
+          const span = hbar.clientWidth - hthumb.offsetWidth;
+          const ratio = span > 0 ? Math.min(1, Math.max(0, leftPx / span)) : 0;
+          lock = true; a.scrollLeft = b.scrollLeft = ratio * hMax(); lock = false; syncHBar();
+        };
+        let grabDX = 0; // cursor→thumb-left offset captured on grab, so a drag never jump-centers
+        const onHMove = (ev: MouseEvent) => setHScroll(ev.clientX - hbar.getBoundingClientRect().left - grabDX);
+        const onHUp = () => { window.removeEventListener("mousemove", onHMove); window.removeEventListener("mouseup", onHUp); };
+        const onHDown = (ev: MouseEvent) => {
+          ev.preventDefault();
+          const x = ev.clientX - hbar.getBoundingClientRect().left, tl = hthumb.offsetLeft, tw = hthumb.offsetWidth;
+          if (x >= tl && x <= tl + tw) {            // grabbed the thumb → drag from where it was grabbed
+            grabDX = x - tl;
+            window.addEventListener("mousemove", onHMove); window.addEventListener("mouseup", onHUp);
+          } else {                                  // clicked the empty track → page one viewport that way
+            const next = b.scrollLeft + (x < tl ? -1 : 1) * hView();
+            lock = true; a.scrollLeft = b.scrollLeft = Math.max(0, Math.min(hMax(), next)); lock = false; syncHBar();
+          }
+        };
+        hbar.addEventListener("mousedown", onHDown);
+
         mmView = mv.b;
-        cleanup = () => { a.removeEventListener("scroll", onA); b.removeEventListener("scroll", onB); mv.destroy(); };
+        cleanup = () => {
+          a.removeEventListener("scroll", onA); b.removeEventListener("scroll", onB);
+          hbar.removeEventListener("mousedown", onHDown); onHUp(); hbar.remove(); mv.destroy();
+        };
       }
     } else {
       const view = new EditorView({
@@ -309,7 +358,7 @@ function MergeFile({ oldText, newText, name, fill }: { oldText: string; newText:
       ruler.appendChild(marks); ruler.appendChild(thumb);
       v.dom.appendChild(ruler); // .cm-editor is the positioning context (see `.cm-diff-fill .cm-editor` CSS)
       const sd = v.scrollDOM;
-      sd.classList.add("no-scrollbar"); // the ruler IS the scroll control — hide the native bar under it
+      sd.classList.add("cm-diff-hide-vscroll"); // ruler IS the vertical control — hide only the vertical bar under it, keep horizontal
 
       syncIndicator = () => {
         const rH = ruler.clientHeight, sh = sd.scrollHeight, ch = sd.clientHeight;
@@ -366,7 +415,7 @@ function MergeFile({ oldText, newText, name, fill }: { oldText: string; newText:
     // expanding/collapsing the "N unchanged lines" folds, which grow the content without resizing
     // the host. drawMarks/syncIndicator only read geometry + set the ruler's styles, so observing
     // the content can't loop. Cheap (a few marks), so just redraw on any observed change.
-    const redraw = () => { drawMarks(); syncIndicator(); };
+    const redraw = () => { drawMarks(); syncIndicator(); syncHBar(); };
     const raf = requestAnimationFrame(redraw);
     const ro = new ResizeObserver(redraw);
     ro.observe(el);
