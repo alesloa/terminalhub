@@ -11,9 +11,10 @@ export async function notesRoutes(app: FastifyInstance, ctx: AppContext) {
     const b = z.object({
       title: z.string().default(""),
       content: z.string().default(""),
+      groupId: z.string().nullish(),
     }).safeParse(req.body ?? {});
     if (!b.success) return reply.code(400).send({ error: "invalid body" });
-    const note = ctx.store.createNote({ title: b.data.title, content: b.data.content });
+    const note = ctx.store.createNote({ title: b.data.title, content: b.data.content, groupId: b.data.groupId ?? null });
     return { note };
   });
 
@@ -23,11 +24,13 @@ export async function notesRoutes(app: FastifyInstance, ctx: AppContext) {
     const b = z.object({
       title: z.string().optional(),
       content: z.string().optional(),
+      groupId: z.string().nullable().optional(),
     }).safeParse(req.body ?? {});
     if (!b.success) return reply.code(400).send({ error: "invalid body" });
     ctx.store.updateNote(id, {
       ...(b.data.title !== undefined ? { title: b.data.title } : {}),
       ...(b.data.content !== undefined ? { content: b.data.content } : {}),
+      ...(b.data.groupId !== undefined ? { groupId: b.data.groupId } : {}),
     });
     return { note: ctx.store.getNote(id)! };
   });

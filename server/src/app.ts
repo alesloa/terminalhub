@@ -32,6 +32,7 @@ import { bookmarkRoutes } from "./routes/bookmarks.js";
 import { favoritesRoutes } from "./routes/favorites.js";
 import { blueprintRoutes } from "./routes/blueprints.js";
 import { notesRoutes } from "./routes/notes.js";
+import { noteGroupsRoutes } from "./routes/noteGroups.js";
 import { linksRoutes } from "./routes/links.js";
 import { stickyNotesRoutes } from "./routes/stickyNotes.js";
 import { spaceWidgetsRoutes } from "./routes/spaceWidgets.js";
@@ -142,6 +143,7 @@ export async function buildApp(config: Config, ctx: AppContext): Promise<Fastify
   await app.register(async (a) => favoritesRoutes(a, ctx));
   await app.register(async (a) => blueprintRoutes(a, ctx));
   await app.register(async (a) => notesRoutes(a, ctx));
+  await app.register(async (a) => noteGroupsRoutes(a, ctx));
   await app.register(async (a) => linksRoutes(a, ctx));
   await app.register(async (a) => stickyNotesRoutes(a, ctx));
   await app.register(async (a) => spaceWidgetsRoutes(a, ctx));
