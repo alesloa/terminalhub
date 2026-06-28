@@ -266,7 +266,7 @@ export const HelpModal = forwardRef<WindowHandle, { origin?: WinRect | null; onC
         <TabButton active={tab === "timesheet"} onClick={() => setTab("timesheet")}>Timesheet</TabButton>
         <TabButton active={tab === "secrets"} onClick={() => setTab("secrets")}>Secrets</TabButton>
         <TabButton active={tab === "sharing"} onClick={() => setTab("sharing")}>Sharing</TabButton>
-        <TabButton active={tab === "copilot"} onClick={() => setTab("copilot")}>Copilot</TabButton>
+        <TabButton active={tab === "copilot"} onClick={() => setTab("copilot")}>Assistant</TabButton>
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto p-5 space-y-6 text-sm leading-relaxed">
@@ -475,10 +475,10 @@ function CopilotHelp() {
   return (
     <>
       <p className="text-fg">
-        The <code className="text-bright">Copilot</code> is an in-app AI assistant that knows this whole
+        The <code className="text-bright">Assistant</code> is an in-app AI assistant that knows this whole
         app and can act on it. Open it from the floating <span className="text-bright">orb</span> in the
-        corner of the canvas or the <span className="text-bright">Copilot</span> tile in the launcher.
-        Turn it on/off and place the orb in <code className="text-bright">Settings → Copilot</code>.
+        corner of the canvas or the <span className="text-bright">Assistant</span> tile in the launcher.
+        Turn it on/off and place the orb in <code className="text-bright">Settings → Assistant</code>.
       </p>
 
       <div className="space-y-1.5 text-dim">

@@ -130,7 +130,7 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
   };
 
   const launcherItems: LauncherItem[] = [
-    { id: "copilot", label: "Copilot", description: "Your in-app AI assistant — knows every feature and can act for you (notes, board, reminders, email, and more).", section: "tools", icon: <CopilotTileIcon />, active: copilotOpen, onSelect: () => copilotOpen ? requestCopilotClose() : setCopilotOpen(true, launcherOrigin()) },
+    { id: "copilot", label: "Assistant", description: "Your in-app AI assistant — knows every feature and can act for you (notes, board, reminders, email, and more).", section: "tools", icon: <CopilotTileIcon />, active: copilotOpen, onSelect: () => copilotOpen ? requestCopilotClose() : setCopilotOpen(true, launcherOrigin()) },
     { id: "favorites", label: "Favorites", description: "Your pinned projects — jump straight to a workspace.", section: "workspace", icon: <StarIcon filled={favoritesOpen} />, active: favoritesOpen, onSelect: toggleFavorites },
     ...(stageEnabled ? [{ id: "stage", label: "Stage Manager", description: "Slide through every open room and jump to one. All-open switcher or spotlight.", section: "workspace", icon: <StageIcon active={stageOpen} />, active: stageOpen, onSelect: toggleStage }] as LauncherItem[] : []),
     { id: "files", label: "Files", description: "Browse the files and folders on your machine.", section: "workspace", icon: <FolderIcon />, active: browserOpen, onSelect: () => browserOpen ? browserWin.current?.close() : openBrowser() },

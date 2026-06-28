@@ -1,5 +1,6 @@
 import type { AiProvider } from "../ai/types.js";
-import { resolveKey, aiFetch, AiError } from "../ai/complete.js";
+import { resolveKey, aiFetch, AiError, complete } from "../ai/complete.js";
+import { buildCliPrompt, parseCliEnvelope } from "./cliProtocol.js";
 import type {
   ToolDef, CopilotMessage, ContentBlock, AssistantTurn, ProviderToolCall, CopilotProvider, ChatStreamRequest,
 } from "./types.js";
@@ -136,16 +137,33 @@ async function checkOk(p: AiProvider, res: Response) {
 }
 
 // ── Provider ─────────────────────────────────────────────────────────────────
-// Wrap an AiProvider as a streaming, tool-calling CopilotProvider. CLI engines have no native
-// tool-use, so they're rejected — the copilot needs an Anthropic or OpenAI-compatible API engine.
+// Wrap an AiProvider as a tool-calling CopilotProvider. API engines (Anthropic / OpenAI-compatible)
+// stream with native tool-use; CLI engines have no tool-use API, so they're driven over a JSON text
+// protocol (see runCliEngine) — the agent loop treats both the same.
 export function createProvider(p: AiProvider): CopilotProvider {
   return {
     async run(req, onToken) {
       if (p.kind === "anthropic") return runAnthropic(p, req, onToken);
       if (p.kind === "openai-compatible") return runOpenAI(p, req, onToken);
-      throw new AiError(`${p.label}: the Copilot needs an API engine (Anthropic or OpenAI-compatible), not a CLI`);
+      if (p.kind === "cli") return runCliEngine(p, req, onToken);
+      throw new AiError(`${p.label}: unsupported engine kind`);
     },
   };
+}
+
+// A CLI engine (claude -p, codex exec, …) one-shot per step: render the turn into a single prompt,
+// run the CLI, and parse its { reply, tool_calls } envelope back into the SAME normalized turn an API
+// engine produces — so the agent loop drives a CLI identically. No live streaming (the CLI is
+// one-shot), so the reply is emitted once. Tool calls get synthesized ids (CLIs don't supply them).
+async function runCliEngine(p: AiProvider, req: ChatStreamRequest, onToken: (delta: string) => void): Promise<AssistantTurn> {
+  const prompt = buildCliPrompt(req.system, req.messages, req.tools);
+  const raw = await complete(p, prompt, MAX_TOKENS);
+  const { reply, toolCalls } = parseCliEnvelope(raw);
+  if (reply) onToken(reply);
+  const blocks: AnthroBlock[] = [];
+  if (reply) blocks.push({ type: "text", text: reply });
+  toolCalls.forEach((c, i) => blocks.push({ type: "tool_use", id: `call_${i}_${c.name}`, name: c.name, json: JSON.stringify(c.input ?? {}) }));
+  return finalize(blocks);
 }
 
 async function runAnthropic(p: AiProvider, req: ChatStreamRequest, onToken: (d: string) => void): Promise<AssistantTurn> {

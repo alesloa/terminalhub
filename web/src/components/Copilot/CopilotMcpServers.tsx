@@ -37,7 +37,7 @@ export function CopilotMcpServers() {
             <div className="font-semibold text-sm text-bright">Tool servers (MCP)</div>
             <span className="text-[10px] uppercase tracking-wide text-dim border border-edge rounded px-1.5 py-0.5">Always on</span>
           </div>
-          <div className="text-xs text-muted mt-1 leading-5">Connect MCP servers to give the Copilot extra tools — search, browsers, APIs, or your own servers. Each one you add and enable runs without asking.</div>
+          <div className="text-xs text-muted mt-1 leading-5">Connect MCP servers to give the Assistant extra tools — search, browsers, APIs, or your own servers. Each one you add and enable runs without asking.</div>
 
           <div className="mt-3 border-t border-edge pt-3 space-y-2">
             {servers.isLoading && <div className="text-xs text-dim">loading…</div>}

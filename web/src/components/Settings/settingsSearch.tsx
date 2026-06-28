@@ -13,7 +13,7 @@ export const TAB_LABELS: Record<TabId, string> = {
   editor: "Editor",
   terminal: "Terminal",
   voice: "Voice & Speech",
-  copilot: "Copilot",
+  copilot: "Assistant",
   connections: "Connections",
   access: "Remote Access",
 };
@@ -71,7 +71,7 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   { label: "OpenAI model", tab: "voice", id: "openai-model", keywords: "transcribe whisper" },
   { label: "Pushover", tab: "voice", id: "pushover", keywords: "phone push reminders" },
   // Copilot / Connections / Access
-  { label: "Copilot", tab: "copilot", id: "copilot", keywords: "skills mcp tools engine" },
+  { label: "Assistant", tab: "copilot", id: "copilot", keywords: "skills mcp tools engine copilot agent assistant" },
   { label: "Google Drive", tab: "connections", id: "google-drive", keywords: "account connection" },
   { label: "Access token", tab: "access", id: "access-token", keywords: "remote tunnel cloudflare auth" },
 ];

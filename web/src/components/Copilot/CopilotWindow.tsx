@@ -109,7 +109,7 @@ export function CopilotWindow({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-2.5">
           <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-white"><SparkIcon /></div>
           <div className="leading-tight">
-            <div className="font-semibold text-sm">Copilot</div>
+            <div className="font-semibold text-sm">Assistant</div>
             <EnginePicker />
           </div>
         </div>
@@ -119,7 +119,7 @@ export function CopilotWindow({ onClose }: { onClose: () => void }) {
 
       {settings.data && !settings.data.enabled ? (
         <div className="flex-1 flex items-center justify-center text-center text-muted text-sm px-6">
-          The Copilot is disabled. Enable it in Settings → Copilot.
+          The Assistant is disabled. Enable it in Settings → Assistant.
         </div>
       ) : (
         <>

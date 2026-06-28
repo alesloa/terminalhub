@@ -20,18 +20,18 @@ export function accountsSummary(app: AppContext): string | undefined {
   return `Email accounts: ${email.map((a) => `${a.label} (${a.provider})`).join(", ")}`;
 }
 
-// Pick the AiProvider that drives the copilot: the user's chosen default engine, else the global AI
-// default, else the first enabled API provider. CLI engines can't do native tool-use, so they're
-// rejected with a clear message rather than silently failing mid-turn.
+// Pick the AiProvider that drives the Agent: the user's chosen default engine, else the global AI
+// default, else the first enabled engine (preferring an API engine — faster, native tool-use — and
+// falling back to any enabled CLI engine, which is driven over the JSON text protocol).
 export function resolveCopilotProvider(app: AppContext): { provider: CopilotProvider; providerId: string } | { error: string } {
   const settings = app.store.getCopilotSettings();
   const cfg = app.store.getAiConfig();
   const byId = (id: string | null) => (id ? cfg.providers.find((p) => p.id === id) : undefined);
   const p = byId(settings.defaultEngine)
     ?? byId(cfg.defaultProviderId)
-    ?? cfg.providers.find((x) => x.enabled && (x.kind === "anthropic" || x.kind === "openai-compatible"));
-  if (!p) return { error: "No AI engine configured. Add an Anthropic or OpenAI-compatible provider in Settings → AI." };
-  if (p.kind === "cli") return { error: `"${p.label}" is a CLI engine; the Copilot needs an API engine (Anthropic or OpenAI-compatible). Pick one in Settings.` };
+    ?? cfg.providers.find((x) => x.enabled && (x.kind === "anthropic" || x.kind === "openai-compatible"))
+    ?? cfg.providers.find((x) => x.enabled);
+  if (!p) return { error: "No AI engine configured. Add a provider (API or CLI) in Settings → AI." };
   return { provider: createProvider(p), providerId: p.id };
 }
 

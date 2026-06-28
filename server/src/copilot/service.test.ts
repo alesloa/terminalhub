@@ -24,10 +24,10 @@ describe("resolveCopilotProvider", () => {
     expect("error" in r).toBe(true);
   });
 
-  it("rejects a CLI engine (needs an API engine)", () => {
+  it("resolves a CLI engine (driven over the JSON text protocol)", () => {
     app.store.setAiConfig({ providers: [{ id: "ai_cli", kind: "cli", label: "Claude CLI", enabled: true, command: ["claude"] }], defaultProviderId: "ai_cli" });
     const r = resolveCopilotProvider(app);
-    expect("error" in r && r.error.toLowerCase()).toContain("api engine");
+    expect("provider" in r).toBe(true);
   });
 
   it("resolves an Anthropic engine", () => {

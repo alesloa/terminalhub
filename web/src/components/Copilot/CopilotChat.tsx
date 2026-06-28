@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import type { CopilotMessage, CopilotFrame } from "../../api/types";
+import type { CopilotMessage, CopilotFrame, CopilotConversation } from "../../api/types";
+import { useCopilotConversations, useDeleteConversation } from "../../hooks/useCopilot";
+import { confirmModal } from "../../store/confirm";
 import { useCopilotSocket } from "./useCopilotSocket";
 
 // One rendered chat turn. `tools` are the action chips shown under an assistant turn (live: with a
@@ -33,32 +35,82 @@ function toUiMessages(msgs: CopilotMessage[]): UiMsg[] {
   return out;
 }
 
+// A saved chat's display label: its title (set from the first message), or a fallback.
+const titleOf = (c?: CopilotConversation) => c?.title?.trim() || "Untitled chat";
+
+function timeAgo(ts: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60); if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24); if (d < 7) return `${d}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
 export function CopilotChat() {
   const qc = useQueryClient();
+  const convos = useCopilotConversations();
+  const del = useDeleteConversation();
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<UiMsg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<{ callId: string; name: string } | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const draftIdRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const resumedRef = useRef(false);
 
-  // On first open, resume the most recent conversation (or start fresh). Conversations persist server-side.
+  const list = convos.data ?? [];
+  const currentTitle = conversationId ? titleOf(list.find((c) => c.id === conversationId)) : "New chat";
+
+  // Load a saved conversation's transcript and make it the active chat.
+  const openConversation = async (id: string) => {
+    setHistoryOpen(false);
+    setError(null);
+    setConversationId(id);
+    draftIdRef.current = null;
+    try {
+      const { messages: m } = await api.copilot.getConversation(id);
+      setMessages(toUiMessages(m));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't load that chat.");
+    }
+  };
+
+  // Start a fresh chat. The current one stays saved in history; the server row is created lazily on
+  // the first send (so empty chats never pile up).
+  const newChat = () => {
+    setHistoryOpen(false);
+    setError(null);
+    setConversationId(null);
+    setMessages([]);
+    draftIdRef.current = null;
+  };
+
+  // Delete a saved conversation (and its messages). If it was the active one, drop back to a new chat.
+  const removeConversation = async (id: string) => {
+    const ok = await confirmModal({ title: "Delete chat", body: "Delete this conversation and its messages? This can't be undone.", confirmLabel: "Delete" });
+    if (!ok) return;
+    try { await del.mutateAsync(id); }
+    catch (e) { setError(e instanceof Error ? e.message : "Couldn't delete that chat."); return; }
+    if (id === conversationId) newChat();
+  };
+
+  // Clear the current chat: delete it outright if it's been saved, otherwise just empty the view.
+  const clearCurrent = async () => {
+    if (conversationId) { await removeConversation(conversationId); return; }
+    setMessages([]);
+    setError(null);
+  };
+
+  // On first load, resume the most recent conversation (or start fresh). Conversations persist server-side.
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      const { conversations } = await api.copilot.listConversations();
-      if (!alive) return;
-      if (conversations.length) {
-        const id = conversations[0].id;
-        setConversationId(id);
-        const { messages: m } = await api.copilot.getConversation(id);
-        if (alive) setMessages(toUiMessages(m));
-      }
-    })();
-    return () => { alive = false; };
-  }, []);
+    if (resumedRef.current || !convos.data) return;
+    resumedRef.current = true;
+    if (convos.data.length) void openConversation(convos.data[0].id);
+  }, [convos.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const patch = (id: string, fn: (m: UiMsg) => UiMsg) => setMessages((ms) => ms.map((m) => (m.id === id ? fn(m) : m)));
 
@@ -86,6 +138,8 @@ export function CopilotChat() {
         break;
       case "done":
         setBusy(false);
+        // Drop an empty draft (assistant returned nothing) so it doesn't leave a stuck typing wave.
+        if (draftId) setMessages((ms) => ms.filter((m) => !(m.id === draftId && !m.text && m.tools.length === 0)));
         draftIdRef.current = null;
         setPendingConfirm(null);
         qc.invalidateQueries({ queryKey: ["copilot", "conversations"] });
@@ -104,7 +158,8 @@ export function CopilotChat() {
     setError(null);
     let id = conversationId;
     if (!id) {
-      try { id = (await api.copilot.createConversation()).conversation.id; setConversationId(id); qc.invalidateQueries({ queryKey: ["copilot", "conversations"] }); }
+      // Auto-title the new conversation from its first message so history is browsable.
+      try { id = (await api.copilot.createConversation(text.slice(0, 60))).conversation.id; setConversationId(id); qc.invalidateQueries({ queryKey: ["copilot", "conversations"] }); }
       catch (e) { setError(e instanceof Error ? e.message : "Couldn't start a conversation."); return; }
     }
     const userId = `u_${Date.now()}`;
@@ -119,12 +174,51 @@ export function CopilotChat() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
+      <div className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-edge">
+        <div className="relative flex-1 min-w-0">
+          <button onClick={() => setHistoryOpen((o) => !o)} disabled={busy} title="Chat history"
+            className="flex items-center gap-1.5 max-w-full px-2 py-1 rounded-lg hover:bg-elevated text-muted hover:text-bright disabled:opacity-40 disabled:hover:bg-transparent transition-colors">
+            <HistoryIcon />
+            <span className="truncate text-xs font-medium">{currentTitle}</span>
+            <ChevronIcon />
+          </button>
+          {historyOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setHistoryOpen(false)} />
+              <div className="absolute left-0 top-full z-20 mt-1 w-72 max-h-80 overflow-auto rounded-xl border border-edge-strong bg-elevated py-1 shadow-2xl">
+                {list.length === 0 && <div className="px-3 py-2 text-xs text-dim">No saved chats yet.</div>}
+                {list.map((c) => (
+                  <div key={c.id} className={`group flex items-center gap-1 px-1.5 ${c.id === conversationId ? "bg-surface" : "hover:bg-surface/60"}`}>
+                    <button onClick={() => openConversation(c.id)} className="flex-1 min-w-0 text-left py-1.5 px-1">
+                      <div className="truncate text-xs text-bright">{titleOf(c)}</div>
+                      <div className="text-[10px] text-dim">{timeAgo(c.updatedAt)}</div>
+                    </button>
+                    <button onClick={() => removeConversation(c.id)} title="Delete chat"
+                      className="shrink-0 w-6 h-6 rounded-md text-dim hover:text-red-300 hover:bg-red-500/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <TrashIcon />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        <button onClick={newChat} disabled={busy} title="New chat"
+          className="shrink-0 w-7 h-7 rounded-lg hover:bg-elevated text-muted hover:text-bright disabled:opacity-40 flex items-center justify-center transition-colors">
+          <PlusIcon />
+        </button>
+        <button onClick={clearCurrent} disabled={busy || (messages.length === 0 && !conversationId)} title="Clear chat"
+          className="shrink-0 w-7 h-7 rounded-lg hover:bg-elevated text-muted hover:text-red-300 disabled:opacity-40 disabled:hover:text-muted flex items-center justify-center transition-colors">
+          <TrashIcon />
+        </button>
+      </div>
+
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center gap-4 text-muted">
             <div className="w-12 h-12 rounded-full bg-blue-600/15 flex items-center justify-center text-blue-400"><SparkIcon /></div>
             <div>
-              <div className="text-bright font-semibold">Hi — I'm your Copilot.</div>
+              <div className="text-bright font-semibold">Hi — I'm your Assistant.</div>
               <div className="text-sm mt-1">I know Terminal Hub inside out, and I can act for you — notes, board, reminders, email, and more.</div>
             </div>
             <div className="flex flex-wrap gap-2 justify-center max-w-md">
@@ -169,17 +263,30 @@ export function CopilotChat() {
 
 function MessageRow({ m }: { m: UiMsg }) {
   const isUser = m.role === "user";
+  // An empty assistant bubble with no tool chips is the live draft still composing its reply.
+  const thinking = !isUser && !m.text && m.tools.length === 0;
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div className={`max-w-[85%] ${isUser ? "items-end" : "items-start"} flex flex-col gap-1.5`}>
-        {(m.text || isUser) && (
+        {(m.text || isUser || thinking) && (
           <div className={`px-3.5 py-2 rounded-2xl text-sm leading-6 whitespace-pre-wrap break-words ${isUser ? "bg-blue-600 text-white rounded-br-md" : "bg-panel border border-edge rounded-bl-md"}`}>
-            {m.text || <span className="text-dim">…</span>}
+            {thinking ? <TypingDots /> : m.text}
           </div>
         )}
         {m.tools.map((t, i) => <ToolChip key={t.callId ?? i} t={t} />)}
       </div>
     </div>
+  );
+}
+
+// The "assistant is typing" wave: three dots cresting left→right (CSS keyframe tr-wave in theme.css).
+function TypingDots() {
+  return (
+    <span className="inline-flex items-center gap-1 py-1 text-muted" aria-label="Assistant is typing">
+      {[0, 150, 300].map((d) => (
+        <span key={d} className="tr-wave-dot w-1.5 h-1.5 rounded-full bg-current" style={{ animationDelay: `${d}ms` }} />
+      ))}
+    </span>
   );
 }
 
@@ -197,3 +304,7 @@ function ToolChip({ t }: { t: ChipT }) {
 const SendIcon = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" /></svg>);
 const SparkIcon = () => (<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2L12 3z" /></svg>);
 const Spinner = () => (<svg width="14" height="14" viewBox="0 0 24 24" className="animate-spin"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" /><path d="M21 12a9 9 0 0 0-9-9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>);
+const HistoryIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l3 2" /></svg>);
+const ChevronIcon = () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-70"><path d="m6 9 6 6 6-6" /></svg>);
+const PlusIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>);
+const TrashIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6" /><path d="M10 11v6M14 11v6" /></svg>);

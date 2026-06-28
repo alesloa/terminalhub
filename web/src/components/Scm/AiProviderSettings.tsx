@@ -21,7 +21,8 @@ const KIND_LABEL: Record<AiProviderKind, string> = {
 const PRESETS: { label: string; make: () => Draft }[] = [
   { label: "OpenAI", make: () => mk({ kind: "openai-compatible", label: "OpenAI", baseUrl: "https://api.openai.com/v1", apiKeyEnv: "OPENAI_API_KEY" }) },
   { label: "Anthropic (API)", make: () => mk({ kind: "anthropic", label: "Anthropic (API)", baseUrl: "https://api.anthropic.com", apiKeyEnv: "ANTHROPIC_API_KEY" }) },
-  { label: "Gemini", make: () => mk({ kind: "openai-compatible", label: "Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/", apiKeyEnv: "GEMINI_API_KEY" }) },
+  // Gemini hidden by request — leave commented out rather than deleted so it's a one-line restore.
+  // { label: "Gemini", make: () => mk({ kind: "openai-compatible", label: "Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/", apiKeyEnv: "GEMINI_API_KEY" }) },
   { label: "DeepSeek", make: () => mk({ kind: "openai-compatible", label: "DeepSeek", baseUrl: "https://api.deepseek.com", apiKeyEnv: "DEEPSEEK_API_KEY" }) },
   { label: "Kimi (Moonshot)", make: () => mk({ kind: "openai-compatible", label: "Kimi (Moonshot)", baseUrl: "https://api.moonshot.ai/v1", apiKeyEnv: "MOONSHOT_API_KEY" }) },
   { label: "OpenRouter", make: () => mk({ kind: "openai-compatible", label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: "OPENROUTER_API_KEY" }) },
@@ -80,7 +81,8 @@ export function AiProviderSettings({ onClose }: { onClose: () => void }) {
   // makes it that provider (CLI binary / API base URL), so renaming the label won't make a duplicate
   // reappear. CLI add-buttons are the installed CLIs the server detected on $PATH.
   const usedSigs = new Set(list.map(sigOf));
-  const cliAdds = (data?.detectedClis ?? []).filter(c => !usedSigs.has(`cli:${c.command[0]}`));
+  // Gemini hidden by request — drop its detected-CLI add-button too (UI-only; detection is untouched).
+  const cliAdds = (data?.detectedClis ?? []).filter(c => !usedSigs.has(`cli:${c.command[0]}`) && c.command[0] !== "gemini");
   const availablePresets = PRESETS.filter(p => !usedSigs.has(sigOf(p.make())));
   const nothingToAdd = cliAdds.length === 0 && availablePresets.length === 0;
 

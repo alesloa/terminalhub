@@ -15,10 +15,10 @@ const CHANNELS: { id: CopilotReportChannel; label: string; hint: string }[] = [
   { id: "pushover", label: "Pushover", hint: "Push to your phone (needs keys in Voice & Speech)" },
 ];
 
-// The Copilot tab of Settings. Copilot settings live server-side (a JSON blob), so every control
-// applies live via PATCH /api/copilot/settings — there's no Save button on this tab. The engine list
-// reuses the AI providers the rest of the app uses; only API engines (Anthropic / OpenAI-compatible)
-// can drive the Copilot, so CLI providers are filtered out.
+// The Agent tab of Settings. Settings live server-side (a JSON blob), so every control applies live
+// via PATCH /api/copilot/settings — there's no Save button on this tab. The engine list reuses the AI
+// providers the rest of the app uses; any enabled provider works (API engines use native tool-use,
+// CLI engines are driven over the JSON text protocol).
 export function CopilotSettings() {
   const settings = useCopilotSettings();
   const patch = usePatchCopilotSettings();
@@ -27,7 +27,7 @@ export function CopilotSettings() {
   const s = settings.data;
   if (!s) return <div className="text-sm text-dim">loading…</div>;
 
-  const engines = (providers.data?.providers ?? []).filter((p) => p.enabled && (p.kind === "anthropic" || p.kind === "openai-compatible"));
+  const engines = (providers.data?.providers ?? []).filter((p) => p.enabled);
   const toggleChannel = (id: CopilotReportChannel, on: boolean) => {
     const next = on ? Array.from(new Set([...s.reportChannels, id])) : s.reportChannels.filter((c) => c !== id);
     patch.mutate({ reportChannels: next });
@@ -35,11 +35,11 @@ export function CopilotSettings() {
 
   return (
     <div className="space-y-8">
-      <Section title="Copilot">
-        <Toggle title="Enable Copilot" hint="The in-app AI assistant (orb + launcher tile). Off hides it everywhere."
+      <Section title="Assistant">
+        <Toggle title="Enable Assistant" hint="The in-app AI assistant (orb + launcher tile). Off hides it everywhere."
           checked={s.enabled} onChange={(on) => patch.mutate({ enabled: on })} />
 
-        <Row title="Engine" hint={engines.length ? "Which AI provider answers. Auto picks your default API engine." : "No API engine yet — add an Anthropic or OpenAI-compatible provider in the AI settings."}>
+        <Row title="Engine" hint={engines.length ? "Which AI provider answers. Auto picks your default engine." : "No engine yet — add a provider (API or CLI) in the AI settings."}>
           <select value={s.defaultEngine ?? ""} onChange={(e) => patch.mutate({ defaultEngine: e.target.value || null })}
             className="w-44 rounded border border-edge-strong bg-canvas px-2 py-1 text-bright outline-none focus:border-blue-500">
             <option value="">Auto</option>
@@ -52,7 +52,7 @@ export function CopilotSettings() {
       </Section>
 
       <Section title="Canvas orb">
-        <Toggle title="Show the orb" hint="A floating spark on the canvas that opens the Copilot."
+        <Toggle title="Show the orb" hint="A floating spark on the canvas that opens the Assistant."
           checked={s.orbEnabled} onChange={(on) => patch.mutate({ orbEnabled: on })} />
         <Row title="Orb corner" hint="Where the orb sits on the canvas.">
           <div className="grid grid-cols-2 gap-1">

@@ -21,7 +21,7 @@ export function CopilotSkills() {
 
   return (
     <div className="h-full overflow-y-auto px-4 py-4 space-y-3">
-      <div className="text-xs text-dim px-1">Skills give your Copilot new abilities. Turn one on, then just ask.</div>
+      <div className="text-xs text-dim px-1">Skills give your Assistant new abilities. Turn one on, then just ask.</div>
       {skills.isLoading && <div className="text-sm text-dim px-1">loading…</div>}
       {skills.data?.filter((s) => s.id !== "mcp").map((s) => <SkillCard key={s.id} skill={s} />)}
       <CopilotMcpServers />

@@ -43,7 +43,7 @@ const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
   { id: "editor", label: "Editor", icon: <CodeIcon /> },
   { id: "terminal", label: "Terminal", icon: <TerminalIcon /> },
   { id: "voice", label: "Voice & Speech", icon: <SpeakerIcon /> },
-  { id: "copilot", label: "Copilot", icon: <SparkIcon /> },
+  { id: "copilot", label: "Assistant", icon: <SparkIcon /> },
   { id: "connections", label: "Connections", icon: <PlugIcon /> },
   { id: "access", label: "Remote Access", icon: <KeyIcon /> },
 ];

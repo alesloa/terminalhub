@@ -86,7 +86,7 @@ export function CopilotOrb() {
 
   return (
     <button ref={ref} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
-      title="Copilot — drag to move" aria-label="Open Copilot"
+      title="Assistant — drag to move" aria-label="Open Assistant"
       // zIndex at the 32-bit max so the orb is the ONE thing that sits above everything — including the
       // zoom control (…646) and the scroll bars (…645), which are otherwise uncoverable.
       style={{ zIndex: 2147483647, ...(placed ? { left: placed.x, top: placed.y } : {}) }}

@@ -3,10 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { useCopilotSettings, usePatchCopilotSettings } from "../../hooks/useCopilot";
 
-// Compact engine switcher in the Copilot header. The Copilot resolves its provider server-side from
-// settings.defaultEngine, so picking here just patches that setting — no per-message plumbing. Only
-// API engines (Anthropic / OpenAI-compatible) can drive the Copilot, so CLI providers are filtered
-// out (they're configured in the same AI Providers list the commit generator uses).
+// Compact engine switcher in the Agent header. The Agent resolves its provider server-side from
+// settings.defaultEngine, so picking here just patches that setting — no per-message plumbing. Any
+// enabled provider works: API engines (Anthropic / OpenAI-compatible) use native tool-use, CLI
+// engines (claude, codex) are driven over the JSON text protocol. Configured in the AI Providers list.
 export function EnginePicker() {
   const settings = useCopilotSettings();
   const patch = usePatchCopilotSettings();
@@ -21,7 +21,8 @@ export function EnginePicker() {
     return () => window.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const engines = (providers.data?.providers ?? []).filter((p) => p.enabled && (p.kind === "anthropic" || p.kind === "openai-compatible"));
+  const engines = (providers.data?.providers ?? []).filter((p) => p.enabled);
+  const subFor = (kind: string) => (kind === "cli" ? "CLI" : kind === "anthropic" ? "Anthropic" : "OpenAI-compatible");
   const current = settings.data?.defaultEngine ? engines.find((e) => e.id === settings.data!.defaultEngine) : undefined;
   const label = current ? current.label : "Auto engine";
 
@@ -36,13 +37,13 @@ export function EnginePicker() {
       </button>
       {open && (
         <div className="absolute left-0 top-5 z-10 min-w-[180px] rounded-lg border border-edge bg-elevated p-1 shadow-xl">
-          <MenuItem active={!settings.data?.defaultEngine} onClick={() => choose(null)} label="Auto" sub="Your default API engine" />
+          <MenuItem active={!settings.data?.defaultEngine} onClick={() => choose(null)} label="Auto" sub="Your default engine" />
           {engines.map((e) => (
             <MenuItem key={e.id} active={settings.data?.defaultEngine === e.id} onClick={() => choose(e.id)}
-              label={e.label} sub={e.model || (e.kind === "anthropic" ? "Anthropic" : "OpenAI-compatible")} />
+              label={e.label} sub={e.model || subFor(e.kind)} />
           ))}
           {engines.length === 0 && (
-            <div className="px-2 py-2 text-[11px] text-dim leading-4">No API engine configured. Add an Anthropic or OpenAI-compatible provider in the AI provider settings.</div>
+            <div className="px-2 py-2 text-[11px] text-dim leading-4">No engine configured. Add a provider (API or CLI) in the AI provider settings.</div>
           )}
         </div>
       )}
