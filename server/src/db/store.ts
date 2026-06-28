@@ -30,6 +30,12 @@ export type DriveAccountPublic = Pick<DriveAccount, "id" | "email" | "name" | "l
 // never by the public list. The route layer projects to CopilotSkillAccount (hasSecret) for the browser.
 export type SkillAccountSecret = { id: string; skillId: string; label: string; provider: string; config: Record<string, unknown>; secret: string; createdAt: number };
 
+// TV / Media tool rows. `source` is the medium; `ref` is that medium's own id (channel id / station
+// uuid / video id). `meta` (favorites only) is an opaque JSON blob the browser owns.
+export type TvSource = "tv" | "radio" | "youtube";
+export type TvFavorite = { id: string; source: TvSource; ref: string; name: string; logo: string | null; meta: string | null; createdAt: number };
+export type TvRecent = { id: string; source: TvSource; ref: string; name: string; logo: string | null; playedAt: number };
+
 // A space widget's opaque per-instance config column (TEXT) → object, tolerating malformed JSON.
 function parseWidgetConfig(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null;
@@ -475,6 +481,18 @@ export interface Store {
   // callback to a value registered in Google Cloud regardless of how the server is reached.
   getDriveRedirect(): string | null;
   setDriveRedirect(url: string | null): void;
+  // TV / Media tool. Favorites are idempotent per (source,ref); recents keep a rolling history
+  // (newest first, trimmed). The catalog cache is a single JSON row with its own fetch timestamp.
+  // getSetting/setSetting are the generic string-keyed settings accessors the TV settings reuse.
+  listTvFavorites(): TvFavorite[];
+  addTvFavorite(f: { source: TvSource; ref: string; name: string; logo?: string | null; meta?: string | null }): TvFavorite;
+  removeTvFavorite(id: string): void;
+  listTvRecents(limit?: number): TvRecent[];
+  recordTvRecent(r: { source: TvSource; ref: string; name: string; logo?: string | null }): TvRecent;
+  getTvCache(key: string): { json: string; fetchedAt: number } | null;
+  setTvCache(key: string, json: string): void;
+  getSetting(key: string): string | null;
+  setSetting(key: string, value: string): void;
 }
 
 export function createStore(path: string): Store {
@@ -1984,6 +2002,50 @@ export function createStore(path: string): Store {
     getDriveRedirect() {
       const v = (db.prepare(`SELECT value FROM settings WHERE key=?`).get("drive.redirect") as { value: string } | undefined)?.value?.trim();
       return v ? v : null;
+    },
+    listTvFavorites() {
+      return db.prepare(`SELECT * FROM tv_favorites ORDER BY createdAt DESC`).all() as TvFavorite[];
+    },
+    addTvFavorite(f) {
+      const row: TvFavorite = {
+        id: id("tv_"), source: f.source, ref: f.ref, name: f.name,
+        logo: f.logo ?? null, meta: f.meta ?? null, createdAt: Date.now(),
+      };
+      // Idempotent: a second favorite of the same (source,ref) is a no-op; return the existing row.
+      db.prepare(`INSERT INTO tv_favorites (id,source,ref,name,logo,meta,createdAt)
+        VALUES (@id,@source,@ref,@name,@logo,@meta,@createdAt)
+        ON CONFLICT(source,ref) DO NOTHING`).run(row);
+      return db.prepare(`SELECT * FROM tv_favorites WHERE source=? AND ref=?`).get(f.source, f.ref) as TvFavorite;
+    },
+    removeTvFavorite(fid) { db.prepare(`DELETE FROM tv_favorites WHERE id=?`).run(fid); },
+    listTvRecents(limit = 30) {
+      return db.prepare(`SELECT * FROM tv_recents ORDER BY playedAt DESC LIMIT ?`).all(limit) as TvRecent[];
+    },
+    recordTvRecent(r) {
+      const row: TvRecent = {
+        id: id("tv_"), source: r.source, ref: r.ref, name: r.name, logo: r.logo ?? null, playedAt: Date.now(),
+      };
+      db.transaction(() => {
+        // Re-playing an item moves it to the top: drop the prior row, insert fresh, trim to newest 50.
+        db.prepare(`DELETE FROM tv_recents WHERE source=? AND ref=?`).run(r.source, r.ref);
+        db.prepare(`INSERT INTO tv_recents (id,source,ref,name,logo,playedAt)
+          VALUES (@id,@source,@ref,@name,@logo,@playedAt)`).run(row);
+        db.prepare(`DELETE FROM tv_recents WHERE id NOT IN (SELECT id FROM tv_recents ORDER BY playedAt DESC LIMIT 50)`).run();
+      })();
+      return row;
+    },
+    getTvCache(key) {
+      return (db.prepare(`SELECT json,fetchedAt FROM tv_catalog_cache WHERE key=?`).get(key) as { json: string; fetchedAt: number } | undefined) ?? null;
+    },
+    setTvCache(key, json) {
+      db.prepare(`INSERT INTO tv_catalog_cache (key,json,fetchedAt) VALUES (?,?,?)
+        ON CONFLICT(key) DO UPDATE SET json=excluded.json, fetchedAt=excluded.fetchedAt`).run(key, json, Date.now());
+    },
+    getSetting(key) {
+      return (db.prepare(`SELECT value FROM settings WHERE key=?`).get(key) as { value: string } | undefined)?.value ?? null;
+    },
+    setSetting(key, value) {
+      db.prepare(`INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(key, value);
     },
     setDriveRedirect(url) {
       if (url && url.trim()) {

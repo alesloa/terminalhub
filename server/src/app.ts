@@ -39,6 +39,7 @@ import { spaceWidgetsRoutes } from "./routes/spaceWidgets.js";
 import { boardRoutes } from "./routes/board.js";
 import { timeRoutes } from "./routes/time.js";
 import { timeCatalogRoutes } from "./routes/timeCatalog.js";
+import { tvRoutes } from "./routes/tv.js";
 import { copilotRoutes } from "./routes/copilot.js";
 import { sttRoutes } from "./routes/stt.js";
 import { notifyRoutes } from "./routes/notify.js";
@@ -150,6 +151,7 @@ export async function buildApp(config: Config, ctx: AppContext): Promise<Fastify
   await app.register(async (a) => boardRoutes(a, ctx));
   await app.register(async (a) => timeRoutes(a, ctx));
   await app.register(async (a) => timeCatalogRoutes(a, ctx));
+  await app.register(async (a) => tvRoutes(a, ctx));
   await app.register(async (a) => copilotRoutes(a, ctx));
   await app.register(async (a) => sttRoutes(a, ctx));
   await app.register(async (a) => notifyRoutes(a, ctx));

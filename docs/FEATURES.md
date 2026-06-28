@@ -604,6 +604,23 @@ floating window that grows from its launcher tile and minimizes back into it.
   to group / Delete).
 - **Board** — a server-backed kanban (To Do / In Progress / Done) you drag cards across. Because it's
   server-backed, agents in your terminals can read and move cards too (see API below).
+- **TV / Media** — a PM2-GUI-style dark/green media window with three modes (title-bar tabs): **Live TV**,
+  **Radio**, and **YouTube**. **Live TV** streams the full **iptv-org** catalog (thousands of free channels,
+  joined + cached server-side for a day) — a left rail of facet filters (**category / country / language** with
+  counts, plus a Favorites filter), a channel search, removable filter chips, a windowed channel rail (logo or
+  colored monogram, flag, category · quality, a favorite star, and an animated equalizer on the playing row),
+  and a video stage with LIVE + quality badges. Playback is **robust**: every stream flows through a server
+  **HLS proxy** (`/api/tv/proxy`) that injects the channel's Referer/User-Agent and rewrites `.m3u8` children
+  back through itself (bypassing CORS / forbidden-header limits), played with **hls.js** (native HLS on Safari)
+  with automatic network/media recovery and **auto-advance** through a channel's backup streams — then to the
+  next channel — when one dies. **Radio** browses **radio-browser.info** (genre + country facets, search, top
+  stations by popularity) with a now-playing card; icecast streams play straight off an `<audio>` element,
+  `.m3u8` stations through the HLS proxy. **YouTube** searches the **Data API v3** (your own key, stored
+  server-side and never returned) and embeds the result. A full-width **transport bar** (prev / play / next,
+  draggable volume slider, mute, PiP, fullscreen, now-playing) and a thin **PM2-style status strip** (channel
+  count, HLS quality, bitrate, buffer, volume) sit at the bottom. **Favorites** and **recents** persist
+  server-side; volume persists per-browser. A title-bar **settings** popover holds the YouTube API key and an
+  NSFW toggle.
 - **Timesheet** — a Harvest-style time tracker. Log work by **client → project → task → notes**; start
   and stop timers (several can run at once) or add past entries by hand. **Day / Week / Calendar** views
   with per-day, week, and month totals so you can go back and see how long you worked on any day. A

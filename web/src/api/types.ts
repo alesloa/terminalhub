@@ -555,3 +555,28 @@ export interface CopilotJob {
   nextRun: number; lastRun: number | null; lastSummary: string | null;
   createdAt: number; updatedAt: number;
 }
+
+// ── TV / Media tool ── (mirrors server/src/tv/normalize.ts + routes/tv.ts — keep in sync by hand)
+export type TvSource = "tv" | "radio" | "youtube";
+export interface TvStream { url: string; quality: string | null; referrer: string | null; userAgent: string | null }
+export interface TvChannel {
+  id: string; name: string; logo: string | null; categories: string[];
+  country: { code: string; name: string; flag: string } | null;
+  languages: string[]; isNsfw: boolean; streams: TvStream[];
+}
+export interface TvFacets {
+  categories: { id: string; name: string; count: number }[];
+  countries: { code: string; name: string; flag: string; count: number }[];
+  languages: { code: string; name: string; count: number }[];
+}
+export interface TvCatalog { channels: TvChannel[]; facets: TvFacets }
+export interface RadioStation { id: string; name: string; favicon: string; url: string; codec: string; bitrate: number; country: string; tags: string[] }
+export interface RadioFacets {
+  tags: { name: string; stationcount?: number }[];
+  countries: { name: string; iso_3166_1?: string; stationcount?: number }[];
+}
+export interface YouTubeItem { videoId: string; title: string; channelTitle: string; thumbnail: string; publishedAt: string }
+export interface YouTubeSearchResult { items: YouTubeItem[]; nextPageToken?: string }
+export interface TvFavorite { id: string; source: TvSource; ref: string; name: string; logo: string | null; meta: string | null; createdAt: number }
+export interface TvRecent { id: string; source: TvSource; ref: string; name: string; logo: string | null; playedAt: number }
+export interface TvSettings { hasYoutubeKey: boolean; nsfw: boolean; volume: number }

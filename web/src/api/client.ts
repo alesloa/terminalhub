@@ -12,6 +12,7 @@ import type {
   AccessKey, PresenceSession, TunnelStatus,
   CopilotSettings, CopilotConversation, CopilotMessage, CopilotSkillCard, CopilotSkillAccount, CopilotJob, CopilotReportMode,
   CopilotMcpServer, CopilotMcpImportable, CopilotMcpTransport,
+  TvCatalog, TvStream, RadioStation, RadioFacets, YouTubeSearchResult, TvFavorite, TvRecent, TvSettings, TvSource,
 } from "./types";
 
 const TOKEN_KEY = "terminalhub_token";
@@ -697,6 +698,42 @@ export const api = {
       req<{ server: CopilotMcpServer }>("PATCH", `/api/copilot/mcp/${id}`, patch),
     refreshMcp: (id: string) => req<{ server: CopilotMcpServer }>("POST", `/api/copilot/mcp/${id}/refresh`),
     deleteMcp: (id: string) => req<{ ok: true }>("DELETE", `/api/copilot/mcp/${id}`),
+  },
+  // TV / Media tool. The catalog is large + cached server-side; proxyUrl builds a same-origin URL the
+  // <video>/hls.js loads (the server injects Referer/User-Agent + CORS). The YouTube key never comes back.
+  tv: {
+    catalog: (refresh = false) => req<TvCatalog>("GET", `/api/tv/catalog${refresh ? "?refresh=1" : ""}`),
+    /** Same-origin proxied URL for a stream (manifest/segments flow through /api/tv/proxy). */
+    proxyUrl: (s: Pick<TvStream, "url" | "referrer" | "userAgent">) => {
+      let u = `/api/tv/proxy?url=${encodeURIComponent(s.url)}`;
+      if (s.referrer) u += `&ref=${encodeURIComponent(s.referrer)}`;
+      if (s.userAgent) u += `&ua=${encodeURIComponent(s.userAgent)}`;
+      return u;
+    },
+    radioSearch: (p: { q?: string; tag?: string; country?: string; limit?: number }) => {
+      const qs = new URLSearchParams();
+      if (p.q) qs.set("q", p.q);
+      if (p.tag) qs.set("tag", p.tag);
+      if (p.country) qs.set("country", p.country);
+      if (p.limit) qs.set("limit", String(p.limit));
+      return req<{ stations: RadioStation[] }>("GET", `/api/tv/radio/search?${qs.toString()}`);
+    },
+    radioFacets: () => req<RadioFacets>("GET", "/api/tv/radio/facets"),
+    youtubeSearch: (q: string, pageToken?: string) => {
+      const qs = new URLSearchParams({ q });
+      if (pageToken) qs.set("pageToken", pageToken);
+      return req<YouTubeSearchResult>("GET", `/api/tv/youtube/search?${qs.toString()}`);
+    },
+    favorites: () => req<{ favorites: TvFavorite[] }>("GET", "/api/tv/favorites"),
+    addFavorite: (b: { source: TvSource; ref: string; name: string; logo?: string | null; meta?: string | null }) =>
+      req<{ favorite: TvFavorite }>("POST", "/api/tv/favorites", b),
+    removeFavorite: (id: string) => req<{ ok: true }>("DELETE", `/api/tv/favorites/${id}`),
+    recents: () => req<{ recents: TvRecent[] }>("GET", "/api/tv/recents"),
+    recordRecent: (b: { source: TvSource; ref: string; name: string; logo?: string | null }) =>
+      req<{ recent: TvRecent }>("POST", "/api/tv/recents", b),
+    settings: () => req<TvSettings>("GET", "/api/tv/settings"),
+    saveSettings: (b: { youtubeApiKey?: string; nsfw?: boolean; volume?: number }) =>
+      req<{ ok: true }>("PUT", "/api/tv/settings", b),
   },
 };
 

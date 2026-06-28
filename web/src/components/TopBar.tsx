@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { SettingsModal } from "./SettingsModal";
 import { PromptBuilderModal } from "./PromptBuilder/PromptBuilderModal";
 import { NotesModal } from "./Notes/NotesModal";
+import { TvModal } from "./TV/TvModal";
 import { BoardModal } from "./Board/BoardModal";
 import { TimeSheetModal } from "./Time/TimeSheetModal";
 import { HelpModal } from "./HelpModal";
@@ -53,6 +54,9 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
   const boardOpen = !!panels.board;
   const [boardOrigin, setBoardOrigin] = useState<WinRect | null>(null);
   const openBoard = () => { setBoardOrigin(launcherOrigin()); openPanel("board"); };
+  const tvOpen = !!panels.tv;
+  const [tvOrigin, setTvOrigin] = useState<WinRect | null>(null);
+  const openTv = () => { setTvOrigin(launcherOrigin()); openPanel("tv"); };
   const timesheetOpen = !!panels.timesheet;
   const [timesheetOrigin, setTimesheetOrigin] = useState<WinRect | null>(null);
   const openTimesheet = () => { setTimesheetOrigin(launcherOrigin()); openPanel("timesheet"); };
@@ -79,6 +83,7 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
   const notesWin = useRef<WindowHandle>(null);
   const browserWin = useRef<WindowHandle>(null);
   const boardWin = useRef<WindowHandle>(null);
+  const tvWin = useRef<WindowHandle>(null);
   const timesheetWin = useRef<WindowHandle>(null);
   const helpWin = useRef<WindowHandle>(null);
   const secretWin = useRef<WindowHandle>(null);
@@ -139,6 +144,7 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
     { id: "breaks", label: "Breaks", description: "Recurring break reminders that nudge you to step away.", section: "tools", icon: <CoffeeIcon />, active: breaksOpen, onSelect: () => breaksOpen ? breaksWin.current?.close() : openBreaks() },
     { id: "notes", label: "Notes", description: "A quick scratchpad for notes that stick around.", section: "tools", icon: <NoteIcon />, active: notesOpen, onSelect: () => notesOpen ? notesWin.current?.close() : openNotes() },
     { id: "board", label: "Board", description: "A kanban board to track tasks across columns.", section: "tools", icon: <BoardIcon />, active: boardOpen, onSelect: () => boardOpen ? boardWin.current?.close() : openBoard() },
+    { id: "tv", label: "TV", description: "Watch live IPTV, listen to radio stations, and search & play YouTube — search, filters, favorites, PiP & fullscreen.", section: "tools", icon: <TvTileIcon />, active: tvOpen, onSelect: () => tvOpen ? tvWin.current?.close() : openTv() },
     { id: "timesheet", label: "Timesheet", description: "Track work time by client, project, and task — start/stop timers (or let an agent do it) and review day, week, or month totals.", section: "tools", icon: <TimesheetIcon />, active: timesheetOpen, onSelect: () => timesheetOpen ? timesheetWin.current?.close() : openTimesheet() },
     { id: "prompt", label: "Prompt", description: "Turn a rough idea into a polished prompt for your agent.", section: "tools", icon: <PromptBubbleIcon />, active: builderOpen, onSelect: () => builderOpen ? closePanel("prompt") : openPanel("prompt") },
     { id: "secret", label: "Secret", description: "Share a password or key as a one-time, self-destructing link.", section: "tools", icon: <BurnIcon />, active: secretOpen, onSelect: () => secretOpen ? secretWin.current?.close() : openSecret() },
@@ -210,6 +216,7 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
       {browserOpen && <FileBrowserModal ref={browserWin} origin={browserOrigin} onClose={() => closePanel("files")} />}
       {notesOpen && <NotesModal ref={notesWin} origin={notesOrigin} onClose={() => closePanel("notes")} />}
       {boardOpen && <BoardModal ref={boardWin} origin={boardOrigin} onClose={() => closePanel("board")} />}
+      {tvOpen && <TvModal ref={tvWin} origin={tvOrigin} onClose={() => closePanel("tv")} />}
       {timesheetOpen && <TimeSheetModal ref={timesheetWin} origin={timesheetOrigin} onClose={() => closePanel("timesheet")} />}
       {helpOpen && <HelpModal ref={helpWin} origin={helpOrigin} onClose={() => closePanel("help")} />}
       {secretOpen && <SecretModal ref={secretWin} origin={secretOrigin} onClose={() => closePanel("secret")} />}
@@ -330,6 +337,16 @@ function TimesheetIcon() {
       <path d="M12 13V9" />
       <path d="M9 2h6" />
       <path d="M19 6l1.5-1.5" />
+    </svg>
+  );
+}
+
+/** A television set — the TV / Media tool (live TV, radio, YouTube). */
+function TvTileIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="6" width="20" height="13" rx="2" />
+      <path d="m8 3 4 3 4-3" />
     </svg>
   );
 }

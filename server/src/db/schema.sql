@@ -545,3 +545,32 @@ CREATE TABLE IF NOT EXISTS tt_entries (
   updatedAt INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tt_entries_started ON tt_entries(startedAt);
+
+-- TV / Media tool. Three small tables: pinned channels/stations/videos (favorites), a rolling
+-- play history (recents, trimmed in the store), and a single-row JSON cache of the merged iptv-org
+-- catalog (re-fetched on a 24h TTL). `source` is 'tv' | 'radio' | 'youtube'; `ref` is the source's
+-- own id (channel id / station uuid / video id). `meta` (favorites) is an opaque JSON blob.
+CREATE TABLE IF NOT EXISTS tv_favorites (
+  id        TEXT PRIMARY KEY,
+  source    TEXT NOT NULL,                 -- 'tv' | 'radio' | 'youtube'
+  ref       TEXT NOT NULL,                 -- channel id / station uuid / video id
+  name      TEXT NOT NULL,
+  logo      TEXT,
+  meta      TEXT,                          -- opaque JSON (e.g. stream URL / extra fields)
+  createdAt INTEGER NOT NULL,
+  UNIQUE(source, ref)
+);
+CREATE TABLE IF NOT EXISTS tv_recents (
+  id        TEXT PRIMARY KEY,
+  source    TEXT NOT NULL,
+  ref       TEXT NOT NULL,
+  name      TEXT NOT NULL,
+  logo      TEXT,
+  playedAt  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tv_recents_played ON tv_recents(playedAt);
+CREATE TABLE IF NOT EXISTS tv_catalog_cache (
+  key       TEXT PRIMARY KEY,             -- 'catalog'
+  json      TEXT NOT NULL,                -- JSON.stringify(Catalog)
+  fetchedAt INTEGER NOT NULL
+);
