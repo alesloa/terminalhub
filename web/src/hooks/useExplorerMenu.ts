@@ -94,7 +94,10 @@ export function useExplorerMenu(rootPath: string, gitInfo: GitInfo | undefined, 
   // else alongside a selected file (its parent), else the tree root. Type comes from the parent
   // listing already cached for any visible row.
   const containerFor = (selectedPath: string | null): string => {
-    if (!selectedPath) return rootPath;
+    // No selection, or the root row itself, targets the root dir. The root is special: its own entry
+    // lives in no cached listing (we never list above the project), so the lookup below would miss it
+    // and fall back to dirname(root) — a dir OUTSIDE the tree. Short-circuit it.
+    if (!selectedPath || selectedPath === rootPath) return rootPath;
     const parent = dirname(selectedPath);
     const entry = qc.getQueryData<FsListing>(["fs", parent])?.entries.find(e => e.path === selectedPath);
     return entry?.type === "dir" ? selectedPath : parent;
