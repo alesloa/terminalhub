@@ -619,15 +619,22 @@ floating window that grows from its launcher tile and minimizes back into it.
   instead of spinning, and **streams continuous bodies untimed** so radio never gets cut off mid-play. **Radio**
   browses **radio-browser.info** (genre + country facets, search, top stations by popularity) with a now-playing
   card; icecast streams play straight off an `<audio>` element, `.m3u8` stations through the HLS proxy.
-  **YouTube** searches the **Data API v3** (your own key, stored server-side and never returned) and embeds the
-  result. A full-width **transport bar** (prev / play / next, draggable volume slider, mute, **subtitles** —
+  **YouTube** is a **real IFrame-API player** driven by the app's own transport bar (not a bare embed): the box
+  does double duty — **search** the **Data API v3** (your own key, stored server-side and never returned) or
+  **paste a video / playlist link** (or bare id) to play it directly. A pasted or saved **playlist autoplays in
+  order** (with **Load more** paging past the first 50), and **un-embeddable, removed, or private** videos are
+  detected and **auto-skipped** (capped) with a "Watch on YouTube" fallback notice. A left **Library** rail
+  toggles **Browse** vs **Saved**; every result has a **save star** (video → favorites) and a session
+  **remove-from-list**, and a whole playlist can be **saved to favorites** — the Saved view lists **playlists**
+  (click to reopen) and **videos** (click to play) separately. An **Autoplay** toggle (persisted) governs
+  end-of-video advance. A full-width **transport bar** (prev / play / next, draggable volume slider, mute, **subtitles** —
   toggle a caption track and pick its color, **audio-language** switch shown only when a stream carries more than
   one audio track and remembered for the next channel, PiP, fullscreen, now-playing) with hover **tooltips** on
   every control, and a thin **PM2-style status strip** (channel count, HLS quality, bitrate, buffer, volume) sit
   at the bottom; when a stream advertises a **now-playing programme title** (EXTINF / ID3) it appears under the
   video and in the strip. **Favorites** and **recents** persist server-side; volume, caption color, and preferred
-  audio language persist per-browser. A title-bar **settings** popover holds the YouTube API key, a **preferred
-  audio language**, and an NSFW toggle.
+  audio language persist per-browser. A title-bar **settings** popover holds the YouTube API key (with a
+  show/hide **reveal** toggle), a **preferred audio language**, and an NSFW toggle.
 - **Timesheet** — a Harvest-style time tracker. Log work by **client → project → task → notes**; start
   and stop timers (several can run at once) or add past entries by hand. **Day / Week / Calendar** views
   with per-day, week, and month totals so you can go back and see how long you worked on any day. A

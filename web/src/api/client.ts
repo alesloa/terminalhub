@@ -12,7 +12,7 @@ import type {
   AccessKey, PresenceSession, TunnelStatus,
   CopilotSettings, CopilotConversation, CopilotMessage, CopilotSkillCard, CopilotSkillAccount, CopilotJob, CopilotReportMode,
   CopilotMcpServer, CopilotMcpImportable, CopilotMcpTransport,
-  TvCatalog, TvStream, RadioStation, RadioFacets, YouTubeSearchResult, TvFavorite, TvRecent, TvSettings, TvSource,
+  TvCatalog, TvStream, RadioStation, RadioFacets, YouTubeSearchResult, YouTubePlaylistResult, YouTubePlaylistInfo, YouTubeItem, TvFavorite, TvRecent, TvSettings, TvSource,
 } from "./types";
 
 const TOKEN_KEY = "terminalhub_token";
@@ -724,6 +724,15 @@ export const api = {
       if (pageToken) qs.set("pageToken", pageToken);
       return req<YouTubeSearchResult>("GET", `/api/tv/youtube/search?${qs.toString()}`);
     },
+    youtubePlaylist: (playlistId: string, pageToken?: string) => {
+      const qs = new URLSearchParams({ playlistId });
+      if (pageToken) qs.set("pageToken", pageToken);
+      return req<YouTubePlaylistResult>("GET", `/api/tv/youtube/playlist?${qs.toString()}`);
+    },
+    youtubeVideo: (videoId: string) =>
+      req<{ item: YouTubeItem | null }>("GET", `/api/tv/youtube/video?videoId=${encodeURIComponent(videoId)}`),
+    youtubePlaylistInfo: (playlistId: string) =>
+      req<{ info: YouTubePlaylistInfo | null }>("GET", `/api/tv/youtube/playlist-info?playlistId=${encodeURIComponent(playlistId)}`),
     favorites: () => req<{ favorites: TvFavorite[] }>("GET", "/api/tv/favorites"),
     addFavorite: (b: { source: TvSource; ref: string; name: string; logo?: string | null; meta?: string | null }) =>
       req<{ favorite: TvFavorite }>("POST", "/api/tv/favorites", b),

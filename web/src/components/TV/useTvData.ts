@@ -75,6 +75,39 @@ export function useYouTubeSearch(q: string, enabled = true) {
   });
 }
 
+export function useYouTubePlaylist(playlistId: string, enabled = true) {
+  const id = playlistId.trim();
+  return useQuery({
+    queryKey: ["tv", "yt-playlist", id],
+    queryFn: () => api.tv.youtubePlaylist(id),
+    enabled: enabled && id.length > 0,
+    retry: false,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useYouTubePlaylistInfo(playlistId: string, enabled = true) {
+  const id = playlistId.trim();
+  return useQuery({
+    queryKey: ["tv", "yt-playlist-info", id],
+    queryFn: () => api.tv.youtubePlaylistInfo(id),
+    enabled: enabled && id.length > 0,
+    retry: false,
+    staleTime: 60 * 60 * 1000,
+  });
+}
+
+export function useYouTubeVideo(videoId: string, enabled = true) {
+  const id = videoId.trim();
+  return useQuery({
+    queryKey: ["tv", "yt-video", id],
+    queryFn: () => api.tv.youtubeVideo(id),
+    enabled: enabled && id.length > 0,
+    retry: false,
+    staleTime: 60 * 60 * 1000,
+  });
+}
+
 /** Convenience for the favorite star: is (source, ref) currently favorited, and its row id if so. */
 export function favoriteId(
   favorites: { id: string; source: TvSource; ref: string }[],

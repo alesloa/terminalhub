@@ -6,7 +6,7 @@ import { fetchCatalog } from "../tv/sources.js";
 import { isProxyableUrl } from "../tv/proxy.js";
 import { rewriteManifest, bodyIsManifest } from "../tv/manifest.js";
 import { searchRadio, radioFacets } from "../tv/radio.js";
-import { searchYouTube } from "../tv/youtube.js";
+import { searchYouTube, fetchPlaylistItems, fetchVideo, fetchPlaylistInfo } from "../tv/youtube.js";
 
 // TV / Media tool. The catalog (iptv-org) is fetched + cached by sources.ts; the proxy fetches an
 // upstream stream/manifest with the right Referer/User-Agent and re-serves it with CORS (and rewrites
@@ -93,6 +93,30 @@ export async function tvRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!key) return reply.code(400).send({ error: "no_key" });
     const q = req.query as { q?: string; pageToken?: string };
     return searchYouTube(key, q.q ?? "", q.pageToken || undefined);
+  });
+
+  app.get("/api/tv/youtube/playlist", async (req, reply) => {
+    const key = ctx.store.getSetting("tv_youtube_api_key");
+    if (!key) return reply.code(400).send({ error: "no_key" });
+    const q = req.query as { playlistId?: string; pageToken?: string };
+    if (!q.playlistId) return reply.code(400).send({ error: "bad playlistId" });
+    return fetchPlaylistItems(key, q.playlistId, q.pageToken || undefined);
+  });
+
+  app.get("/api/tv/youtube/video", async (req, reply) => {
+    const key = ctx.store.getSetting("tv_youtube_api_key");
+    if (!key) return reply.code(400).send({ error: "no_key" });
+    const q = req.query as { videoId?: string };
+    if (!q.videoId) return reply.code(400).send({ error: "bad videoId" });
+    return { item: await fetchVideo(key, q.videoId) };
+  });
+
+  app.get("/api/tv/youtube/playlist-info", async (req, reply) => {
+    const key = ctx.store.getSetting("tv_youtube_api_key");
+    if (!key) return reply.code(400).send({ error: "no_key" });
+    const q = req.query as { playlistId?: string };
+    if (!q.playlistId) return reply.code(400).send({ error: "bad playlistId" });
+    return { info: await fetchPlaylistInfo(key, q.playlistId) };
   });
 
   app.get("/api/tv/favorites", async () => ({ favorites: ctx.store.listTvFavorites() }));

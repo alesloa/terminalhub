@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { TvSettings } from "../../api/types";
 import { useTv } from "./store";
+import { EyeIcon, EyeOffIcon } from "./icons";
 
 interface Props {
   settings?: TvSettings;
@@ -12,6 +13,7 @@ interface Props {
  *  NSFW toggle. The key is write-only — the server only ever tells us whether one is set. */
 export function TvSettingsPopover({ settings, onSave, onClose }: Props) {
   const [key, setKey] = useState("");
+  const [reveal, setReveal] = useState(false);
   const preferredAudioLang = useTv((s) => s.preferredAudioLang);
   const setPreferredAudioLang = useTv((s) => s.setPreferredAudioLang);
   const ref = useRef<HTMLDivElement>(null);
@@ -38,10 +40,16 @@ export function TvSettingsPopover({ settings, onSave, onClose }: Props) {
 
       <label className="block text-dim mb-1.5">YouTube Data API key</label>
       <div className="flex gap-2">
-        <input type="password" value={key} onChange={(e) => setKey(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") saveKey(); }}
-          placeholder={settings?.hasYoutubeKey ? "•••••••••• (set)" : "Paste your API key"}
-          className="flex-1 min-w-0 bg-surface border border-edge rounded-lg px-2.5 h-8 outline-none text-fg placeholder:text-dim focus:border-edge-strong" />
+        <div className="flex-1 min-w-0 flex items-center bg-surface border border-edge rounded-lg pl-2.5 pr-1 h-8 focus-within:border-edge-strong">
+          <input type={reveal ? "text" : "password"} value={key} onChange={(e) => setKey(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") saveKey(); }}
+            placeholder={settings?.hasYoutubeKey ? "•••••••••• (set)" : "Paste your API key"}
+            className="flex-1 min-w-0 bg-transparent outline-none text-fg placeholder:text-dim" />
+          <button type="button" onClick={() => setReveal((r) => !r)} title={reveal ? "Hide key" : "Show key"}
+            className="shrink-0 w-7 h-7 grid place-items-center rounded-md text-dim hover:text-fg">
+            {reveal ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
+          </button>
+        </div>
         <button onClick={saveKey} disabled={!key.trim()}
           className="px-3 h-8 rounded-lg bg-accent text-accent-fg font-medium disabled:opacity-40">Save</button>
       </div>

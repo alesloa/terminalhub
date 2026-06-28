@@ -160,3 +160,29 @@ export function LanguagesIcon({ size = 17, className }: P) {
     </svg>
   );
 }
+
+/** Playlist glyph — stacked lines with a play arrow (the "queue" of a YouTube list). */
+export function PlaylistIcon({ size = 15, className }: P) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M3 6h12M3 12h12M3 18h7" /><path d="m16 13 5 3-5 3z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/** Eye / eye-off pair for the reveal toggle on the API-key field. */
+export function EyeIcon({ size = 16, className }: P) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+export function EyeOffIcon({ size = 16, className }: P) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M10.6 6.2A9.7 9.7 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.8M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 4.4-1.1M3 3l18 18M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    </svg>
+  );
+}
