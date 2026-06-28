@@ -19,6 +19,27 @@
   --tr-warn: 245 158 11;        --tr-info: 96 165 250;
 }
 
+/* TV / Media tool — a locked "Media Center" palette island. The TV window pins its own exact hex
+   values onto the shared --tr-* tokens for its OWN subtree only, so it always reads as the GitHub-green
+   Media Center look regardless of the user's app theme. A custom property set here applies to this
+   element and every descendant (and to this element's own bg-canvas etc.), so one class repaints the
+   whole TV window and nothing else. Values mirror media-center's src/index.css exactly. */
+.tv-scope {
+  --tr-bg: 22 22 24;            --tr-panel: 27 27 30;        --tr-surface: 38 38 43;
+  --tr-elevated: 35 35 39;      --tr-code: 18 18 20;         --tr-edge: 44 44 49;
+  --tr-edge-strong: 58 58 64;   --tr-text: 236 236 238;      --tr-text-bright: 255 255 255;
+  --tr-text-muted: 139 139 146; --tr-text-dim: 95 95 102;    --tr-accent: 63 185 80;
+  --tr-accent-hover: 72 201 90; --tr-accent-fg: 12 26 15;    --tr-link: 167 230 177;
+  --tr-selection: 20 60 30;     --tr-success: 63 185 80;     --tr-error: 240 99 92;
+  --tr-warn: 227 179 65;        --tr-info: 84 155 255;
+  /* Non-token bits: the two header/footer gradient bars, the logo backdrop, and the language-chip
+     accent (media-center's purple) — used directly by the TV components. */
+  --tv-grad-titlebar: linear-gradient(180deg, #1f1f22, #1a1a1d);
+  --tv-grad-transport: linear-gradient(180deg, #1c1c1f, #171719);
+  --tv-monogram: #0e0e10;
+  --tv-lang: #b07cff;
+}
+
 body { background:rgb(var(--tr-bg)); color:rgb(var(--tr-text)); margin:0; font-family: ui-sans-serif, system-ui; }
 
 /* Full-height chain so the app's root can size with `h-full` instead of `100vh`. A mirror viewer

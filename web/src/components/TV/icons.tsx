@@ -141,3 +141,22 @@ export function ClockIcon({ size = 14, className }: P) {
     </svg>
   );
 }
+
+/** Closed-caption (subtitles) glyph — a rounded box with "cc". */
+export function CcIcon({ size = 17, className }: P) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <rect x="2" y="5" width="20" height="14" rx="3" />
+      <path d="M10 10a2.5 2.5 0 0 0-2.5 2 2.5 2.5 0 0 0 2.5 2M17 10a2.5 2.5 0 0 0-2.5 2 2.5 2.5 0 0 0 2.5 2" />
+    </svg>
+  );
+}
+
+/** Globe (audio-language switch). */
+export function LanguagesIcon({ size = 17, className }: P) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+    </svg>
+  );
+}

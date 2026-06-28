@@ -9,6 +9,7 @@ import { TvMode } from "./TvMode";
 import { RadioMode } from "./RadioMode";
 import { YouTubeMode } from "./YouTubeMode";
 import { TvSettingsPopover } from "./TvSettingsPopover";
+import { Tooltip } from "./Tooltip";
 import { TvIcon, RadioIcon, YouTubeIcon, GearIcon, CloseIcon } from "./icons";
 
 const RECT_KEY = "tr.tvRect";
@@ -94,10 +95,10 @@ export const TvModal = forwardRef<WindowHandle, { origin?: WinRect | null; onClo
 
   return (
     <div onTransitionEnd={onTransitionEnd} style={style}
-      className="fixed z-50 flex flex-col rounded-xl overflow-hidden border border-edge-strong bg-canvas shadow-2xl">
+      className="tv-scope fixed z-50 flex flex-col rounded-xl overflow-hidden border border-edge-strong bg-canvas shadow-2xl">
       {/* title bar = drag handle */}
-      <div onPointerDown={beginDrag}
-        className="h-[42px] shrink-0 flex items-center gap-3.5 px-3.5 border-b border-edge bg-gradient-to-b from-elevated to-surface cursor-move select-none">
+      <div onPointerDown={beginDrag} style={{ background: "var(--tv-grad-titlebar)" }}
+        className="h-[42px] shrink-0 flex items-center gap-3.5 px-3.5 border-b border-edge cursor-move select-none">
         <div className="font-semibold text-[13px] text-bright flex items-center gap-2">
           <span className="text-accent"><TvIcon size={16} /></span> TV
         </div>
@@ -115,14 +116,18 @@ export const TvModal = forwardRef<WindowHandle, { origin?: WinRect | null; onClo
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
-          <button onClick={() => setShowSettings((s) => !s)} title="TV settings"
-            className={`w-[30px] h-[30px] rounded-lg grid place-items-center ${showSettings ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"}`}>
-            <GearIcon size={16} />
-          </button>
-          <button onClick={handleClose} title="Close"
-            className="w-[30px] h-[30px] rounded-lg grid place-items-center text-muted hover:bg-elevated hover:text-fg">
-            <CloseIcon size={15} />
-          </button>
+          <Tooltip label="TV settings" side="bottom">
+            <button onClick={() => setShowSettings((s) => !s)}
+              className={`w-[30px] h-[30px] rounded-lg grid place-items-center ${showSettings ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"}`}>
+              <GearIcon size={16} />
+            </button>
+          </Tooltip>
+          <Tooltip label="Close" side="bottom">
+            <button onClick={handleClose}
+              className="w-[30px] h-[30px] rounded-lg grid place-items-center text-muted hover:bg-elevated hover:text-fg">
+              <CloseIcon size={15} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 

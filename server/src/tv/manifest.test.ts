@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { proxyUrl, rewriteManifest } from "./manifest.js";
+import { proxyUrl, rewriteManifest, bodyIsManifest } from "./manifest.js";
 
 describe("proxyUrl", () => {
   it("wraps an absolute url through the tv proxy, encoded", () => {
@@ -56,5 +56,24 @@ describe("rewriteManifest", () => {
     const m = ["#EXTM3U", "", "#EXTINF:6.0,", "seg1.ts"].join("\n");
     const out = rewriteManifest(m, base).split("\n");
     expect(out[1]).toBe("");
+  });
+});
+
+describe("bodyIsManifest", () => {
+  it("accepts a real HLS manifest", () => {
+    expect(bodyIsManifest("#EXTM3U\n#EXT-X-VERSION:3\n")).toBe(true);
+  });
+
+  it("accepts a manifest behind a UTF-8 BOM and leading whitespace", () => {
+    expect(bodyIsManifest("﻿\n   #EXTM3U\n#EXTINF:6,\nseg.ts")).toBe(true);
+  });
+
+  it("rejects an HTML error page served at a .m3u8 URL", () => {
+    expect(bodyIsManifest("<!DOCTYPE html><html><body>403 Forbidden</body></html>")).toBe(false);
+  });
+
+  it("rejects an empty or non-manifest body", () => {
+    expect(bodyIsManifest("")).toBe(false);
+    expect(bodyIsManifest("OK")).toBe(false);
   });
 });

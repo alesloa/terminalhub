@@ -1,9 +1,10 @@
 import type { FastifyInstance } from "fastify";
+import { Readable } from "node:stream";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { fetchCatalog } from "../tv/sources.js";
 import { isProxyableUrl } from "../tv/proxy.js";
-import { rewriteManifest } from "../tv/manifest.js";
+import { rewriteManifest, bodyIsManifest } from "../tv/manifest.js";
 import { searchRadio, radioFacets } from "../tv/radio.js";
 import { searchYouTube } from "../tv/youtube.js";
 
@@ -28,27 +29,49 @@ export async function tvRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!isProxyableUrl(url)) return reply.code(400).send({ error: "bad url" });
     const ref = q.ref || undefined;
     const ua = q.ua || DEFAULT_UA;
+
+    // Bound CONNECTION SETUP only (until the response headers arrive), then clear the timer. A blanket
+    // AbortSignal.timeout would also abort the BODY — and a radio stream is one endless HTTP body, so a
+    // total timeout cuts it off mid-play (~15s). HLS segments are individually finite, so their bodies
+    // are unaffected; a stalled segment is the client's (hls.js fragment timeout) job, not ours.
+    const ac = new AbortController();
+    const connectTimer = setTimeout(() => ac.abort(), 15000);
+    let res: Response;
     try {
-      const res = await fetch(url, {
+      res = await fetch(url, {
         headers: { "user-agent": ua, ...(ref ? { referer: ref } : {}) },
         redirect: "follow",
-        signal: AbortSignal.timeout(15000),
+        signal: ac.signal,
       });
-      reply.header("access-control-allow-origin", "*");
-      const ct = res.headers.get("content-type") || "";
-      const isManifest = /mpegurl|m3u8/i.test(ct) || new URL(url).pathname.toLowerCase().endsWith(".m3u8");
-      if (isManifest) {
-        const text = await res.text();
-        return reply
-          .header("content-type", "application/vnd.apple.mpegurl")
-          .send(rewriteManifest(text, res.url || url, ref, ua));
-      }
-      return reply
-        .header("content-type", ct || "application/octet-stream")
-        .send(Buffer.from(await res.arrayBuffer()));
     } catch {
       return reply.code(502).send({ error: "upstream failed" });
+    } finally {
+      clearTimeout(connectTimer);
     }
+
+    reply.header("access-control-allow-origin", "*");
+
+    // Surface a real upstream error (geo-block / 403 / 5xx) as that status so the player fires a clean
+    // error and auto-advances — instead of buffering a dead body or rewriting an error page as media.
+    if (res.status >= 400) return reply.code(res.status).send({ error: `upstream ${res.status}` });
+
+    const ct = res.headers.get("content-type") || "";
+    const candidateManifest = /mpegurl|m3u8/i.test(ct) || new URL(url).pathname.toLowerCase().endsWith(".m3u8");
+    if (candidateManifest) {
+      const text = await res.text();
+      // A .m3u8 URL can return 200 + an HTML error page (geo-block). Rewriting that as a manifest hangs
+      // hls.js forever with no fatal error — so reject non-manifest bodies and let the player advance.
+      if (!bodyIsManifest(text)) return reply.code(502).send({ error: "not a manifest" });
+      return reply
+        .header("content-type", "application/vnd.apple.mpegurl")
+        .send(rewriteManifest(text, res.url || url, ref, ua));
+    }
+
+    // Everything else (segments, keys, continuous audio) streams straight through with its own
+    // content-type — no full-body buffering, so an endless radio body flows without a memory blowup.
+    reply.header("content-type", ct || "application/octet-stream");
+    if (!res.body) return reply.send();
+    return reply.send(Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]));
   });
 
   app.get("/api/tv/radio/search", async (req) => {

@@ -29,7 +29,7 @@ function matchFilters(c: TvChannel, f: ReturnType<typeof useTv.getState>["filter
 }
 
 export function TvMode() {
-  const { channel, playing, volume, muted, filters, mode, setMode, playChannel, togglePlay, setVolume, toggleMute, patchFilters, toggleArrayFilter, clearFilters } = useTv();
+  const { channel, playing, volume, muted, filters, mode, setMode, playChannel, togglePlay, setVolume, toggleMute, patchFilters, toggleArrayFilter, clearFilters, subtitleColor, setSubtitleColor, setPreferredAudioLang } = useTv();
   const catalog = useTvCatalog();
   const { favorites, add, remove } = useTvFavorites();
   const { settings } = useTvSettings();
@@ -69,10 +69,22 @@ export function TvMode() {
   // A dead stream falls through to the channel's own backup streams; when those are exhausted the player
   // shows "unavailable" (we do NOT auto-jump to a different channel — that surprises the user).
   const onFatal = () => { if (streamIdx < ordered.length - 1) setStreamIdx((i) => i + 1); };
-  const { status, stats } = useHlsPlayer(videoRef, stream, { onFatal });
+  const { status, stats, programTitle, subtitles, audio, selectSubtitle, selectAudio } = useHlsPlayer(videoRef, stream, { onFatal });
 
   // Mirror the store's playback state onto the <video>.
   useEffect(() => { applyMediaState(videoRef.current, { volume, muted, playing }); }, [volume, muted, playing, status, stream?.url]);
+
+  // The chosen caption color is applied to video::cue via a managed <style>, scoped to .tv-scope so it
+  // only ever touches this window's video. Recreated on color change; removed on unmount.
+  useEffect(() => {
+    const el = document.createElement("style");
+    el.textContent = `.tv-scope video::cue { color: ${subtitleColor} !important; background: rgba(0,0,0,.6); }`;
+    document.head.appendChild(el);
+    return () => { el.remove(); };
+  }, [subtitleColor]);
+
+  // Only surface a real programme name — never the channel name echoed back (see useHlsPlayer junk filter).
+  const program = programTitle && programTitle !== channel?.name ? programTitle : null;
 
   const toggleFav = (c: TvChannel) => {
     const id = favoriteId(favorites, "tv", c.id);
@@ -107,6 +119,7 @@ export function TvMode() {
   const mbps = (stats.bitrateKbps / 1000).toFixed(1);
   const statusStats: StatusStat[] = [
     { key: "ch", icon: <TvIcon size={14} />, content: <><b>{channels.length.toLocaleString()}</b> channels</> },
+    ...(program ? [{ key: "prog", good: true, icon: <ClockIcon />, content: <span className="truncate max-w-[220px] inline-block align-bottom"><b>{program}</b></span> } as StatusStat] : []),
     { key: "q", good: status === "playing", icon: <BarsIcon />, content: <>HLS · <b>{quality || "—"}</b></> },
     { key: "br", icon: <DownIcon />, content: <><b>{stats.bitrateKbps ? mbps : "0.0"}</b> Mbps</> },
     { key: "buf", icon: <ClockIcon />, content: <>buffer <b>{stats.bufferSec}s</b></> },
@@ -142,7 +155,7 @@ export function TvMode() {
               <Chip key={"c" + name} dot="bg-accent" label={name} onRemove={() => toggleArrayFilter("categories", name)} />
             ))}
             {filters.languages.map((name) => (
-              <Chip key={"l" + name} dot="bg-link" label={name} onRemove={() => toggleArrayFilter("languages", name)} />
+              <Chip key={"l" + name} dot="bg-[var(--tv-lang)]" label={name} onRemove={() => toggleArrayFilter("languages", name)} />
             ))}
             {filters.countries.map((code) => {
               const c = countryOf(code);
@@ -154,7 +167,7 @@ export function TvMode() {
 
           {/* stage: player + browse rail */}
           <div className="flex-1 flex min-h-0">
-            <TvPlayer videoRef={videoRef} stageRef={stageRef} title={channel?.name ?? null} sub={subLine}
+            <TvPlayer videoRef={videoRef} stageRef={stageRef} title={channel?.name ?? null} sub={subLine} program={program}
               status={status} quality={quality} playing={playing} onTogglePlay={togglePlay} />
             <ChannelList channels={filtered} currentId={channel?.id ?? null} favIds={favIds} onPlay={play} onToggleFav={toggleFav} />
           </div>
@@ -164,7 +177,9 @@ export function TvMode() {
       <TransportBar nowPlaying={np} playing={playing} onTogglePlay={togglePlay}
         onPrev={() => go(-1)} onNext={() => go(1)}
         volume={volume} muted={muted} onVolume={setVolume} onToggleMute={toggleMute}
-        onPip={pip} onFullscreen={fullscreen} />
+        onPip={pip} onFullscreen={fullscreen}
+        subtitles={subtitles} subtitleColor={subtitleColor} onSelectSubtitle={selectSubtitle} onSubtitleColor={setSubtitleColor}
+        audio={audio} onPickAudio={(t) => { selectAudio(t.id); setPreferredAudioLang(t.lang || t.label); }} />
       <StatusBar sourceLabel="iptv-org" stats={statusStats} />
     </div>
   );

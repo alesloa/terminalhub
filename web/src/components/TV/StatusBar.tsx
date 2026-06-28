@@ -11,7 +11,7 @@ export interface StatusStat {
  *  of stat cells separated by hairlines on the right. Stream-relevant info only — no CPU history. */
 export function StatusBar({ sourceLabel, stats }: { sourceLabel: string; stats: StatusStat[] }) {
   return (
-    <div className="h-[30px] shrink-0 flex items-center px-3.5 bg-canvas border-t border-edge text-[11px] text-muted select-none">
+    <div className="h-[30px] shrink-0 flex items-center px-3.5 bg-code border-t border-edge text-[11px] text-muted select-none">
       <div className="flex items-center gap-2 text-bright font-medium text-[11.5px]">
         <span className="w-[7px] h-[7px] rounded-full bg-accent shadow-[0_0_7px_var(--tw-shadow-color)] shadow-accent" />
         {sourceLabel}

@@ -7,6 +7,7 @@ interface Props {
   stageRef: RefObject<HTMLDivElement>;
   title: string | null;
   sub: string | null;
+  program?: string | null; // now-playing programme/movie name (broadcaster-dependent; often absent)
   status: PlayerStatus;
   quality: string | null;
   playing: boolean;
@@ -15,7 +16,7 @@ interface Props {
 
 /** The video stage: the <video> (lives here so fullscreen targets the stage), the LIVE + quality
  *  badges, a center play button when idle/paused, a loading shimmer, and the bottom title overlay. */
-export function TvPlayer({ videoRef, stageRef, title, sub, status, quality, playing, onTogglePlay }: Props) {
+export function TvPlayer({ videoRef, stageRef, title, sub, program, status, quality, playing, onTogglePlay }: Props) {
   const live = status === "playing";
   return (
     <div className="flex-1 min-w-0 flex flex-col p-4 gap-3">
@@ -66,6 +67,7 @@ export function TvPlayer({ videoRef, stageRef, title, sub, status, quality, play
         {title && (
           <div className="relative w-full p-[18px] bg-gradient-to-b from-transparent to-black/60">
             <h2 className="text-[18px] font-semibold text-bright leading-tight">{title}</h2>
+            {program && <p className="text-accent text-[12.5px] font-medium mt-1">{program}</p>}
             {sub && <p className="text-dim text-[12.5px] mt-1">{sub}</p>}
           </div>
         )}

@@ -79,8 +79,8 @@ function Logo({ channel }: { channel: TvChannel }) {
   const [broken, setBroken] = useState(false);
   if (channel.logo && !broken) {
     return (
-      <img src={channel.logo} alt="" onError={() => setBroken(true)}
-        className="w-10 h-10 rounded-lg object-contain bg-surface shrink-0" />
+      <img src={channel.logo} alt="" onError={() => setBroken(true)} style={{ background: "var(--tv-monogram)" }}
+        className="w-10 h-10 rounded-lg object-contain shrink-0" />
     );
   }
   return (

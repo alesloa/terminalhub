@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { TvSettings } from "../../api/types";
+import { useTv } from "./store";
 
 interface Props {
   settings?: TvSettings;
@@ -11,6 +12,8 @@ interface Props {
  *  NSFW toggle. The key is write-only — the server only ever tells us whether one is set. */
 export function TvSettingsPopover({ settings, onSave, onClose }: Props) {
   const [key, setKey] = useState("");
+  const preferredAudioLang = useTv((s) => s.preferredAudioLang);
+  const setPreferredAudioLang = useTv((s) => s.setPreferredAudioLang);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -46,6 +49,12 @@ export function TvSettingsPopover({ settings, onSave, onClose }: Props) {
         Enables the YouTube tab. Stored on the server, never returned to the browser.
         {settings?.hasYoutubeKey && <button onClick={() => onSave({ youtubeApiKey: "" })} className="ml-1 text-error hover:underline">Clear key</button>}
       </p>
+
+      <label className="block text-dim mt-4 mb-1.5">Preferred audio language</label>
+      <input value={preferredAudioLang} onChange={(e) => setPreferredAudioLang(e.target.value)}
+        placeholder="e.g. English, spa, fr"
+        className="w-full bg-surface border border-edge rounded-lg px-2.5 h-8 outline-none text-fg placeholder:text-dim focus:border-edge-strong" />
+      <p className="text-dim text-[11px] mt-1.5 leading-snug">Auto-selected on channels that carry more than one audio track.</p>
 
       <label className="flex items-center gap-2.5 mt-4 cursor-pointer select-none">
         <input type="checkbox" checked={!!settings?.nsfw} onChange={(e) => onSave({ nsfw: e.target.checked })}
