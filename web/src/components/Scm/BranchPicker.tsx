@@ -1,7 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { GitBranch } from "../../api/types";
 import { useInfiniteList } from "../../hooks/useInfiniteList";
 import { BranchFilterList } from "./BranchFilterList";
+
+// Pinned branches always lead the switcher, in THIS order, whenever they exist — `main` on top, then
+// `staging` — so the two you switch to most never get lost in a long list. Everything else follows
+// alphabetically (case-insensitive). A repo without them just starts straight at the A→Z list.
+const PINNED = ["main", "staging"];
+const rank = (name: string) => { const i = PINNED.indexOf(name); return i === -1 ? PINNED.length : i; };
+const sortBranches = (branches: GitBranch[]): GitBranch[] =>
+  [...branches].sort((a, b) =>
+    rank(a.name) - rank(b.name) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
 /**
  * The ＋ branch dropdown. Two modes:
@@ -32,14 +41,15 @@ export function BranchPicker({ branches, onCheckout, onCreate, onClose, classNam
     const r = wrapRef.current?.getBoundingClientRect();
     if (r) setFlipUp(r.bottom > window.innerHeight - 8);
   }, []);
-  const current = branches.find(b => b.current)?.name ?? null;
+  const ordered = useMemo(() => sortBranches(branches), [branches]);
+  const current = ordered.find(b => b.current)?.name ?? null;
 
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (creating) inputRef.current?.focus(); }, [creating]);
 
-  const { scrollRef, onScroll, visible, hasMore } = useInfiniteList(branches, b => b.name);
+  const { scrollRef, onScroll, visible, hasMore } = useInfiniteList(ordered, b => b.name);
   const create = () => { const n = name.trim(); if (n) { onCreate(n); onClose(); } };
 
   return (
@@ -48,7 +58,7 @@ export function BranchPicker({ branches, onCheckout, onCreate, onClose, classNam
       <div ref={wrapRef} style={flipUp ? { top: "auto", bottom: "100%", marginBottom: 4 } : undefined}
         className={`absolute z-50 flex flex-col bg-panel border border-edge rounded shadow-lg text-sm ${className}`}>
         {showSearch ? (
-          <BranchFilterList branches={branches} pending={pending} currentName={current} onEscape={onClose}
+          <BranchFilterList branches={ordered} pending={pending} currentName={current} onEscape={onClose}
             onPick={(picked, isNew) => { if (isNew) onCreate(picked); else if (picked !== current) onCheckout(picked); onClose(); }} />
         ) : (<>
           {creating ? (

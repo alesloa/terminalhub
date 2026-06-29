@@ -7,6 +7,7 @@ import { confirmModal } from "../../store/confirm";
 import { useGit } from "./useGit";
 import { PublishModal } from "./PublishModal";
 import { PrCreateModal } from "./PrCreateModal";
+import { BranchPicker } from "./BranchPicker";
 import { Popover, MenuItem, MenuSep, FolderIcon, Spinner } from "./parts";
 
 /**
@@ -21,6 +22,7 @@ export function GitHeader({ rootPath, onResizeStart }:
   const push = useToasts(s => s.push);
   const setScmTab = useRoom(s => s.setScmTab);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [branchOpen, setBranchOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [prCreateOpen, setPrCreateOpen] = useState(false);
 
@@ -29,6 +31,13 @@ export function GitHeader({ rootPath, onResizeStart }:
     queryFn: () => api.git.status(rootPath),
     refetchInterval: 2500,
     refetchIntervalInBackground: true, // keep polling while terminalhub is backgrounded (see ChangesSection)
+  });
+  // Branches power the click-to-switch dropdown on the branch label below. Same cache/staleTime as
+  // the room-header chip and the SCM panel so all three branch switchers share one fetch.
+  const { data: branchData } = useQuery({
+    queryKey: ["git", "branches", rootPath],
+    queryFn: () => api.git.branches(rootPath),
+    staleTime: 8000,
   });
 
   const folder = rootPath.split("/").pop() || rootPath;
@@ -130,10 +139,25 @@ export function GitHeader({ rootPath, onResizeStart }:
     <div onPointerDown={onResizeStart ? onBarPointerDown : undefined} title={onResizeStart ? "Drag to resize" : undefined}
       className={`flex items-center gap-2 px-3 h-9 shrink-0 border-b border-edge ${onResizeStart ? "cursor-row-resize" : "cursor-default"}`}>
       <FolderIcon />
-      <span className="truncate text-[13px] min-w-0" title={`${folder} · ${branch}`}>
-        <span className="text-fg">{folder}</span>
-        <span className="text-dim"> / </span>
-        <span className="text-muted">{branch}</span>
+      <span className="flex items-center text-[13px] min-w-0" title={`${folder} · ${branch}`}>
+        {/* The folder name (and its icon) never clip — they're the identity, always shown in full. */}
+        <span className="text-fg shrink-0">{folder}</span>
+        <span className="text-dim shrink-0"> / </span>
+        {/* The branch is the only part that shrinks: it clips with NO ellipsis (overflow-hidden,
+            not `truncate`) so as much of the name shows as fits. Clicking opens the switcher. */}
+        <span className="relative min-w-0 flex">
+          <button onClick={() => setBranchOpen(v => !v)} title="Switch branch"
+            className="flex items-center gap-0.5 min-w-0 max-w-full rounded px-0.5 -mx-0.5 text-muted hover:text-fg hover:bg-elevated cursor-pointer">
+            <span className="min-w-0 overflow-hidden whitespace-nowrap">{branch}</span>
+            <span className="text-dim leading-none -translate-y-px shrink-0">▾</span>
+          </button>
+          {branchOpen && (
+            <BranchPicker branches={branchData?.branches ?? []} pending={pending} showSearch
+              onCheckout={name => run(() => api.git.checkout(rootPath, name))}
+              onCreate={name => run(() => api.git.createBranch(rootPath, name))}
+              onClose={() => setBranchOpen(false)} className="left-0 top-6 w-64" />
+          )}
+        </span>
       </span>
       {branchPr && (
         <button onClick={() => window.open(branchPr.url, "_blank", "noopener")}
