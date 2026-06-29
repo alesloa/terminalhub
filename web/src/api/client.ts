@@ -12,7 +12,7 @@ import type {
   AccessKey, PresenceSession, TunnelStatus,
   CopilotSettings, CopilotConversation, CopilotMessage, CopilotSkillCard, CopilotSkillAccount, CopilotJob, CopilotReportMode,
   CopilotMcpServer, CopilotMcpImportable, CopilotMcpTransport,
-  TvCatalog, TvStream, RadioStation, RadioFacets, YouTubeSearchResult, YouTubePlaylistResult, YouTubePlaylistInfo, YouTubeItem, TvFavorite, TvRecent, TvSettings, TvSource,
+  TvCatalog, TvStream, RadioStation, RadioFacets, YouTubeSearchResult, YouTubePlaylistResult, YouTubePlaylistInfo, YouTubeItem, TvFavorite, TvRecent, TvSettings, TvSource, YtHidden, YtHideInput,
 } from "./types";
 
 const TOKEN_KEY = "terminalhub_token";
@@ -743,6 +743,15 @@ export const api = {
     settings: () => req<TvSettings>("GET", "/api/tv/settings"),
     saveSettings: (b: { youtubeApiKey?: string; nsfw?: boolean; volume?: number }) =>
       req<{ ok: true }>("PUT", "/api/tv/settings", b),
+    // YouTube persistent deletions (per-playlist removals + global bans, with restore paths).
+    ytBans: () => req<{ bans: YtHidden[] }>("GET", "/api/tv/youtube/bans").then((r) => r.bans),
+    ytHiddenForPlaylist: (playlistId: string) =>
+      req<{ hidden: YtHidden[] }>("GET", `/api/tv/youtube/hidden?playlistId=${encodeURIComponent(playlistId)}`).then((r) => r.hidden),
+    ytHide: (playlistId: string, v: YtHideInput) => req<{ ok: true }>("POST", "/api/tv/youtube/hidden", { playlistId, video: v }),
+    ytBan: (v: YtHideInput) => req<{ ok: true }>("POST", "/api/tv/youtube/ban", { video: v }),
+    ytRestore: (playlistId: string, videoId: string) =>
+      req<{ ok: true }>("DELETE", `/api/tv/youtube/hidden?playlistId=${encodeURIComponent(playlistId)}&videoId=${encodeURIComponent(videoId)}`),
+    ytUnban: (videoId: string) => req<{ ok: true }>("DELETE", `/api/tv/youtube/ban/${encodeURIComponent(videoId)}`),
   },
 };
 

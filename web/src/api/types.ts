@@ -579,6 +579,10 @@ export interface YouTubeItem { videoId: string; title: string; channelTitle: str
 export interface YouTubeSearchResult { items: YouTubeItem[]; nextPageToken?: string }
 export interface YouTubePlaylistResult { items: YouTubeItem[]; nextPageToken?: string }
 export interface YouTubePlaylistInfo { id: string; title: string; channelTitle: string; thumbnail: string }
+// YouTube persistent deletions. playlistId "" = banned everywhere; a real playlist id = removed from
+// that playlist only. The snapshot fields render the restore lists without re-fetching from YouTube.
+export interface YtHidden { videoId: string; playlistId: string; title: string; channelTitle: string; thumbnail: string; hiddenAt: number }
+export interface YtHideInput { videoId: string; title: string; channelTitle: string; thumbnail: string }
 export interface TvFavorite { id: string; source: TvSource; ref: string; name: string; logo: string | null; meta: string | null; createdAt: number }
 export interface TvRecent { id: string; source: TvSource; ref: string; name: string; logo: string | null; playedAt: number }
 export interface TvSettings { hasYoutubeKey: boolean; nsfw: boolean; volume: number }

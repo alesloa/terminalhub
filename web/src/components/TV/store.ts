@@ -32,6 +32,11 @@ function read(key: string, fallback: string): string {
 
 const EMPTY_FILTERS: TvFilters = { search: "", categories: [], countries: [], languages: [], favOnly: false, hdOnly: false };
 
+// One-at-a-time undo toast (used by the YouTube remove/ban actions). A module-level timer auto-clears
+// after 6s; re-showing resets it. Kept on the TV store so any TV component can raise one.
+export interface TvToast { msg: string; onUndo: (() => void) | null }
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
 interface TvStore {
   mode: TvMode;
   channel: TvChannel | null;
@@ -43,6 +48,7 @@ interface TvStore {
   filters: TvFilters;
   subtitleColor: string; // caption text color (video::cue), persisted
   preferredAudioLang: string; // remembered audio language, auto-applied to multi-audio streams
+  toast: TvToast | null;
   setMode: (m: TvMode) => void;
   playChannel: (c: TvChannel) => void;
   playStation: (s: RadioStation) => void;
@@ -56,6 +62,8 @@ interface TvStore {
   clearFilters: () => void;
   setSubtitleColor: (c: string) => void;
   setPreferredAudioLang: (l: string) => void;
+  showToast: (msg: string, onUndo?: (() => void) | null) => void;
+  clearToast: () => void;
 }
 
 export const useTv = create<TvStore>((set) => ({
@@ -69,6 +77,7 @@ export const useTv = create<TvStore>((set) => ({
   filters: { ...EMPTY_FILTERS },
   subtitleColor: read(SUB_COLOR_KEY, "#ffffff"),
   preferredAudioLang: read(AUDIO_LANG_KEY, ""),
+  toast: null,
   setMode: (mode) => set({ mode }),
   playChannel: (channel) => set({ channel, mode: "tv", playing: true }),
   playStation: (station) => set({ station, mode: "radio", playing: true }),
@@ -96,5 +105,14 @@ export const useTv = create<TvStore>((set) => ({
   setPreferredAudioLang: (preferredAudioLang) => {
     try { localStorage.setItem(AUDIO_LANG_KEY, preferredAudioLang); } catch { /* blocked */ }
     set({ preferredAudioLang });
+  },
+  showToast: (msg, onUndo = null) => {
+    if (toastTimer) clearTimeout(toastTimer);
+    set({ toast: { msg, onUndo } });
+    toastTimer = setTimeout(() => set({ toast: null }), 6000);
+  },
+  clearToast: () => {
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    set({ toast: null });
   },
 }));

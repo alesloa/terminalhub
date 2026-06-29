@@ -26,6 +26,7 @@ export function useExplorerMenu(rootPath: string, gitInfo: GitInfo | undefined, 
   const clipboard = useClipboard(s => s.clipboard);
   const collapseAllDirs = useRoom(s => s.collapseAllDirs);
   const expandDirs = useRoom(s => s.expandDirs);
+  const revealInExplorer = useRoom(s => s.revealInExplorer);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["fs"] });
@@ -200,6 +201,9 @@ export function useExplorerMenu(rootPath: string, gitInfo: GitInfo | undefined, 
     });
 
     const entries: FileMenuEntry[] = [];
+    // From the Filter/Search result lists the row isn't in the tree — give it a jump back to the
+    // Explorer (expand to it, select + flash). Redundant inside the tree itself, so results-only.
+    if (results && !isRoot) entries.push({ label: "Reveal in Explorer", onClick: () => revealInExplorer(target.path) }, "sep");
     if (!results) {
       entries.push(
         { label: "New File", onClick: () => startEdit({ mode: "new-file", target: container }) },

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { TvSettings } from "../../api/types";
 import { useTv } from "./store";
+import { useYtBans, useYtDeletions } from "./useTvData";
 import { EyeIcon, EyeOffIcon } from "./icons";
 
 interface Props {
@@ -16,6 +17,8 @@ export function TvSettingsPopover({ settings, onSave, onClose }: Props) {
   const [reveal, setReveal] = useState(false);
   const preferredAudioLang = useTv((s) => s.preferredAudioLang);
   const setPreferredAudioLang = useTv((s) => s.setPreferredAudioLang);
+  const bans = useYtBans();
+  const { unban } = useYtDeletions();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -69,6 +72,30 @@ export function TvSettingsPopover({ settings, onSave, onClose }: Props) {
           className="w-4 h-4 accent-[rgb(var(--tr-accent))] cursor-pointer" />
         <span className="text-fg">Show adult (NSFW) channels</span>
       </label>
+
+      <div className="mt-4 pt-4 border-t border-edge">
+        <div className="font-semibold text-fg">Banned videos{bans.data?.length ? ` (${bans.data.length})` : ""}</div>
+        <p className="text-dim text-[11px] mt-1 leading-snug">Banned videos never appear in any playlist or search.</p>
+        {bans.data && bans.data.length > 0 ? (
+          <div className="mt-2 max-h-[200px] overflow-auto rounded-lg border border-edge">
+            {bans.data.map((b) => (
+              <div key={b.videoId} className="flex items-center gap-2.5 px-2.5 py-2 border-b border-edge last:border-b-0">
+                <div className="w-[56px] h-[32px] rounded-[5px] overflow-hidden bg-surface shrink-0">
+                  {b.thumbnail && <img src={b.thumbnail} alt="" className="w-full h-full object-cover" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[12px] text-fg">{b.title || b.videoId}</div>
+                  {b.channelTitle && <div className="truncate text-[10.5px] text-dim">{b.channelTitle}</div>}
+                </div>
+                <button onClick={() => unban.mutate(b.videoId)}
+                  className="shrink-0 rounded-md border border-edge bg-surface px-2.5 py-1 text-[11.5px] text-muted hover:bg-elevated hover:text-fg">Unban</button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-dim text-[11px] mt-2">Nothing banned.</p>
+        )}
+      </div>
     </div>
   );
 }

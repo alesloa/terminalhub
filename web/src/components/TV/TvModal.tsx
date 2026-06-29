@@ -9,6 +9,7 @@ import { TvMode } from "./TvMode";
 import { RadioMode } from "./RadioMode";
 import { YouTubeMode } from "./YouTubeMode";
 import { TvSettingsPopover } from "./TvSettingsPopover";
+import { TvToast } from "./TvToast";
 import { Tooltip } from "./Tooltip";
 import { TvIcon, RadioIcon, YouTubeIcon, GearIcon, CloseIcon } from "./icons";
 
@@ -141,6 +142,7 @@ export const TvModal = forwardRef<WindowHandle, { origin?: WinRect | null; onClo
           onSave={(b) => save.mutate(b)} />
       )}
 
+      <TvToast />
       <ResizeHandles onStart={beginResize} />
     </div>
   );

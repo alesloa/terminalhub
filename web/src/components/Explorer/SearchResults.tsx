@@ -2,6 +2,7 @@ import { type MouseEvent as ReactMouseEvent } from "react";
 import { useRoom } from "../../store/room";
 import { getFileIconUrl } from "../../lib/materialIcons";
 import { dirname, relativeTo } from "../../lib/paths";
+import { startPathDrag } from "../../lib/dragImage";
 import type { SearchFileResult, SearchMatch } from "../../api/types";
 
 /** Stable key for one match (file path + position) — used for dismiss tracking. */
@@ -42,8 +43,9 @@ export function SearchResults({
         const icon = getFileIconUrl(f.name);
         return (
           <div key={f.path}>
-            {/* File header */}
+            {/* File header — draggable to the terminal (drops its path) and into Explorer folders */}
             <div className="group flex items-center gap-1 px-2 py-0.5 hover:bg-surface cursor-pointer"
+              draggable onDragStart={(e) => startPathDrag(e, [f.path])}
               onClick={() => onToggle(f.path)} onContextMenu={(e) => rowMenu(e, f)} title={f.path}>
               <span className="text-dim w-3 shrink-0 text-center">{isCollapsed ? "▸" : "▾"}</span>
               {icon && <img src={icon} alt="" aria-hidden draggable={false} className="w-4 h-4 shrink-0" />}
@@ -69,6 +71,7 @@ export function SearchResults({
               <div key={matchKey(f.path, m)}
                 className="group flex items-center gap-1 pl-7 pr-2 py-0.5 hover:bg-surface cursor-pointer"
                 title={`Line ${m.line}`}
+                draggable onDragStart={(e) => startPathDrag(e, [f.path])}
                 onClick={() => jumpToPosition({ path: f.path, name: f.name }, m.line, m.col)}
                 onContextMenu={(e) => rowMenu(e, f)}>
                 <MatchLine m={m} />

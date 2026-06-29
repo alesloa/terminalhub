@@ -574,3 +574,16 @@ CREATE TABLE IF NOT EXISTS tv_catalog_cache (
   json      TEXT NOT NULL,                -- JSON.stringify(Catalog)
   fetchedAt INTEGER NOT NULL
 );
+-- YouTube persistent deletions. playlistId='' is the sentinel for "banned everywhere" (a real
+-- YouTube playlist id is never empty), so PRIMARY KEY(videoId,playlistId) keeps exactly one row per
+-- (video, scope). title/channelTitle/thumbnail snapshot the row so the restore lists can render what
+-- was removed without re-fetching it from YouTube.
+CREATE TABLE IF NOT EXISTS yt_hidden (
+  videoId      TEXT NOT NULL,
+  playlistId   TEXT NOT NULL DEFAULT '',
+  title        TEXT NOT NULL DEFAULT '',
+  channelTitle TEXT NOT NULL DEFAULT '',
+  thumbnail    TEXT NOT NULL DEFAULT '',
+  hiddenAt     INTEGER NOT NULL,
+  PRIMARY KEY (videoId, playlistId)
+);

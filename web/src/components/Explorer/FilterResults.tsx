@@ -2,6 +2,7 @@ import { type ReactNode, type HTMLAttributes, type MouseEvent as ReactMouseEvent
 import { useRoom, type ExplorerTarget } from "../../store/room";
 import { getFileIconUrl, getFolderIconUrl } from "../../lib/materialIcons";
 import { relativeTo } from "../../lib/paths";
+import { startPathDrag } from "../../lib/dragImage";
 
 /** A node in the filtered path-tree: a folder (with children) or a matched file leaf. */
 export type FilterNode =
@@ -75,6 +76,7 @@ function Node({ node, depth, collapsed, onToggleDir }: {
   return (
     <>
       <Indented depth={depth} onClick={() => onToggleDir(node.path)}
+        draggable onDragStart={(e) => startPathDrag(e, [node.path])}
         onContextMenu={(e) => rowMenu(e, { path: node.path, name: node.name, type: "dir" })}
         className="cursor-pointer flex items-center gap-1 hover:bg-surface">
         <span className="text-dim w-3 inline-block">{isCollapsed ? "▸" : "▾"}</span>
@@ -92,6 +94,7 @@ function FileRow({ node, depth }: { node: Extract<FilterNode, { kind: "file" }>;
   const rowMenu = useRowMenu();
   return (
     <Indented depth={depth} title={node.path}
+      draggable onDragStart={(e) => startPathDrag(e, [node.path])}
       onClick={() => open({ path: node.path, name: node.name })}
       onContextMenu={(e) => rowMenu(e, { path: node.path, name: node.name, type: "file" })}
       className={`cursor-pointer flex items-center gap-1 ${selected ? "bg-elevated" : "hover:bg-surface"}`}>

@@ -36,6 +36,12 @@ export type TvSource = "tv" | "radio" | "youtube";
 export type TvFavorite = { id: string; source: TvSource; ref: string; name: string; logo: string | null; meta: string | null; createdAt: number };
 export type TvRecent = { id: string; source: TvSource; ref: string; name: string; logo: string | null; playedAt: number };
 
+// YouTube persistent deletions (yt_hidden). `playlistId` is the scope: a real playlist id = removed
+// from that playlist only; `''` = banned everywhere. The title/channel/thumbnail are a snapshot taken
+// at delete time so the restore lists can show what was removed without re-fetching it.
+export type YtHidden = { videoId: string; playlistId: string; title: string; channelTitle: string; thumbnail: string; hiddenAt: number };
+export type YtHideInput = { videoId: string; title?: string; channelTitle?: string; thumbnail?: string };
+
 // A space widget's opaque per-instance config column (TEXT) → object, tolerating malformed JSON.
 function parseWidgetConfig(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null;
@@ -126,6 +132,20 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 function id(prefix: string): string {
   return prefix + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+}
+
+/** Upsert one yt_hidden row at the given scope (a playlist id, or '' for a ban); re-removing a video
+ *  refreshes its title/channel/thumbnail snapshot instead of inserting a duplicate. */
+function ytUpsert(db: Database.Database, playlistId: string, v: YtHideInput): void {
+  db.prepare(`INSERT INTO yt_hidden (videoId,playlistId,title,channelTitle,thumbnail,hiddenAt)
+    VALUES (@videoId,@playlistId,@title,@channelTitle,@thumbnail,@hiddenAt)
+    ON CONFLICT(videoId,playlistId) DO UPDATE SET
+      title=excluded.title, channelTitle=excluded.channelTitle,
+      thumbnail=excluded.thumbnail, hiddenAt=excluded.hiddenAt`).run({
+    videoId: v.videoId, playlistId,
+    title: v.title ?? "", channelTitle: v.channelTitle ?? "", thumbnail: v.thumbnail ?? "",
+    hiddenAt: Date.now(),
+  });
 }
 
 /** Parse a stored workspace system-prompt blob → object (null on absent/corrupt). `includeGlobal`
@@ -491,6 +511,12 @@ export interface Store {
   recordTvRecent(r: { source: TvSource; ref: string; name: string; logo?: string | null }): TvRecent;
   getTvCache(key: string): { json: string; fetchedAt: number } | null;
   setTvCache(key: string, json: string): void;
+  ytHide(playlistId: string, v: YtHideInput): void;
+  ytBan(v: YtHideInput): void;
+  ytRestore(playlistId: string, videoId: string): void;
+  ytUnban(videoId: string): void;
+  ytHiddenForPlaylist(playlistId: string): YtHidden[];
+  ytBans(): YtHidden[];
   getSetting(key: string): string | null;
   setSetting(key: string, value: string): void;
 }
@@ -2040,6 +2066,28 @@ export function createStore(path: string): Store {
     setTvCache(key, json) {
       db.prepare(`INSERT INTO tv_catalog_cache (key,json,fetchedAt) VALUES (?,?,?)
         ON CONFLICT(key) DO UPDATE SET json=excluded.json, fetchedAt=excluded.fetchedAt`).run(key, json, Date.now());
+    },
+    ytHide(playlistId, v) {
+      ytUpsert(db, playlistId, v);
+    },
+    ytBan(v) {
+      // A ban supersedes any per-playlist rows for this video — collapse them, then write the '' row.
+      db.transaction(() => {
+        db.prepare(`DELETE FROM yt_hidden WHERE videoId=? AND playlistId<>''`).run(v.videoId);
+        ytUpsert(db, "", v);
+      })();
+    },
+    ytRestore(playlistId, videoId) {
+      db.prepare(`DELETE FROM yt_hidden WHERE videoId=? AND playlistId=?`).run(videoId, playlistId);
+    },
+    ytUnban(videoId) {
+      db.prepare(`DELETE FROM yt_hidden WHERE videoId=? AND playlistId=''`).run(videoId);
+    },
+    ytHiddenForPlaylist(playlistId) {
+      return db.prepare(`SELECT * FROM yt_hidden WHERE playlistId=? ORDER BY hiddenAt DESC, rowid DESC`).all(playlistId) as YtHidden[];
+    },
+    ytBans() {
+      return db.prepare(`SELECT * FROM yt_hidden WHERE playlistId='' ORDER BY hiddenAt DESC, rowid DESC`).all() as YtHidden[];
     },
     getSetting(key) {
       return (db.prepare(`SELECT value FROM settings WHERE key=?`).get(key) as { value: string } | undefined)?.value ?? null;

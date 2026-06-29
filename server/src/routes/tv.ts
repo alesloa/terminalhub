@@ -119,6 +119,43 @@ export async function tvRoutes(app: FastifyInstance, ctx: AppContext) {
     return { info: await fetchPlaylistInfo(key, q.playlistId) };
   });
 
+  // YouTube persistent deletions: per-playlist removals + global bans, stored locally (no API key
+  // needed — they only ever filter what's shown). The snapshot fields let the restore lists render.
+  const ytVideo = z.object({
+    videoId: z.string().min(1),
+    title: z.string().optional(),
+    channelTitle: z.string().optional(),
+    thumbnail: z.string().optional(),
+  });
+  app.get("/api/tv/youtube/bans", async () => ({ bans: ctx.store.ytBans() }));
+  app.get("/api/tv/youtube/hidden", async (req, reply) => {
+    const q = req.query as { playlistId?: string };
+    if (!q.playlistId) return reply.code(400).send({ error: "bad playlistId" });
+    return { hidden: ctx.store.ytHiddenForPlaylist(q.playlistId) };
+  });
+  app.post("/api/tv/youtube/hidden", async (req, reply) => {
+    const b = z.object({ playlistId: z.string().min(1), video: ytVideo }).safeParse(req.body ?? {});
+    if (!b.success) return reply.code(400).send({ error: "invalid body" });
+    ctx.store.ytHide(b.data.playlistId, b.data.video);
+    return { ok: true };
+  });
+  app.post("/api/tv/youtube/ban", async (req, reply) => {
+    const b = z.object({ video: ytVideo }).safeParse(req.body ?? {});
+    if (!b.success) return reply.code(400).send({ error: "invalid body" });
+    ctx.store.ytBan(b.data.video);
+    return { ok: true };
+  });
+  app.delete("/api/tv/youtube/hidden", async (req, reply) => {
+    const q = req.query as { playlistId?: string; videoId?: string };
+    if (!q.playlistId || !q.videoId) return reply.code(400).send({ error: "bad params" });
+    ctx.store.ytRestore(q.playlistId, q.videoId);
+    return { ok: true };
+  });
+  app.delete("/api/tv/youtube/ban/:videoId", async (req) => {
+    ctx.store.ytUnban((req.params as { videoId: string }).videoId);
+    return { ok: true };
+  });
+
   app.get("/api/tv/favorites", async () => ({ favorites: ctx.store.listTvFavorites() }));
   app.post("/api/tv/favorites", async (req, reply) => {
     const b = z.object({

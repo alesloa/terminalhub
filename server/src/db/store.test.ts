@@ -811,3 +811,53 @@ describe("store: system prompts", () => {
     expect(store.getRemovedAgents()).toEqual(["claude"]);
   });
 });
+
+describe("store: youtube hidden / banned (persistent deletions)", () => {
+  const mk = (over: Partial<{ videoId: string; title: string; channelTitle: string; thumbnail: string }> = {}) =>
+    ({ videoId: "v1", title: "T", channelTitle: "C", thumbnail: "th", ...over });
+
+  it("hides per-playlist; other playlists and bans are unaffected", () => {
+    store.ytHide("PL1", mk());
+    expect(store.ytHiddenForPlaylist("PL1").map((h) => h.videoId)).toEqual(["v1"]);
+    expect(store.ytHiddenForPlaylist("PL2")).toEqual([]);
+    expect(store.ytBans()).toEqual([]);
+  });
+
+  it("bans collapse any per-playlist rows for that video", () => {
+    store.ytHide("PL1", mk());
+    store.ytBan(mk());
+    expect(store.ytHiddenForPlaylist("PL1")).toEqual([]); // collapsed into the ban
+    expect(store.ytBans().map((b) => b.videoId)).toEqual(["v1"]);
+  });
+
+  it("restore and unban are scoped to their own row", () => {
+    store.ytHide("PL1", mk({ videoId: "a" }));
+    store.ytHide("PL2", mk({ videoId: "a" }));
+    store.ytRestore("PL1", "a"); // only the PL1 row
+    expect(store.ytHiddenForPlaylist("PL1")).toEqual([]);
+    expect(store.ytHiddenForPlaylist("PL2").map((h) => h.videoId)).toEqual(["a"]);
+
+    store.ytBan(mk({ videoId: "b" }));
+    store.ytUnban("a"); // only removes a ('' scope) row — 'b' ban stays
+    expect(store.ytBans().map((b) => b.videoId)).toEqual(["b"]);
+  });
+
+  it("re-hiding the same (video, playlist) upserts the snapshot, not a duplicate", () => {
+    store.ytHide("PL1", mk({ title: "first" }));
+    store.ytHide("PL1", mk({ title: "second" }));
+    const rows = store.ytHiddenForPlaylist("PL1");
+    expect(rows.length).toBe(1);
+    expect(rows[0].title).toBe("second");
+  });
+
+  it("survives a reopen (persisted to the db file)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tr-ythidden-"));
+    const dbPath = join(dir, "t.db");
+    const s1 = createStore(dbPath);
+    s1.ytHide("PL1", mk());
+    s1.ytBan(mk({ videoId: "v2" }));
+    const s2 = createStore(dbPath);
+    expect(s2.ytHiddenForPlaylist("PL1").map((h) => h.videoId)).toEqual(["v1"]);
+    expect(s2.ytBans().map((b) => b.videoId)).toEqual(["v2"]);
+  });
+});

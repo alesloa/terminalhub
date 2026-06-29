@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
-import type { YouTubeItem, TvFavorite } from "../../api/types";
+import type { YouTubeItem, TvFavorite, YtHidden, YtHideInput } from "../../api/types";
 import { useTv, type TvMode } from "./store";
 import {
   useYouTubeSearch, useYouTubePlaylist, useYouTubePlaylistInfo, useYouTubeVideo,
-  useTvFavorites, useTvRecents, favoriteId,
+  useTvFavorites, useTvRecents, useYtBans, useYtHidden, useYtDeletions, favoriteId,
 } from "./useTvData";
 import { parseYouTubeInput } from "./youtube";
 import { useYouTubePlayer } from "./useYouTubePlayer";
 import { TransportBar, type NowPlaying } from "./TransportBar";
 import { StatusBar, type StatusStat } from "./StatusBar";
-import { SearchIcon, TvIcon, RadioIcon, YouTubeIcon, BarsIcon, PlaylistIcon, StarIcon, CloseIcon } from "./icons";
+import { SearchIcon, TvIcon, RadioIcon, YouTubeIcon, BarsIcon, PlaylistIcon, StarIcon, CloseIcon, BanIcon, RestoreIcon } from "./icons";
 
 interface Props {
   hasKey: boolean;
@@ -34,7 +34,7 @@ function favToItem(f: TvFavorite): YouTubeItem {
  *  autoplays in order; un-embeddable / removed videos are detected and skipped (capped). Needs a
  *  server-side API key; without one it points the user at TV settings. */
 export function YouTubeMode({ hasKey, onOpenSettings }: Props) {
-  const { mode, setMode, video, playVideo, playing, volume, muted, togglePlay, setPlaying, setVolume, toggleMute } = useTv();
+  const { mode, setMode, video, playVideo, playing, volume, muted, togglePlay, setPlaying, setVolume, toggleMute, showToast } = useTv();
   const { favorites, add, remove } = useTvFavorites();
   const { record } = useTvRecents();
 
@@ -73,10 +73,20 @@ export function YouTubeMode({ hasKey, onOpenSettings }: Props) {
     } catch { /* leave the list as-is on a failed page */ } finally { setLoadingMore(false); }
   };
 
-  // Session-only hidden set (remove-from-list); cleared on reload, never persisted.
+  // Session-only hidden set (search "remove from list"); cleared on reload, never persisted.
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const hiddenRef = useRef(hidden); hiddenRef.current = hidden;
   const hide = (id: string) => setHidden((s) => { const n = new Set(s); n.add(id); return n; });
+
+  // Persistent deletions: global bans + per-playlist removals (survive re-fetch + restart, server-side).
+  const bans = useYtBans();
+  const playlistHidden = useYtHidden(playlistId, isPlaylist);
+  const bannedIds = useMemo(() => new Set((bans.data ?? []).map((b) => b.videoId)), [bans.data]);
+  const playlistHiddenIds = useMemo(() => new Set((playlistHidden.data ?? []).map((h) => h.videoId)), [playlistHidden.data]);
+  const bannedRef = useRef(bannedIds); bannedRef.current = bannedIds;
+  const plHiddenRef = useRef(playlistHiddenIds); plHiddenRef.current = playlistHiddenIds;
+  const isGone = (id: string) => hiddenRef.current.has(id) || bannedRef.current.has(id) || plHiddenRef.current.has(id);
+  const { hide: hideMut, ban: banMut, restore: restoreMut, unban: unbanMut } = useYtDeletions();
 
   const rawList: YouTubeItem[] = useMemo(() => {
     if (isSearch) return searchQ.data?.items ?? [];
@@ -84,7 +94,10 @@ export function YouTubeMode({ hasKey, onOpenSettings }: Props) {
     if (isVideo) return videoQ.data?.item ? [videoQ.data.item] : [];
     return [];
   }, [isSearch, isPlaylist, isVideo, searchQ.data, playlistQ.data, morePages, videoQ.data]);
-  const list = useMemo(() => rawList.filter((it) => !hidden.has(it.videoId)), [rawList, hidden]);
+  const list = useMemo(
+    () => rawList.filter((it) => !hidden.has(it.videoId) && !bannedIds.has(it.videoId) && (!isPlaylist || !playlistHiddenIds.has(it.videoId))),
+    [rawList, hidden, bannedIds, playlistHiddenIds, isPlaylist],
+  );
 
   // The playback queue (a snapshot of the list the current video was started from) + its index. Refs
   // mirror them so the player callbacks (created once) always advance against the latest queue.
@@ -112,7 +125,7 @@ export function YouTubeMode({ hasKey, onOpenSettings }: Props) {
     const q = queueRef.current;
     if (!q.length) return;
     let i = idxRef.current + delta;
-    while (i >= 0 && i < q.length && hiddenRef.current.has(q[i].videoId)) i += delta;
+    while (i >= 0 && i < q.length && isGone(q[i].videoId)) i += delta;
     if (i < 0 || i >= q.length) return;
     playFrom(q, i);
   }, [playFrom]);
@@ -129,6 +142,26 @@ export function YouTubeMode({ hasKey, onOpenSettings }: Props) {
       advance(1);
     }
   }, [advance]);
+
+  const hideInput = (it: YouTubeItem): YtHideInput => ({ videoId: it.videoId, title: it.title, channelTitle: it.channelTitle, thumbnail: it.thumbnail });
+  // X — in a playlist: permanent per-playlist removal (+ undo); in search / single video: session declutter.
+  const removeItem = (it: YouTubeItem) => {
+    if (it.videoId === video?.videoId) advance(1);
+    if (isPlaylist) {
+      const pid = playlistId;
+      hideMut.mutate({ playlistId: pid, v: hideInput(it) });
+      showToast("Removed from playlist", () => restoreMut.mutate({ playlistId: pid, videoId: it.videoId }));
+    } else {
+      hide(it.videoId);
+    }
+  };
+  // ⊘ — ban everywhere, forever (+ undo); the undo toast is the only instant catch for an accidental ban.
+  const banItem = (it: YouTubeItem) => {
+    if (it.videoId === video?.videoId) advance(1);
+    banMut.mutate(hideInput(it));
+    showToast("Banned everywhere", () => unbanMut.mutate(it.videoId));
+  };
+  const restoreHidden = (videoId: string) => restoreMut.mutate({ playlistId, videoId });
 
   const stageRef = useRef<HTMLDivElement>(null);
   useYouTubePlayer({
@@ -151,7 +184,7 @@ export function YouTubeMode({ hasKey, onOpenSettings }: Props) {
       playFrom([videoQ.data.item], 0);
     } else if (isPlaylist && (playlistQ.data?.items?.length ?? 0) > 0) {
       autoKeyRef.current = submitted;
-      playFrom((playlistQ.data?.items ?? []).filter((it) => !hiddenRef.current.has(it.videoId)), 0);
+      playFrom((playlistQ.data?.items ?? []).filter((it) => !isGone(it.videoId)), 0);
     }
   }, [submitted, hasKey, isVideo, isPlaylist, videoQ.data, playlistQ.data, playFrom]);
 
@@ -266,7 +299,8 @@ export function YouTubeMode({ hasKey, onOpenSettings }: Props) {
                 <BrowseRail
                   list={list} info={info} isPlaylist={isPlaylist} fetching={fetching} submitted={submitted} noKey={noKey}
                   videoId={video?.videoId ?? null} favorites={favorites} onOpenSettings={onOpenSettings}
-                  onPick={(i) => playFrom(list, i)} onSave={toggleSaveVideo} onHide={hide}
+                  onPick={(i) => playFrom(list, i)} onSave={toggleSaveVideo} onRemove={removeItem} onBan={banItem}
+                  removedRows={playlistHidden.data ?? []} onRestore={restoreHidden}
                   savedPlaylistRow={savedPlaylistRow} onSavePlaylist={toggleSavePlaylist}
                   moreToken={moreToken} loadingMore={loadingMore} onLoadMore={loadMore} />
               ) : (
@@ -299,7 +333,10 @@ interface BrowseRailProps {
   onOpenSettings: () => void;
   onPick: (i: number) => void;
   onSave: (it: YouTubeItem) => void;
-  onHide: (id: string) => void;
+  onRemove: (it: YouTubeItem) => void;
+  onBan: (it: YouTubeItem) => void;
+  removedRows: YtHidden[];
+  onRestore: (videoId: string) => void;
   savedPlaylistRow: string | null;
   onSavePlaylist: () => void;
   moreToken?: string;
@@ -309,8 +346,9 @@ interface BrowseRailProps {
 
 function BrowseRail({
   list, info, isPlaylist, fetching, submitted, noKey, videoId, favorites, onOpenSettings,
-  onPick, onSave, onHide, savedPlaylistRow, onSavePlaylist, moreToken, loadingMore, onLoadMore,
+  onPick, onSave, onRemove, onBan, removedRows, onRestore, savedPlaylistRow, onSavePlaylist, moreToken, loadingMore, onLoadMore,
 }: BrowseRailProps) {
+  const [showRemoved, setShowRemoved] = useState(false);
   return (
     <>
       <div className="px-3.5 pt-3 pb-2 flex items-center justify-between gap-2">
@@ -348,11 +386,13 @@ function BrowseRail({
                   {it.channelTitle && <div className="text-dim text-[11.5px] mt-1 truncate">{it.channelTitle}</div>}
                 </div>
               </button>
-              <div className="flex flex-col items-center justify-center gap-1 shrink-0 pr-0.5">
+              <div className="flex flex-col items-center justify-center gap-0.5 shrink-0 pr-0.5">
                 <button onClick={() => onSave(it)} title={fav ? "Remove from saved" : "Save video"}
-                  className={`${fav ? "text-accent opacity-100" : "text-dim opacity-0 group-hover:opacity-100 hover:text-fg"}`}><StarIcon size={14} filled={fav} /></button>
-                <button onClick={() => onHide(it.videoId)} title="Remove from list"
-                  className="text-dim opacity-0 group-hover:opacity-100 hover:text-fg"><CloseIcon size={13} /></button>
+                  className={`p-0.5 ${fav ? "text-accent opacity-100" : "text-dim opacity-0 group-hover:opacity-100 hover:text-fg"}`}><StarIcon size={14} filled={fav} /></button>
+                <button onClick={() => onRemove(it)} title={isPlaylist ? "Remove from this playlist" : "Remove from this list"}
+                  className="p-0.5 text-dim opacity-0 group-hover:opacity-100 hover:text-fg"><CloseIcon size={13} /></button>
+                <button onClick={() => onBan(it)} title="Ban everywhere — never show again"
+                  className="p-0.5 text-dim opacity-0 group-hover:opacity-100 hover:text-error"><BanIcon size={13} /></button>
               </div>
             </div>
           );
@@ -364,6 +404,34 @@ function BrowseRail({
           </button>
         )}
       </div>
+
+      {/* per-playlist "Removed" trash strip — collapsible, restores from the local snapshot */}
+      {isPlaylist && removedRows.length > 0 && (
+        <div className="flex-none border-t border-edge">
+          <button onClick={() => setShowRemoved((v) => !v)}
+            className="flex w-full items-center justify-between px-3.5 py-2 text-[11px] font-bold tracking-wide text-dim hover:text-fg">
+            <span>REMOVED ({removedRows.length})</span>
+            <span>{showRemoved ? "▾" : "▸"}</span>
+          </button>
+          {showRemoved && (
+            <div className="max-h-[180px] overflow-auto px-2.5 pb-2.5 flex flex-col gap-1">
+              {removedRows.map((h) => (
+                <div key={h.videoId} className="group flex items-center gap-2.5 p-1.5 rounded-[8px] hover:bg-elevated">
+                  <div className="w-[60px] h-[34px] rounded-[5px] overflow-hidden bg-surface shrink-0">
+                    {h.thumbnail && <img src={h.thumbnail} alt="" className="w-full h-full object-cover opacity-70" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[12px] text-muted">{h.title || h.videoId}</div>
+                    {h.channelTitle && <div className="truncate text-[10.5px] text-dim">{h.channelTitle}</div>}
+                  </div>
+                  <button onClick={() => onRestore(h.videoId)} title="Restore to this playlist"
+                    className="shrink-0 grid place-items-center w-7 h-7 rounded-md text-dim hover:text-fg"><RestoreIcon size={14} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 }

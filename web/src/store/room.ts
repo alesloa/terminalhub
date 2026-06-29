@@ -478,7 +478,10 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
         if (ancestor) expandedDirs.add(ancestor);
       }
       // Un-collapse the root too — revealing a file must surface it even if the tree was minimized.
-      return { activeView: "explorer", leftOpen: true, expandedDirs, collapsedRoots: new Set<string>(), revealTarget: absPath };
+      // Switch the left tab back to the Explorer (reveal can fire from the Filter/Search tabs) and
+      // select the row, so it lands highlighted in the tree, not just flashed.
+      return { activeView: "explorer", leftTab: "explorer", leftOpen: true, expandedDirs, collapsedRoots: new Set<string>(),
+        revealTarget: absPath, selectedPath: absPath, selectedPaths: new Set([absPath]), selectionAnchor: absPath };
     }),
     clearRevealTarget: () => set({ revealTarget: null }),
     selectExplorer: (path) => set({ selectedPath: path, selectedPaths: path ? new Set([path]) : new Set<string>(), selectionAnchor: path }),

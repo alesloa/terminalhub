@@ -291,15 +291,17 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
   whole folder path instead. An `Aa` toggle makes the match case-sensitive. Empty until you type; matches
   show as a collapsed-to-the-matches path tree (only the folders that contain a hit, expanded), and
   clicking a file opens it. Cmd/Ctrl + ←/→ collapse/expand the whole result tree. Right-click any result
-  for the file menu (reveal, open, cut/copy/duplicate/paste, copy path, delete). Build & system folders
-  (node_modules, .git, …) are excluded from the index.
+  for the file menu (Reveal in Explorer, reveal in Finder, open, cut/copy/duplicate/paste, copy path,
+  delete); drag a result onto a terminal to drop its path, or into an Explorer folder to move it. Build &
+  system folders (node_modules, .git, …) are excluded from the index.
 - **Find in Files** — full-text search across the folder with case-sensitive, whole-word, regex, and
   include/exclude glob options; results jump to the line. A companion replace-in-files exists. Build &
   dependency folders (node_modules, dist, .next, …) and system folders (.git, .vscode, …) are excluded
   by default with two header toggles to flip each group on/off; an exclude glob prunes the whole matching
   directory subtree, and an explicit "files to include" glob opts a single excluded folder back in.
-  Right-click any result (file row or match line) for the file menu (reveal, open, cut/copy/duplicate,
-  copy path, delete).
+  Right-click any result (file row or match line) for the file menu (Reveal in Explorer, reveal in Finder,
+  open, cut/copy/duplicate, copy path, delete); drag a result onto a terminal to drop its path, or into an
+  Explorer folder to move it.
 - **Syntax-highlighted editor** — CodeMirror with line numbers, minimap, word wrap, breadcrumbs,
   find & replace, multi-file tabs, and configurable auto-save.
 - **Editor Back / Forward history** — a complete VS Code / Zed-style navigation stack. The **←/→
@@ -386,7 +388,14 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
 - **Create branch** — the ＋ on the Branches tab opens a tiny popover with just a name field (Enter
   creates, Esc/click-away closes — no dropdown, no browser prompt); switching branches is the inline
   list below the header. The room-header branch chip keeps a fuller dropdown — a lazy-loaded,
-  searchable list to switch plus a create row — since it has no inline list to fall back on.
+  searchable list to switch plus a create row — since it has no inline list to fall back on. The git
+  panel's own `folder / branch` header (the one above the tab strip) carries that same searchable
+  switcher: click the branch name (▾) to switch or create a branch without leaving the panel. In the
+  header the folder name and its icon never truncate (always shown in full); only the branch name
+  gives way when space is tight, clipping with no ellipsis so as much of it shows as fits.
+- **Pinned branch order** — every branch-switch dropdown lists `main` first, then `staging` (when
+  those branches exist), then all other branches alphabetically — so the two you switch between most
+  never get buried in a long, otherwise-alphabetical list.
 - **Worktree add popover** — the Worktrees ＋ opens a popover with a path field plus the same branch
   filter; pick an existing branch (or create a new one with `-b`) to run `git worktree add` at that
   path. Replaces the two chained browser prompts.
@@ -627,14 +636,18 @@ floating window that grows from its launcher tile and minimizes back into it.
   toggles **Browse** vs **Saved**; every result has a **save star** (video → favorites) and a session
   **remove-from-list**, and a whole playlist can be **saved to favorites** — the Saved view lists **playlists**
   (click to reopen) and **videos** (click to play) separately. An **Autoplay** toggle (persisted) governs
-  end-of-video advance. A full-width **transport bar** (prev / play / next, draggable volume slider, mute, **subtitles** —
+  end-of-video advance. **Persistent deletions** (server-side, survive re-fetch + restart): the **X** on a
+  playlist row removes that song from **that playlist** forever (search X stays session-only), a **⊘ ban**
+  removes a video from **every** playlist and search, and both offer an **Undo** toast. A per-playlist
+  collapsible **Removed (N)** trash strip restores individual songs, and a **Banned videos** manager in TV
+  settings unbans them. A full-width **transport bar** (prev / play / next, draggable volume slider, mute, **subtitles** —
   toggle a caption track and pick its color, **audio-language** switch shown only when a stream carries more than
   one audio track and remembered for the next channel, PiP, fullscreen, now-playing) with hover **tooltips** on
   every control, and a thin **PM2-style status strip** (channel count, HLS quality, bitrate, buffer, volume) sit
   at the bottom; when a stream advertises a **now-playing programme title** (EXTINF / ID3) it appears under the
   video and in the strip. **Favorites** and **recents** persist server-side; volume, caption color, and preferred
   audio language persist per-browser. A title-bar **settings** popover holds the YouTube API key (with a
-  show/hide **reveal** toggle), a **preferred audio language**, and an NSFW toggle.
+  show/hide **reveal** toggle), a **preferred audio language**, an NSFW toggle, and the **Banned videos** manager.
 - **Timesheet** — a Harvest-style time tracker. Log work by **client → project → task → notes**; start
   and stop timers (several can run at once) or add past entries by hand. **Day / Week / Calendar** views
   with per-day, week, and month totals so you can go back and see how long you worked on any day. A
@@ -713,7 +726,7 @@ floating window that grows from its launcher tile and minimizes back into it.
   auto-allowed so the tunnel URL isn't 403'd by Vite. Or paste your own stable tunnel URL instead.
 - **Live cursors** — when more than one person is connected (two owner browsers on localhost, or the
   owner + an admitted teammate), each sees the others' mouse as a labelled "phantom" cursor moving live
-  on the canvas, tinted a per-person colour. Cursors are shared in canvas (scroll-space) coordinates, so
+on the canvas, tinted a per-person colour. Cursors are shared in canvas (scroll-space) coordinates, so
   a ghost lands on the same card on every screen regardless of window size or scroll position, and only
   people viewing the same space see each other. Rides the existing `/ws/presence` socket (a server-side
   presence hub assigns each participant an id/name/colour and relays cursor frames to everyone else); a
