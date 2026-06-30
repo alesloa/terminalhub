@@ -406,7 +406,7 @@ export const api = {
       clone: (b: { repo: string; parent: string; name: string; account?: string; host?: string }) =>
         req<{ path: string }>("POST", "/api/git/github/clone", b),
       // `account` (+ host) creates the repo under a specific signed-in account, not the active one.
-      publish: (p: string, b: { name: string; owner: string; visibility: "private" | "public"; description?: string; account?: string; host?: string }) =>
+      publish: (p: string, b: { name: string; owner: string; visibility: "private" | "public"; description?: string; topics?: string[]; account?: string; host?: string }) =>
         req<{ url: string }>("POST", "/api/git/github/publish", { path: p, ...b }),
       prs: (p: string) => req<{ prs: PullRequest[] }>("GET", `/api/git/github/prs?path=${encodeURIComponent(p)}`),
       prCreate: (p: string, b: { title: string; body?: string; base?: string; draft?: boolean }) =>

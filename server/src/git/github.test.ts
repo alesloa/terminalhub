@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createGithubController, GhError, parseRemoteOwner } from "./github.js";
+import { createGithubController, GhError, parseRemoteOwner, normalizeTopics } from "./github.js";
 import type { GhRunner, GhResult } from "./github.js";
 
 /** Fake gh runner that records the arg vectors (and per-call env) and returns scripted results. */
@@ -15,6 +15,14 @@ function fakeRunner(handler: (args: string[], cwd: string) => Partial<GhResult>)
   };
   return { run, calls, envs };
 }
+
+describe("normalizeTopics", () => {
+  it("lowercases, hyphenates non-alphanumerics, drops empties, dedupes, caps at 20", () => {
+    expect(normalizeTopics(["SSH", "ssh", " Cross Platform ", "!!!", "rust"])).toEqual(["ssh", "cross-platform", "rust"]);
+    expect(normalizeTopics(undefined)).toEqual([]);
+    expect(normalizeTopics(Array.from({ length: 25 }, (_, i) => `t${i}`)).length).toBe(20);
+  });
+});
 
 describe("createGithubController.publish", () => {
   it("creates a private repo from the local source under the chosen owner and pushes", async () => {
@@ -36,6 +44,21 @@ describe("createGithubController.publish", () => {
     expect(calls[0]).toContain("--public");
     expect(calls[0]).not.toContain("--private");
     expect(calls[0]).not.toContain("--description");
+  });
+
+  it("tags topics in a follow-up `repo edit` after create, normalised + deduped", async () => {
+    const { run, calls } = fakeRunner((a) => a[0] === "repo" && a[1] === "create" ? { stdout: "https://github.com/me/proj\n" } : {});
+    await createGithubController(run).publish("/work/proj", {
+      name: "proj", owner: "me", visibility: "public", topics: ["SSH", "ssh", "Cross Platform", "", "rust"],
+    });
+    expect(calls[0][1]).toBe("create");
+    expect(calls[1]).toEqual(["repo", "edit", "me/proj", "--add-topic", "ssh,cross-platform,rust"]);
+  });
+
+  it("makes no `repo edit` call when no topics are given", async () => {
+    const { run, calls } = fakeRunner((a) => a[0] === "repo" ? { stdout: "https://github.com/me/x\n" } : {});
+    await createGithubController(run).publish("/x", { name: "x", owner: "me", visibility: "private" });
+    expect(calls.some(c => c[1] === "edit")).toBe(false);
   });
 
   it("falls back to a constructed URL when gh prints none", async () => {

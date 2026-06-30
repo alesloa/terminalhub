@@ -42,8 +42,20 @@ export interface PublishOptions {
   owner: string; // login or org that will own the new repo
   visibility: "private" | "public";
   description?: string;
+  topics?: string[]; // repo topics for discovery; set in a follow-up `gh repo edit` (see publish)
   account?: AccountRef; // which signed-in gh account to create under (its token is injected; the
                         // global active account is left untouched, so other terminals aren't flipped)
+}
+
+// GitHub repo topics must be lowercase, alphanumeric + hyphens, ≤35 chars, ≤20 per repo. Normalise
+// loosely so "SSH Client" → "ssh-client" and empties/junk drop out; GitHub validates again server-side.
+export function normalizeTopics(topics?: string[]): string[] {
+  const seen = new Set<string>();
+  for (const raw of topics ?? []) {
+    const t = raw.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 35);
+    if (t) seen.add(t);
+  }
+  return [...seen].slice(0, 20);
 }
 
 export interface PullRequest {
@@ -235,10 +247,18 @@ export function createGithubController(run: GhRunner = realGhRunner): GithubCont
         `--${opts.visibility}`, "--source", cwd, "--remote", "origin", "--push",
       ];
       if (opts.description) args.push("--description", opts.description);
-      const r = await run(args, cwd, await accountEnv(cwd, opts.account));
+      const env = await accountEnv(cwd, opts.account);
+      const r = await run(args, cwd, env);
       if (r.code !== 0) throw new GhError(r.stderr || r.stdout, r.code);
       const url = (r.stdout + "\n" + r.stderr).match(/https?:\/\/\S+/)?.[0]
         ?? `https://github.com/${opts.owner}/${opts.name}`;
+      // `gh repo create` can't set topics, so tag them in a follow-up `gh repo edit`. Best-effort: the
+      // repo is already created and pushed, so a topic failure (odd gh version, perms) must NOT fail
+      // the publish — the topics just don't get applied. Reuses the same account env as the create.
+      const topics = normalizeTopics(opts.topics);
+      if (topics.length) {
+        await run(["repo", "edit", `${opts.owner}/${opts.name}`, "--add-topic", topics.join(",")], cwd, env);
+      }
       return { url };
     },
 

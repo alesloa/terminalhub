@@ -442,7 +442,9 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
   account connected, it adds an **Account** dropdown so you choose which identity to publish under;
   the repo is created with that account's own token (the owner list + orgs reflect it too) without
   `gh auth switch` flipping your active account. The Owner row only appears when the chosen account
-  can also create under an org.
+  can also create under an org. An optional **Topics** field (comma-separated) tags the new repo for
+  discovery — applied in a follow-up `gh repo edit --add-topic` after create, normalised to GitHub's
+  rules (lowercase, spaces → hyphens, deduped) and best-effort so a topic hiccup never fails the push.
 - **Account-aware fetch / pull / push / sync** — git network ops authenticate as the signed-in `gh`
   account that owns each repo's `origin`, not just your globally-active account. A private repo owned
   by a *non-active* account (e.g. a work repo while your personal account is active) fetches/pulls/

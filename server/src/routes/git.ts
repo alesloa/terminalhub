@@ -450,6 +450,7 @@ export async function gitRoutes(app: FastifyInstance, ctx: AppContext) {
       owner: z.string().min(1),
       visibility: z.enum(["private", "public"]),
       description: z.string().optional(),
+      topics: z.array(z.string()).max(40).optional(),
       account: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]*$/).optional(),
       host: z.string().regex(/^[A-Za-z0-9.-]+$/).optional(),
     }).safeParse(req.body);
@@ -457,7 +458,7 @@ export async function gitRoutes(app: FastifyInstance, ctx: AppContext) {
     const account = b.data.account ? { login: b.data.account, host: b.data.host ?? "github.com" } : undefined;
     return runValue(reply, () => github.publish(b.data.path, {
       name: b.data.name, owner: b.data.owner, visibility: b.data.visibility,
-      description: b.data.description, account,
+      description: b.data.description, topics: b.data.topics, account,
     }));
   });
 

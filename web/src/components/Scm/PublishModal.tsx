@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { api } from "../../api/client";
@@ -38,6 +38,7 @@ export function PublishModal({ rootPath, folder, branch, onClose }:
   const [acctKey, setAcctKey] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<"private" | "public">("private");
   const [description, setDescription] = useState("");
+  const [topics, setTopics] = useState("");
 
   // Default the selection to the active account once the list loads (never hardcoded).
   useEffect(() => {
@@ -61,6 +62,7 @@ export function PublishModal({ rootPath, folder, branch, onClose }:
   const publish = useMutation({
     mutationFn: () => api.git.github.publish(rootPath, {
       name: name.trim(), owner, visibility, description: description.trim() || undefined,
+      topics: topics.split(/[,\n]/).map(t => t.trim()).filter(Boolean),
       account: account?.login, host: account?.host,
     }),
     onSuccess: ({ url }) => {
@@ -76,8 +78,15 @@ export function PublishModal({ rootPath, folder, branch, onClose }:
 
   const close = () => { if (!publish.isPending) onClose(); };
 
+  // Close on a backdrop click only when the press BOTH started and ended on the backdrop. Without the
+  // mousedown guard, selecting text inside the modal and releasing the mouse outside it fires a click
+  // on the backdrop (its the common ancestor of down+up) and wrongly closes the modal.
+  const downOnBackdrop = useRef(false);
+
   return createPortal(
-    <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center" onClick={close}>
+    <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center"
+      onMouseDown={e => { downOnBackdrop.current = e.target === e.currentTarget; }}
+      onClick={e => { if (downOnBackdrop.current && e.target === e.currentTarget) close(); }}>
       <div className="bg-panel w-[440px] rounded-lg border border-edge shadow-2xl p-5 flex flex-col gap-3"
         onClick={e => e.stopPropagation()}>
         <h2 className="text-lg flex items-center gap-2"><GithubMark /> Publish to GitHub</h2>
@@ -144,6 +153,13 @@ export function PublishModal({ rootPath, folder, branch, onClose }:
               <input value={description} onChange={e => setDescription(e.target.value)}
                 className="w-full mt-1 px-2 py-1.5 bg-elevated rounded border border-edge-strong" />
             </label>
+
+            <label className="text-sm">Topics <span className="text-dim">(optional)</span>
+              <input value={topics} onChange={e => setTopics(e.target.value)} spellCheck={false} autoComplete="off"
+                placeholder="comma-separated, e.g. cli, rust, terminal"
+                className="w-full mt-1 px-2 py-1.5 bg-elevated rounded border border-edge-strong" />
+            </label>
+            <div className="text-xs text-dim -mt-1">Lowercase tags for discovery on GitHub; spaces become hyphens.</div>
 
             <div className="text-xs text-dim">
               Creates the repo on GitHub and pushes {branch ? <>branch <span className="font-mono text-muted">{branch}</span></> : "the current branch"}.
