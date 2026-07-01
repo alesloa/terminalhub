@@ -100,9 +100,10 @@ function PanelBody({ rootPath }: { rootPath: string }) {
           <TabStrip tabs={TABS} active={tab} onSelect={setTab} />
         </div>
 
-        {/* cursor-pointer cascades to every tab body so hovering the list rows (stash, worktrees,
-            PRs, branches, graph) shows the hand instead of the text I-beam. */}
-        <div className="flex-1 min-h-0 flex flex-col cursor-pointer">
+        {/* Each clickable row sets its OWN cursor-pointer (graph commits, branch/worktree/stash/PR
+            rows) so the hand shows only over rows — the empty area below a short list stays a normal
+            arrow instead of a misleading pointer over dead space. */}
+        <div className="flex-1 min-h-0 flex flex-col">
           {tab === "graph" && <GraphTab rootPath={current} />}
           {tab === "branches" && <BranchesTab rootPath={current} />}
           {tab === "worktrees" && <WorktreesTab rootPath={current} />}

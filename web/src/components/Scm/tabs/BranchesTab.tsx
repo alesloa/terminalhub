@@ -85,7 +85,7 @@ export function BranchesTab({ rootPath }: { rootPath: string }) {
       </div>
       <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-auto">
         {visible.map(b => (
-          <div key={b.name} className="group/row flex items-center gap-2 px-3 py-1 hover:bg-surface"
+          <div key={b.name} className="group/row flex items-center gap-2 px-3 py-1 hover:bg-surface cursor-pointer"
             onContextMenu={e => { e.preventDefault(); setMenu({ b, x: e.clientX, y: e.clientY }); }}>
             <span className={`w-3 text-center shrink-0 ${b.current ? "text-blue-400" : "text-dim"}`}>{b.current ? "●" : "⎇"}</span>
             <button onClick={() => { if (!b.current) run(() => api.git.checkout(rootPath, b.name)); }} disabled={b.current}

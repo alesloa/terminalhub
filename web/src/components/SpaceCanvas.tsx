@@ -582,33 +582,43 @@ export function SpaceCanvas({ spaceId, workspaces, spaces, desktopWorkspaceId, g
     const { x, y } = screenToWorld(m.x, m.y, cam);
     addNote({ spaceId: spaceId || undefined, color: null, x, y, w: NOTE_W, h: NOTE_H });
   };
-  // One-shot "Tidy up": pack EVERY board item on this space — folder tiles, workspace cards, widgets,
-  // and sticky notes — into a compact layout that stays inside the visible browser view, so nothing is
-  // parked off-screen. Column-major shelf pack: fill a column top→bottom until the next item would fall
-  // past the viewport bottom, then start a fresh column to its right. Each item keeps its real footprint
-  // (cards/folders CARD_W×CARD_H, widgets/notes their own w/h) so nothing overlaps. Grows rightward, not
-  // down — the board never runs off the bottom edge (the thing that forced a pan before).
+  // One-shot "Tidy up": split the board into two sides that both stay inside the visible view. Folder
+  // tiles + workspace cards pack on the LEFT (columns grow rightward from the left margin); widgets +
+  // sticky notes pack on the RIGHT (columns grow leftward from the right edge, each item right-aligned),
+  // so the accessories sit opposite the cards. Both use a column-major shelf pack: fill a column
+  // top→bottom until the next item would fall past the viewport bottom, then start a fresh column. Each
+  // item keeps its real footprint (cards/folders CARD_W×GRID_CARD_H — the tight "Arrange" spacing;
+  // widgets/notes their own w/h) so nothing overlaps and nothing runs off the bottom edge.
   const tidy = () => {
     const host = hostRef.current;
     const viewH = host?.clientHeight ?? window.innerHeight;
+    const viewW = host?.clientWidth ?? window.innerWidth;
     const cardUpdates: { id: string; x: number; y: number }[] = [];
     type Packable = { x: number; y: number; w: number; h: number; place: (x: number, y: number) => void };
-    // Cards/folders pack at the canonical card-grid footprint (grid.ts GRID_CARD_H = 144 → a 168px row
-    // pitch with the gap), the same tight spacing "Arrange" uses — NOT the local 220 Fit-to-view estimate,
-    // which left big gaps. Widgets/notes keep their real w/h so tall ones (e.g. a clock) don't overlap.
-    const items: Packable[] = [
+    const cardsAndFolders: Packable[] = [
       ...byCell(spaceFolders).map((f) => ({ x: f.x, y: f.y, w: CARD_W, h: GRID_CARD_H, place: (x: number, y: number) => moveFolder.mutate({ id: f.id, x, y }) })),
       ...byCell(cards).map((c) => ({ x: c.x, y: c.y, w: CARD_W, h: GRID_CARD_H, place: (x: number, y: number) => { move.mutate({ id: c.id, x, y }); cardUpdates.push({ id: c.id, x, y }); } })),
+    ];
+    const accessories: Packable[] = [
       ...byCell(spaceWidgets).map((wg) => ({ x: wg.x, y: wg.y, w: wg.w, h: wg.h, place: (x: number, y: number) => { void saveWidget(wg.id, { x, y }); } })),
       ...byCell(spaceNotes).map((n) => ({ x: n.x, y: n.y, w: n.w, h: n.h, place: (x: number, y: number) => { void saveNote(n.id, { x, y }); } })),
     ];
-    if (items.length === 0) return;
-    let x = MARGIN, y = MARGIN, colW = 0;
-    for (const it of items) {
-      if (y > MARGIN && y + it.h > viewH - MARGIN) { x += colW + GAP; y = MARGIN; colW = 0; } // next column
-      if (x !== it.x || y !== it.y) it.place(x, y);
-      y += it.h + GAP;
-      colW = Math.max(colW, it.w);
+    // LEFT side: columns grow rightward from the left margin.
+    let lx = MARGIN, ly = MARGIN, lColW = 0;
+    for (const it of cardsAndFolders) {
+      if (ly > MARGIN && ly + it.h > viewH - MARGIN) { lx += lColW + GAP; ly = MARGIN; lColW = 0; }
+      if (it.x !== lx || it.y !== ly) it.place(lx, ly);
+      ly += it.h + GAP;
+      lColW = Math.max(lColW, it.w);
+    }
+    // RIGHT side: columns grow leftward from the right edge; each item's right edge pins to the column.
+    let rRight = viewW - MARGIN, ry = MARGIN, rColW = 0;
+    for (const it of accessories) {
+      if (ry > MARGIN && ry + it.h > viewH - MARGIN) { rRight -= rColW + GAP; ry = MARGIN; rColW = 0; }
+      const rx = Math.max(MARGIN, rRight - it.w);
+      if (it.x !== rx || it.y !== ry) it.place(rx, ry);
+      ry += it.h + GAP;
+      rColW = Math.max(rColW, it.w);
     }
     if (cardUpdates.length) usePresence.getState().sendCards?.(cardUpdates); // live-update shared-canvas peers
   };

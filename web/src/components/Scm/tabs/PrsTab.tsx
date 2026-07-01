@@ -97,7 +97,7 @@ function PrList({ rootPath }: { rootPath: string }) {
         {prs.map(p => (
           <button key={p.number} onClick={() => open(p.url)}
             onContextMenu={e => { e.preventDefault(); setMenu({ p, x: e.clientX, y: e.clientY }); }}
-            className="w-full text-left flex items-start gap-2 px-3 py-1.5 hover:bg-surface">
+            className="w-full text-left flex items-start gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer">
             <span className={`mt-0.5 ${p.draft ? "text-dim" : "text-green-400"}`}>⑂</span>
             <span className="min-w-0">
               <span className="block truncate text-fg">{p.title}</span>

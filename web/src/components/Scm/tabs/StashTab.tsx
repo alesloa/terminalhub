@@ -41,7 +41,7 @@ export function StashTab({ rootPath }: { rootPath: string }) {
       </div>
       <div className="flex-1 overflow-auto">
         {stashes.map(s => (
-          <div key={s.ref} className="group/row flex items-center gap-2 px-3 py-1.5 hover:bg-surface"
+          <div key={s.ref} className="group/row flex items-center gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer"
             onContextMenu={e => { e.preventDefault(); setMenu({ s, x: e.clientX, y: e.clientY }); }}>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-fg">{s.message || s.ref}</span>

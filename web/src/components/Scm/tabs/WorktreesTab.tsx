@@ -71,7 +71,7 @@ export function WorktreesTab({ rootPath }: { rootPath: string }) {
         {visible.map(w => {
           const label = w.bare ? "(bare)" : w.detached ? "(detached)" : (w.branch ?? "(unknown)");
           return (
-            <div key={w.path} className="group/row flex items-center gap-2 px-3 py-1 hover:bg-surface"
+            <div key={w.path} className="group/row flex items-center gap-2 px-3 py-1 hover:bg-surface cursor-pointer"
               onContextMenu={e => { e.preventDefault(); setMenu({ w, x: e.clientX, y: e.clientY }); }}>
               <span className="w-3 text-center shrink-0 text-dim">⌥</span>
               <span className="min-w-0 flex-1">
