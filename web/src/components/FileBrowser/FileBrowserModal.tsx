@@ -7,7 +7,7 @@ import { lockCursor } from "../../lib/dragCursor";
 import { isLocalHost, revealLabel } from "../../lib/host";
 import { basename, relativeTo } from "../../lib/paths";
 import { nextFreeCell } from "../../lib/grid";
-import type { Workspace } from "../../api/types";
+import type { Workspace, Folder } from "../../api/types";
 import { useDraggableWindow, type WindowHandle } from "../../hooks/useDraggableWindow";
 import { ResizeHandles } from "../ResizeHandles";
 import { ConfirmDialog } from "../ConfirmDialog";
@@ -212,8 +212,15 @@ export const FileBrowserModal = forwardRef<WindowHandle, { origin?: WinRect | nu
     const all: Workspace[] = wsData?.workspaces ?? [];
     const name = basename(folder) || folder;
     if (all.some(w => w.folder === folder)) { push(`Workspace already exists for “${name}”`); return; }
-    const cards = activeSpaceId ? all.filter(w => w.spaceId === activeSpaceId) : all;
-    const { x, y } = nextFreeCell(cards, window.innerWidth);
+    // Occupied cells = loose cards (not inside a folder) + folder tiles; folder members hold stale
+    // pre-grouping coords and aren't on the canvas, so they must not count. See nextFreeCell.
+    const allFolders = qc.getQueryData<{ folders: Folder[] }>(["folders"])?.folders ?? [];
+    const inSpace = (sid: string | null | undefined) => (activeSpaceId ? sid === activeSpaceId : !sid);
+    const occupied = [
+      ...all.filter(w => inSpace(w.spaceId) && !w.folderId),
+      ...allFolders.filter(f => inSpace(f.spaceId)),
+    ];
+    const { x, y } = nextFreeCell(occupied, window.innerHeight);
     create.mutate({ name, folder, x, y, ...(activeSpaceId ? { spaceId: activeSpaceId } : {}) });
   };
 

@@ -20,12 +20,14 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
  * backdrop click, or Esc.
  */
 export function FolderOverlay({
-  folder, members, origin, attentionIds, workingIds, spaces,
+  folder, members, origin, attentionIds, workingIds, spaces, focusName,
   onClose, onOpenRoom, onRename, onPopOut, onDissolve,
   onColorWorkspace, onMoveWorkspace, onDeleteWorkspace, onRenameWorkspace,
 }: {
   folder: Folder; members: Workspace[]; origin: RoomOrigin | null; spaces: Space[];
   attentionIds: Set<string>; workingIds: Set<string>;
+  // Opened via the tile's "Rename group…" menu item — focus + select the name field on mount.
+  focusName?: boolean;
   onClose: () => void;
   onOpenRoom: (workspaceId: string, origin: RoomOrigin) => void;
   onRename: (name: string) => void;
@@ -37,6 +39,7 @@ export function FolderOverlay({
   onRenameWorkspace: (id: string, name: string) => void;
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const nameRef = useRef<HTMLInputElement | null>(null);
   // Position + grow-origin are measured from the real panel size once it's mounted (synchronously,
   // before paint). Until measured (`geom` null) the panel renders hidden — laid out so we can read its
   // size, but never painted, so there's no flash at the wrong spot.
@@ -68,6 +71,14 @@ export function FolderOverlay({
   }, [origin]);
 
   const close = () => setClosing(true); // plays the fold-out; the panel's animationend then fires onClose
+
+  // Opened via "Rename group…": once the panel has a position, focus + select the name so you can type
+  // the new name right away (a frame after mount so the grow-in animation doesn't steal focus).
+  useEffect(() => {
+    if (!focusName || !geom) return;
+    const id = requestAnimationFrame(() => { nameRef.current?.focus(); nameRef.current?.select(); });
+    return () => cancelAnimationFrame(id);
+  }, [focusName, geom]);
 
   useEffect(() => {
     // Capture-phase + stopPropagation so this is the single Esc authority while the folder is open:
@@ -159,7 +170,7 @@ export function FolderOverlay({
         <div className="flex items-center justify-between border-b border-edge px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-muted" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
-            <input value={name} onChange={(e) => setName(e.target.value)} onBlur={commitName}
+            <input ref={nameRef} value={name} onChange={(e) => setName(e.target.value)} onBlur={commitName}
               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
               placeholder="Folder name"
               className="min-w-0 max-w-[220px] bg-transparent font-semibold text-bright outline-none placeholder:text-dim focus:underline" />

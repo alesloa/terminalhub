@@ -22,15 +22,19 @@ function cellOf(x: number, y: number): { col: number; row: number } {
 }
 
 /**
- * First grid cell (row-major, left→right then top→bottom) not occupied by an existing card.
- * Existing cards are bucketed to their nearest cell, so a new card always lands in genuine
- * empty space — never stacked on the top-left default.
+ * First EMPTY grid cell in COLUMN-major order (top→bottom down a column, then wrap to the next column
+ * to the right) — so a fresh card stacks vertically down the left column, matching Arrange/Tidy,
+ * instead of spreading across the top. `occupied` must list every item that actually holds a canvas
+ * cell — loose cards PLUS folder tiles — but NOT workspaces that live inside a folder: those keep stale
+ * pre-grouping coords and aren't on the canvas, so counting them wrongly marks cells full and shoves
+ * the new card off to the right. Each item is bucketed to its nearest cell, so a freely-moved card
+ * frees the cell it left. `boardHeight` sets how many rows fit a column before it wraps.
  */
-export function nextFreeCell(cards: { x: number; y: number }[], boardWidth: number): { x: number; y: number } {
-  const cols = Math.max(1, Math.floor((boardWidth - MARGIN) / COL));
-  const taken = new Set(cards.map(c => { const { col, row } = cellOf(c.x, c.y); return `${col},${row}`; }));
-  for (let row = 0; ; row++) {
-    for (let col = 0; col < cols; col++) {
+export function nextFreeCell(occupied: { x: number; y: number }[], boardHeight: number): { x: number; y: number } {
+  const rows = Math.max(1, Math.floor((boardHeight - MARGIN) / ROW));
+  const taken = new Set(occupied.map(c => { const { col, row } = cellOf(c.x, c.y); return `${col},${row}`; }));
+  for (let col = 0; ; col++) {
+    for (let row = 0; row < rows; row++) {
       if (!taken.has(`${col},${row}`)) return { x: MARGIN + col * COL, y: MARGIN + row * ROW };
     }
   }

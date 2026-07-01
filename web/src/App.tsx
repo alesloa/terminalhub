@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api/client";
-import type { Workspace } from "./api/types";
+import type { Workspace, Folder } from "./api/types";
 import { nextFreeCell } from "./lib/grid";
 import { SpacePager } from "./components/SpacePager";
 import { FavoritesDock } from "./components/Favorites/FavoritesDock";
@@ -137,9 +137,17 @@ export default function App() {
       return;
     }
     const all = qc.getQueryData<{ workspaces: Workspace[] }>(["workspaces"])?.workspaces ?? [];
-    const cards = activeSpaceId ? all.filter(w => w.spaceId === activeSpaceId) : all;
-    const width = canvasRef.current?.clientWidth ?? window.innerWidth;
-    const { x, y } = nextFreeCell(cards, width);
+    const allFolders = qc.getQueryData<{ folders: Folder[] }>(["folders"])?.folders ?? [];
+    const inSpace = (sid: string | null | undefined) => (activeSpaceId ? sid === activeSpaceId : !sid);
+    // Occupied canvas cells = loose cards (NOT inside a folder) + the folder tiles themselves. Folder
+    // MEMBERS live in a tile, not on the canvas, and carry stale pre-grouping coords — counting them
+    // would wrongly mark cells full and push the new card off to the right.
+    const occupied = [
+      ...all.filter(w => inSpace(w.spaceId) && !w.folderId),
+      ...allFolders.filter(f => inSpace(f.spaceId)),
+    ];
+    const height = canvasRef.current?.clientHeight ?? window.innerHeight;
+    const { x, y } = nextFreeCell(occupied, height);
     create.mutate({ ...v, x, y, ...(activeSpaceId ? { spaceId: activeSpaceId } : {}) });
   };
 

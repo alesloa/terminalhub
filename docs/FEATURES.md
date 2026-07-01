@@ -44,9 +44,9 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
   repack the board into a grid).
 - **Arrange** — a top-bar button that re-flows the current space into a compact, gap-free grid,
   filling top-to-bottom then across like a desktop's icons (as many rows as fit the visible canvas
-  height). Folder groups always lead in the top-left, then the loose cards. Unlike "Tidy up" (which
-  snaps each card where it sits), Arrange repacks from the top-left, so anything parked off the
-  right/bottom edge is pulled back into view — one press to recover a stray card and tidy the board.
+  height). Folder groups always lead in the top-left, then the loose cards. Arrange handles only cards
+  and folders; "Tidy up" (canvas right-click) instead packs EVERYTHING — cards, folders, widgets, and
+  sticky notes — into columns that fit the visible browser height, so nothing is left parked off-screen.
 - **Workspace card** — shows the folder name, path, launch command, and a live status dot per
   terminal (green = alive, amber pulse = needs attention, green pulse glow = working). Open button
   enters the room; the card's accent color is set from a right-click color picker and tints the room.
@@ -95,8 +95,9 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
 - **Per-space wallpaper** — right-click the canvas to set a background (solid, grid, pattern, theme
   preset, or an uploaded image). The wallpaper is per space, not global.
 - **Canvas right-click menu** — right-clicking the bare canvas opens a menu to drop a new workspace
-  or a new sticky note exactly where you clicked, "Tidy up" (snap every card on the space to the
-  grid), or change the background.
+  or a new sticky note exactly where you clicked, "Tidy up" (pack every card, folder, widget, and sticky
+  note into columns that fit inside the visible browser view — nothing left off-screen), or change the
+  background.
 - **Multi-select (desktop-style)** — drag a rubber-band box on the empty canvas to select any mix of
   workspace cards, sticky notes, and widgets at once (Shift/⌘-click adds or removes one; click empty
   space or press Escape to clear). Drag any selected item and the whole selection moves together;
@@ -116,7 +117,12 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
   hover pop-out button — all drop the card back onto the canvas. Each member card carries the **same
   right-click menu as a loose canvas card** (Open, Rename…, Copy Path, Reveal in Finder, Card Color,
   Move to space, Add to Favorites, Remove) plus **Remove from folder**, and inline-renames in place.
-  Popping past the last two cards (or **Dissolve**) breaks the folder up. Drop a loose card onto a folder to add it. Folders persist per
+  Popping past the last two cards (or **Dissolve**) breaks the folder up. Drop a loose card onto a folder to add it.
+  **Right-click a folder tile** for its own menu: **Open group** (expand the overlay), **Rename group…**
+  (opens the overlay with the name field focused), **Dissolve group** — which pops every card back onto
+  the canvas at a free grid cell (they line up on the grid instead of piling up) and removes the folder —
+  and **Delete group & workspaces** (confirms first), which deletes the folder AND every card inside it so
+  nothing returns to the canvas (any running terminals are preserved on the Home desktop). Folders persist per
   space in the database and sync across browsers, exactly like card layout — so a folder you make on
   one machine shows up everywhere (and over the tunnel).
 

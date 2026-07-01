@@ -144,12 +144,15 @@ export function GitHeader({ rootPath, onResizeStart }:
         <span className="text-fg shrink-0">{folder}</span>
         <span className="text-dim shrink-0"> / </span>
         {/* The branch is the only part that shrinks: it clips with NO ellipsis (overflow-hidden,
-            not `truncate`) so as much of the name shows as fits. Clicking opens the switcher. */}
+            not `truncate`) so as much of the name shows as fits. Clicking opens the switcher.
+            No `max-w-full` on the button — that plus the nested min-w-0/overflow-hidden made the
+            browser resolve the name box a hair under the word's width and chop the last glyph even
+            with room to spare. The min-w-0 shrink chain alone clips it, but only under real pressure. */}
         <span className="relative min-w-0 flex">
           <button onClick={() => setBranchOpen(v => !v)} title="Switch branch"
-            className="flex items-center gap-0.5 min-w-0 max-w-full rounded px-0.5 -mx-0.5 text-muted hover:text-fg hover:bg-elevated cursor-pointer">
-            <span className="min-w-0 overflow-hidden whitespace-nowrap">{branch}</span>
-            <span className="text-dim leading-none -translate-y-px shrink-0">▾</span>
+            className="flex items-center gap-1.5 min-w-0 rounded px-0.5 -mx-0.5 text-muted hover:text-fg hover:bg-elevated cursor-pointer">
+            <span className="min-w-0 overflow-hidden whitespace-nowrap pr-px">{branch}</span>
+            <span className="text-dim text-sm leading-none -translate-y-px shrink-0">▾</span>
           </button>
           {branchOpen && (
             <BranchPicker branches={branchData?.branches ?? []} pending={pending} showSearch

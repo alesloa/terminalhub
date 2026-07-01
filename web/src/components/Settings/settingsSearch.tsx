@@ -83,6 +83,8 @@ export const SETTINGS_INDEX: SettingEntry[] = [
 export function SettingsSearch({ onJump }: { onJump: (tab: TabId, id: string) => void }) {
   const [query, setQuery] = useState("");
   const [hi, setHi] = useState(0);
+  // Armed = readOnly until first focus, so the browser/iCloud Keychain can't autofill an email on mount.
+  const [armed, setArmed] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const results = useMemo(() => {
@@ -111,11 +113,27 @@ export function SettingsSearch({ onJump }: { onJump: (tab: TabId, id: string) =>
         <circle cx="11" cy="11" r="7" />
         <path d="m21 21-4.3-4.3" />
       </svg>
+      {/* Off-screen decoys: Chrome/iCloud bind saved-credential autofill to the first
+          username/password pair they find, leaving the real search box below untouched. */}
+      <input type="text" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true"
+        className="absolute h-px w-px opacity-0" style={{ left: "-9999px", top: 0 }} />
+      <input type="password" name="password" autoComplete="current-password" tabIndex={-1} aria-hidden="true"
+        className="absolute h-px w-px opacity-0" style={{ left: "-9999px", top: 0 }} />
       <input
         ref={inputRef}
-        type="text"
+        type="search"
         value={query}
         placeholder="Search settings…"
+        name="settings-filter"
+        readOnly={armed}
+        onFocus={() => setArmed(false)}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        data-1p-ignore="true"
+        data-lpignore="true"
+        data-form-type="other"
         onChange={(e) => { setQuery(e.target.value); setHi(0); }}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, results.length - 1)); }

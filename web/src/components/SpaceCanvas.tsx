@@ -12,12 +12,13 @@ import { useAttention } from "../hooks/useAttention";
 import { useWorking } from "../hooks/useWorking";
 import { useUi, itemKey, CANVAS_ZOOM_MIN, CANVAS_ZOOM_MAX, type RoomOrigin, type WinRect } from "../store/ui";
 import { DEFAULT_CAMERA, cameraTransform, screenToWorld, panBy, fitToBounds, zoomAround as camZoomAround } from "../canvas/camera";
-import { snapToGrid, gridCells, byCell } from "../lib/grid";
+import { snapToGrid, gridCells, byCell, nextFreeCell, GAP, MARGIN, CARD_H as GRID_CARD_H } from "../lib/grid";
 import { Item, Sep } from "./TerminalContextMenu";
 import { SpaceBackgroundWindow } from "./SpaceBackgroundWindow";
 import { DEFAULT_CANVAS_BACKGROUND } from "../lib/wallpapers";
 import { useStickyNotes } from "./StickyNotes/useStickyNotes";
 import { NOTE_W, NOTE_H } from "./StickyNotes/StickyNote";
+import { useSpaceWidgets } from "./Widgets/useSpaceWidgets";
 import { usePresence } from "../store/presence";
 import { CursorLayer } from "./CursorLayer";
 import { STATS_BAR_HEIGHT } from "./SystemStatsBar";
@@ -126,9 +127,10 @@ function DraggableCard({ ws, snap, zoom, spaces, isDesktop, overActive, onOpen, 
 // it joins). A stationary click (no drag) opens it — handing up the tile's viewport rect so the
 // overlay can grow out of the folder. Mirrors DraggableCard's local-pos / fold-on-drop dance so it
 // never flashes back to its pre-drag spot.
-function DraggableFolder({ folder, members, snap, overActive, onOpen }: {
+function DraggableFolder({ folder, members, snap, overActive, onOpen, onContextMenu }: {
   folder: Folder; members: Workspace[]; snap: boolean; overActive: boolean;
   onOpen: (origin: RoomOrigin) => void;
+  onContextMenu: (clientX: number, clientY: number, origin: RoomOrigin) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: folder.id });
   const { setNodeRef: setDropRef } = useDroppable({ id: folder.id });
@@ -163,6 +165,14 @@ function DraggableFolder({ folder, members, snap, overActive, onOpen }: {
         if (dragged.current) return;
         const r = e.currentTarget.getBoundingClientRect();
         onOpen({ x: r.left, y: r.top, w: r.width, h: r.height });
+      }}
+      // Right-click → the group menu. stopPropagation keeps the canvas's own context menu from also
+      // firing (it bubbles to the viewport's onContextMenu otherwise). Pass the tile rect so Open/Rename
+      // can grow the overlay out of it.
+      onContextMenu={(e) => {
+        e.preventDefault(); e.stopPropagation();
+        const r = e.currentTarget.getBoundingClientRect();
+        onContextMenu(e.clientX, e.clientY, { x: r.left, y: r.top, w: r.width, h: r.height });
       }}>
       <FolderTile folder={folder} members={members} overActive={overActive} />
     </div>
@@ -468,12 +478,49 @@ export function SpaceCanvas({ spaceId, workspaces, spaces, desktopWorkspaceId, g
   // "change wallpaper" gesture). The background window grows from the click.
   const space = spaces.find(s => s.id === spaceId);
   const requestNewWorkspace = useUi(s => s.requestNewWorkspace);
-  const { create: addNote } = useStickyNotes();
+  const { notes, create: addNote, save: saveNote } = useStickyNotes();
+  const { widgets, save: saveWidget } = useSpaceWidgets();
+  // This space's sticky notes + widgets (both hooks return every space's rows). Normalize null↦"" so
+  // the default space's null-spaceId rows match, mirroring the layers' `spaceId ?? ""` convention.
+  const spaceNotes = notes.filter(n => (n.spaceId ?? "") === (spaceId ?? ""));
+  const spaceWidgets = widgets.filter(w => (w.spaceId ?? "") === (spaceId ?? ""));
   // `x/y` are viewport coords (menu placement, the bg window + sticky note); `cardX/cardY` are WORLD
   // coords (camera-mapped, grid-snapped when snapping is on) for the new workspace card.
   const [menu, setMenu] = useState<{ x: number; y: number; cardX: number; cardY: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Right-click menu for a folder/group tile (Open / Rename / Dissolve). `origin` is the tile's rect so
+  // Open/Rename can grow the overlay out of it. Separate from the canvas `menu` above.
+  const [folderMenu, setFolderMenu] = useState<{ id: string; x: number; y: number; origin: RoomOrigin } | null>(null);
+  const folderMenuRef = useRef<HTMLDivElement>(null);
+  // When true, the folder overlay opens with its name field focused + selected (the menu's "Rename").
+  const [renameFolderOnOpen, setRenameFolderOnOpen] = useState(false);
   const [bgWin, setBgWin] = useState<WinRect | null>(null);
+  // Dissolve a group from its right-click menu: pop every member back onto the canvas at a free grid
+  // cell (so they line up on the grid instead of landing in a pile), then drop the now-empty folder.
+  const dissolveGroup = (folder: Folder) => {
+    const members = membersOf(folder.id);
+    const boardHeight = hostRef.current?.clientHeight ?? window.innerHeight;
+    const occupied = [
+      ...cards.map((c) => ({ x: c.x, y: c.y })),
+      ...spaceFolders.filter((f) => f.id !== folder.id).map((f) => ({ x: f.x, y: f.y })),
+    ];
+    for (const m of members) {
+      const cell = nextFreeCell(occupied, boardHeight);
+      removeMember(m.id, cell.x, cell.y); // folderId → null + lands on the grid cell
+      occupied.push(cell);                // reserve it so the next member picks a different cell
+    }
+    removeFolder(folder.id);
+  };
+  // Delete a group AND every workspace inside it — folder and cards are gone for good, nothing returns
+  // to the canvas (unlike Dissolve). Deleting a card reassigns any running terminals to the Home desktop
+  // first (so agents aren't killed); a card with no terminals just vanishes. Destructive → confirm.
+  const deleteGroup = (folder: Folder) => {
+    const members = membersOf(folder.id);
+    const n = members.length;
+    if (!confirm(`Delete the “${folder.name || "Untitled"}” group and its ${n} workspace${n === 1 ? "" : "s"}? The cards are removed for good; any running terminals keep running on your Home desktop.`)) return;
+    members.forEach((m) => del.mutate(m.id));
+    removeFolder(folder.id);
+  };
   const onContextMenu = (e: ReactMouseEvent) => {
     if ((e.target as HTMLElement).closest("[data-ws-card]")) return; // cards keep the native menu
     e.preventDefault();
@@ -535,12 +582,35 @@ export function SpaceCanvas({ spaceId, workspaces, spaces, desktopWorkspaceId, g
     const { x, y } = screenToWorld(m.x, m.y, cam);
     addNote({ spaceId: spaceId || undefined, color: null, x, y, w: NOTE_W, h: NOTE_H });
   };
-  // One-shot align: snap every visible card on this space to the grid.
+  // One-shot "Tidy up": pack EVERY board item on this space — folder tiles, workspace cards, widgets,
+  // and sticky notes — into a compact layout that stays inside the visible browser view, so nothing is
+  // parked off-screen. Column-major shelf pack: fill a column top→bottom until the next item would fall
+  // past the viewport bottom, then start a fresh column to its right. Each item keeps its real footprint
+  // (cards/folders CARD_W×CARD_H, widgets/notes their own w/h) so nothing overlaps. Grows rightward, not
+  // down — the board never runs off the bottom edge (the thing that forced a pan before).
   const tidy = () => {
-    for (const ws of cards) {
-      const p = snapToGrid(ws.x, ws.y);
-      if (p.x !== ws.x || p.y !== ws.y) move.mutate({ id: ws.id, x: p.x, y: p.y });
+    const host = hostRef.current;
+    const viewH = host?.clientHeight ?? window.innerHeight;
+    const cardUpdates: { id: string; x: number; y: number }[] = [];
+    type Packable = { x: number; y: number; w: number; h: number; place: (x: number, y: number) => void };
+    // Cards/folders pack at the canonical card-grid footprint (grid.ts GRID_CARD_H = 144 → a 168px row
+    // pitch with the gap), the same tight spacing "Arrange" uses — NOT the local 220 Fit-to-view estimate,
+    // which left big gaps. Widgets/notes keep their real w/h so tall ones (e.g. a clock) don't overlap.
+    const items: Packable[] = [
+      ...byCell(spaceFolders).map((f) => ({ x: f.x, y: f.y, w: CARD_W, h: GRID_CARD_H, place: (x: number, y: number) => moveFolder.mutate({ id: f.id, x, y }) })),
+      ...byCell(cards).map((c) => ({ x: c.x, y: c.y, w: CARD_W, h: GRID_CARD_H, place: (x: number, y: number) => { move.mutate({ id: c.id, x, y }); cardUpdates.push({ id: c.id, x, y }); } })),
+      ...byCell(spaceWidgets).map((wg) => ({ x: wg.x, y: wg.y, w: wg.w, h: wg.h, place: (x: number, y: number) => { void saveWidget(wg.id, { x, y }); } })),
+      ...byCell(spaceNotes).map((n) => ({ x: n.x, y: n.y, w: n.w, h: n.h, place: (x: number, y: number) => { void saveNote(n.id, { x, y }); } })),
+    ];
+    if (items.length === 0) return;
+    let x = MARGIN, y = MARGIN, colW = 0;
+    for (const it of items) {
+      if (y > MARGIN && y + it.h > viewH - MARGIN) { x += colW + GAP; y = MARGIN; colW = 0; } // next column
+      if (x !== it.x || y !== it.y) it.place(x, y);
+      y += it.h + GAP;
+      colW = Math.max(colW, it.w);
     }
+    if (cardUpdates.length) usePresence.getState().sendCards?.(cardUpdates); // live-update shared-canvas peers
   };
   // Re-flow this space into a compact, desktop-style grid — filling top→bottom then across, with as
   // many rows as fit the VISIBLE canvas height. Folder tiles (groups) always lead in the top-left,
@@ -583,6 +653,15 @@ export function SpaceCanvas({ spaceId, workspaces, spaces, desktopWorkspaceId, g
     window.addEventListener("keydown", onKey);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("pointerdown", onDown, true); window.removeEventListener("keydown", onKey); };
   }, [menu]);
+  // Same outside-click / Escape dismissal for the folder/group menu.
+  useEffect(() => {
+    if (!folderMenu) return;
+    const onDown = (e: PointerEvent) => { if (folderMenuRef.current && !folderMenuRef.current.contains(e.target as Node)) setFolderMenu(null); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFolderMenu(null); };
+    const raf = requestAnimationFrame(() => window.addEventListener("pointerdown", onDown, true));
+    window.addEventListener("keydown", onKey);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("pointerdown", onDown, true); window.removeEventListener("keydown", onKey); };
+  }, [folderMenu]);
 
   return (
     // autoScroll off: there is no scroll container any more (the viewport is overflow-hidden), so dnd-kit's
@@ -607,7 +686,8 @@ export function SpaceCanvas({ spaceId, workspaces, spaces, desktopWorkspaceId, g
           {spaceFolders.map(f => (
             <DraggableFolder key={f.id} folder={f} members={membersOf(f.id)} snap={snap}
               overActive={grouping && overId === f.id}
-              onOpen={(origin) => { setOpenFolderId(f.id); setOpenOrigin(origin); }} />
+              onOpen={(origin) => { setOpenFolderId(f.id); setOpenOrigin(origin); }}
+              onContextMenu={(x, y, origin) => { setMenu(null); setFolderMenu({ id: f.id, x, y, origin }); }} />
           ))}
           </div>
           {cards.length === 0 && spaceFolders.length === 0 && (
@@ -626,9 +706,22 @@ export function SpaceCanvas({ spaceId, workspaces, spaces, desktopWorkspaceId, g
           className="w-52 rounded-lg border border-edge bg-panel py-1 text-sm text-fg shadow-2xl select-none">
           <Item label="New workspace" onClick={() => { requestNewWorkspace({ spaceId, x: menu.cardX, y: menu.cardY }); setMenu(null); }} />
           <Item label="New sticky note" onClick={() => { addNoteHere(menu); setMenu(null); }} />
-          <Item label="Tidy up" hint="snap to grid" disabled={cards.length === 0} onClick={() => { tidy(); setMenu(null); }} />
+          <Item label="Tidy up" hint="fit in view" disabled={cards.length === 0 && spaceFolders.length === 0 && spaceWidgets.length === 0 && spaceNotes.length === 0} onClick={() => { tidy(); setMenu(null); }} />
           <Sep />
           <Item label="Change Background…" onClick={() => { setBgWin({ x: menu.x - 12, y: menu.y - 12, w: 24, h: 24 }); setMenu(null); }} />
+        </div>,
+        document.body,
+      )}
+
+      {folderMenu && createPortal(
+        <div ref={folderMenuRef} style={{ position: "fixed", left: Math.min(folderMenu.x, window.innerWidth - 272), top: Math.min(folderMenu.y, window.innerHeight - 200), zIndex: 70 }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="w-64 rounded-lg border border-edge bg-panel py-1 text-sm text-fg shadow-2xl select-none">
+          <Item label="Open group" onClick={() => { setRenameFolderOnOpen(false); setOpenFolderId(folderMenu.id); setOpenOrigin(folderMenu.origin); setFolderMenu(null); }} />
+          <Item label="Rename group…" onClick={() => { setRenameFolderOnOpen(true); setOpenFolderId(folderMenu.id); setOpenOrigin(folderMenu.origin); setFolderMenu(null); }} />
+          <Sep />
+          <Item label="Dissolve group" hint="cards → grid" onClick={() => { const f = spaceFolders.find((f) => f.id === folderMenu.id); if (f) dissolveGroup(f); setFolderMenu(null); }} />
+          <Item label="Delete group & workspaces" danger onClick={() => { const f = spaceFolders.find((f) => f.id === folderMenu.id); setFolderMenu(null); if (f) deleteGroup(f); }} />
         </div>,
         document.body,
       )}
@@ -644,8 +737,8 @@ export function SpaceCanvas({ spaceId, workspaces, spaces, desktopWorkspaceId, g
       {openFolder && (
         <FolderOverlay
           folder={openFolder} members={membersOf(openFolder.id)} origin={openOrigin} spaces={spaces}
-          attentionIds={attentionIds} workingIds={workingIds}
-          onClose={() => setOpenFolderId(null)}
+          attentionIds={attentionIds} workingIds={workingIds} focusName={renameFolderOnOpen}
+          onClose={() => { setOpenFolderId(null); setRenameFolderOnOpen(false); }}
           onOpenRoom={(wsId, origin) => openRoom(wsId, origin)}
           onRename={(name) => saveFolder(openFolder.id, { name })}
           onPopOut={(wsId) => popOut(openFolder, wsId)}

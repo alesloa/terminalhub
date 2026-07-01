@@ -74,7 +74,7 @@ export function WorkspaceContextMenu({ anchor, workspace, spaces, isDesktop, onO
     // card's (mouse) drag activation, so the card slides along with the slider. Swallow pointer
     // events here so they never reach the draggable.
     <div ref={ref} onPointerDown={(e) => e.stopPropagation()}
-      style={{ position: "fixed", left, top, zIndex: 70 }}
+      style={{ position: "fixed", left, top, zIndex: 85 }}
       className="w-56 py-1 rounded-lg border border-edge bg-panel shadow-2xl text-sm text-fg select-none">
       <Item label="Open" onClick={() => run(onOpen)} />
       <Sep />
@@ -130,7 +130,7 @@ export function WorkspaceContextMenu({ anchor, workspace, spaces, isDesktop, onO
       </div>
       {onRemoveFromFolder && <>
         <Sep />
-        <Item label="Remove from folder" onClick={() => run(onRemoveFromFolder)} />
+        <Item label="Remove from group" onClick={() => run(onRemoveFromFolder)} />
       </>}
       {!isDesktop && <>
         <Sep />
