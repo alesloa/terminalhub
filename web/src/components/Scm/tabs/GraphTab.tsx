@@ -1,3 +1,4 @@
+import { copyText } from "../../../lib/clipboard";
 import { Fragment, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { api } from "../../../api/client";
@@ -266,7 +267,7 @@ export function GraphTab({ rootPath }: { rootPath: string }) {
     return () => ro.disconnect();
   }, [hasMore, isFetching, loaded, count]);
 
-  const copy = (text: string, what: string) => { void navigator.clipboard?.writeText(text); push(`Copied commit ${what}`); };
+  const copy = (text: string, what: string) => { void copyText(text); push(`Copied commit ${what}`); };
   const undo = () => {
     if (!window.confirm("Undo the last commit? Its changes stay staged (git reset --soft HEAD~1).")) return;
     gitRun(() => api.git.uncommit(rootPath));

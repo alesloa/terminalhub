@@ -1,3 +1,4 @@
+import { copyText } from "../../lib/clipboard";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState, type CSSProperties, type ReactNode, type TransitionEventHandler } from "react";
 import type { Note } from "../../api/types";
 import type { WinRect } from "../../store/ui";
@@ -180,7 +181,7 @@ export const NotesModal = forwardRef<WindowHandle, { origin?: WinRect | null; on
     if (selectedId === n.id) setSelectedId(null);
   };
   const copyNote = async (n: Note) => {
-    try { await navigator.clipboard.writeText(noteToMarkdown(n)); flashMsg("Copied as Markdown"); }
+    try { await copyText(noteToMarkdown(n)); flashMsg("Copied as Markdown"); }
     catch { flashMsg("Couldn't copy"); }
   };
   const duplicate = async (n: Note) => {

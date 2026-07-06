@@ -1,3 +1,4 @@
+import { copyText } from "../../../lib/clipboard";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../../api/client";
@@ -43,7 +44,7 @@ export function WorktreesTab({ rootPath }: { rootPath: string }) {
   // Reveal-in-file-manager only makes sense when the browser is on the host (loopback) — gated like
   // the rest of the app. There's no "Open in New Window" — Terminal Hub is a browser app, not the OS.
   const items = (w: GitWorktree): FileMenuEntry[] => [
-    { label: "Copy Path", onClick: () => navigator.clipboard.writeText(w.path).catch(() => {}) },
+    { label: "Copy Path", onClick: () => copyText(w.path) },
     ...(isLocalHost
       ? [{ label: revealLabel, onClick: () => api.revealPath(w.path).catch((e: Error) => push(e.message)) }] as FileMenuEntry[]
       : []),

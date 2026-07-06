@@ -1,3 +1,4 @@
+import { copyText } from "../../../lib/clipboard";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../../api/client";
@@ -60,7 +61,7 @@ export function BranchesTab({ rootPath }: { rootPath: string }) {
     { label: "Merge into Current", disabled: b.current, onClick: () => mergeInto(b.name) },
     { label: "Preview Merge…", disabled: b.current, onClick: () => setPreview(b) },
     "sep",
-    { label: "Copy Branch Name", onClick: () => navigator.clipboard.writeText(b.name).catch(() => {}) },
+    { label: "Copy Branch Name", onClick: () => copyText(b.name) },
     "sep",
     { label: "Delete Branch", disabled: b.current, onClick: () => del(b.name) },
   ];

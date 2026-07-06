@@ -1,3 +1,4 @@
+import { copyText } from "../../lib/clipboard";
 import { useMemo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
@@ -102,8 +103,8 @@ export function EditorArea({ rootPath }: { rootPath: string }) {
       const rel = abs.startsWith(rootPath + "/") ? abs.slice(rootPath.length + 1) : abs;
       entries.push(
         "sep",
-        { label: "Copy Path", onClick: () => navigator.clipboard.writeText(abs).catch(() => {}) },
-        { label: "Copy Relative Path", onClick: () => navigator.clipboard.writeText(rel).catch(() => {}) },
+        { label: "Copy Path", onClick: () => copyText(abs) },
+        { label: "Copy Relative Path", onClick: () => copyText(rel) },
         "sep",
         { label: "Reveal in Explorer", onClick: () => revealInExplorer(abs) },
         ...(isLocalHost

@@ -1,3 +1,4 @@
+import { copyText } from "../lib/clipboard";
 import { useContext } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
@@ -232,8 +233,8 @@ export function useExplorerMenu(rootPath: string, gitInfo: GitInfo | undefined, 
     if (!isRoot) {
       entries.push(
         "sep",
-        { label: "Copy Path", onClick: () => navigator.clipboard.writeText(target.path).catch(() => {}) },
-        { label: "Copy Relative Path", onClick: () => navigator.clipboard.writeText(rel).catch(() => {}) },
+        { label: "Copy Path", onClick: () => copyText(target.path) },
+        { label: "Copy Relative Path", onClick: () => copyText(rel) },
         "sep",
       );
       if (!results) entries.push({ label: "Rename", hint: "F2", onClick: () => startEdit({ mode: "rename", target: target.path }) });

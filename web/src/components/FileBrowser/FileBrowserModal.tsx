@@ -1,3 +1,4 @@
+import { copyText } from "../../lib/clipboard";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type TransitionEventHandler } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
@@ -360,8 +361,8 @@ export const FileBrowserModal = forwardRef<WindowHandle, { origin?: WinRect | nu
       { label: "Rename", hint: "F2", onClick: () => startEdit({ mode: "rename", ref: target.ref, name: target.name }) },
       { label: "Delete", onClick: () => setPendingDelete([target]) },
       "sep",
-      { label: "Copy Path", onClick: () => navigator.clipboard.writeText(path).catch(() => {}) },
-      { label: "Copy Relative Path", onClick: () => navigator.clipboard.writeText(rel).catch(() => {}) },
+      { label: "Copy Path", onClick: () => copyText(path) },
+      { label: "Copy Relative Path", onClick: () => copyText(rel) },
       ...(isLocalHost
         ? ["sep" as const,
             { label: revealLabel, onClick: () => api.revealPath(path).catch((e: Error) => push(e.message)) },

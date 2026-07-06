@@ -1,3 +1,4 @@
+import { copyText } from "../lib/clipboard";
 import { useCallback, useMemo, useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTerminalSocket } from "../hooks/useTerminalSocket";
@@ -107,7 +108,7 @@ export function TerminalView({ terminalId }: { terminalId: string }) {
   const copyBuffer = async () => {
     try {
       const { text } = await api.terminalScrollback(terminalId);
-      await navigator.clipboard?.writeText(text);
+      await copyText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     } catch (e) {
@@ -207,13 +208,13 @@ export function TerminalView({ terminalId }: { terminalId: string }) {
       const link = m.link;
       items.push(
         { label: link.kind === "url" ? "Open Link" : "Open", onClick: () => openLink(link) },
-        { label: link.kind === "url" ? "Copy Link" : "Copy Path", onClick: () => navigator.clipboard?.writeText(link.text).catch(() => {}) },
+        { label: link.kind === "url" ? "Copy Link" : "Copy Path", onClick: () => copyText(link.text) },
         "sep",
       );
     }
     items.push(
       { label: "Copy", hint: IS_MAC ? "⌘C" : "⌃⇧C", disabled: !m.selection,
-        onClick: () => { if (m.selection) navigator.clipboard?.writeText(m.selection).catch(() => {}); } },
+        onClick: () => { if (m.selection) copyText(m.selection); } },
       { label: "Paste", hint: IS_MAC ? "⌘V" : "⌃V", onClick: () => void paste() },
       { label: "Select All", onClick: selectAll },
       "sep",

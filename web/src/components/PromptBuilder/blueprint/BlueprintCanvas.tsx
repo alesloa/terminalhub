@@ -1,3 +1,4 @@
+import { copyText } from "../../../lib/clipboard";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, ControlButton, MiniMap, SelectionMode,
@@ -546,7 +547,7 @@ function Inner({ onClose, onBack }: { onClose: () => void; onBack: () => void })
   });
 
   const copy = async (text: string) => {
-    try { await navigator.clipboard.writeText(text); push("Copied"); }
+    try { await copyText(text); push("Copied"); }
     catch { push("Couldn't copy — select the text manually"); }
   };
 

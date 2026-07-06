@@ -12,6 +12,7 @@ import { ResizeHandles } from "../ResizeHandles";
 import { useAccessKeys } from "./useAccessKeys";
 import { useTunnel } from "./useTunnel";
 import { loadShareBase, saveShareBase, isLocalOrigin, buildAccessLink } from "./shareLink";
+import { copyText } from "../../lib/clipboard";
 
 const RECT_KEY = "tr.accessLinksRect";
 const MIN_W = 460, MIN_H = 420;
@@ -39,20 +40,6 @@ function relPast(ts: number): string {
   const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
-}
-
-// Robust copy: the async Clipboard API needs a secure context (https / localhost) — on a plain-http
-// LAN address it's missing, so fall back to a hidden textarea + execCommand.
-async function copyText(text: string): Promise<boolean> {
-  try { if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); return true; } } catch { /* fall through */ }
-  try {
-    const ta = document.createElement("textarea");
-    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-    document.body.appendChild(ta); ta.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(ta);
-    return ok;
-  } catch { return false; }
 }
 
 function defaultRect(): WinRect {

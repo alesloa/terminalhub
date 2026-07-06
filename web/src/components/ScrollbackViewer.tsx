@@ -5,6 +5,7 @@ import type { WinRect } from "../store/ui";
 import { useUi, spacesBarBottom } from "../store/ui";
 import { useDraggableWindow } from "../hooks/useDraggableWindow";
 import { ResizeHandles } from "./ResizeHandles";
+import { copyText } from "../lib/clipboard";
 
 const RECT_KEY = "tr.scrollbackRect"; // remembered window geometry (per-browser)
 const MIN_W = 480, MIN_H = 300;
@@ -100,9 +101,9 @@ export function ScrollbackViewer({ terminalId, onClose }: { terminalId: string; 
   }, [rect]);
 
   const copyAll = () => {
-    navigator.clipboard?.writeText(text)
-      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); })
-      .catch(() => {});
+    void copyText(text).then((ok) => {
+      if (ok) { setCopied(true); setTimeout(() => setCopied(false), 1500); }
+    });
   };
   // Select the whole buffer as a real DOM selection (so the user can then ⌘/Ctrl-C, or just see it
   // highlighted), exactly like "Select All" in a text view.

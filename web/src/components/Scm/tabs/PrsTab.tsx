@@ -1,3 +1,4 @@
+import { copyText } from "../../../lib/clipboard";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../../api/client";
@@ -72,7 +73,7 @@ function PrList({ rootPath }: { rootPath: string }) {
 
   // gh's three merge strategies live in a flyout submenu, mirroring GitHub's own merge button.
   const items = (p: PullRequest): FileMenuEntry[] => [
-    { label: "Copy URL", onClick: () => navigator.clipboard.writeText(p.url).catch(() => {}) },
+    { label: "Copy URL", onClick: () => copyText(p.url) },
     { label: "Open in Browser", onClick: () => open(p.url) },
     "sep",
     { label: "Comment on Pull Request…", onClick: () => setComment(p) },

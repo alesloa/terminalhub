@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { burnSecret } from "./secretApi";
+import { copyText } from "../../lib/clipboard";
 
 export interface SecretResultData {
   id: string;
@@ -20,12 +21,9 @@ function CopyButton({ value, className = "" }: { value: string; className?: stri
   return (
     <button
       onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-          setCopied(true);
-        } catch {
-          /* clipboard blocked — the value box is selectable as a fallback */
-        }
+        // copyText never throws — falls back to execCommand on plain-http origins.
+        // The value box stays selectable if even that is blocked.
+        if (await copyText(value)) setCopied(true);
       }}
       className={`shrink-0 inline-flex items-center gap-1.5 px-3 h-9 rounded border text-sm ${
         copied ? "border-green-600 text-green-400" : "border-edge bg-elevated text-fg hover:bg-edge"

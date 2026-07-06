@@ -1,3 +1,4 @@
+import { copyText } from "../../../lib/clipboard";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../../api/client";
@@ -29,7 +30,7 @@ export function StashTab({ rootPath }: { rootPath: string }) {
     { label: "Pop (Apply & Delete)", onClick: () => run(() => api.git.stashPop(rootPath, s.ref)) },
     "sep",
     { label: "View Diff", onClick: () => openStashDiff({ ref: s.ref, name: s.message || s.ref, root: rootPath }) },
-    { label: "Copy Ref", onClick: () => navigator.clipboard.writeText(s.ref).catch(() => {}) },
+    { label: "Copy Ref", onClick: () => copyText(s.ref) },
     "sep",
     { label: "Delete Stash", onClick: () => drop(s) },
   ];

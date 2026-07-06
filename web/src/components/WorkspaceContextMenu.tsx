@@ -1,3 +1,4 @@
+import { copyText } from "../lib/clipboard";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Workspace, Space } from "../api/types";
@@ -63,7 +64,7 @@ export function WorkspaceContextMenu({ anchor, workspace, spaces, isDesktop, onO
 
   const run = (fn: () => void) => { fn(); dismiss(); };
   const copyPath = () => {
-    navigator.clipboard?.writeText(workspace.folder).catch(() => {});
+    copyText(workspace.folder);
     setCopied(true);
   };
 

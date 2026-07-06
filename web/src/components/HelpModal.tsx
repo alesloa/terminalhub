@@ -3,6 +3,7 @@ import type { WinRect } from "../store/ui";
 import { spacesBarBottom } from "../store/ui";
 import { useDraggableWindow, type WindowHandle } from "../hooks/useDraggableWindow";
 import { ResizeHandles } from "./ResizeHandles";
+import { copyText } from "../lib/clipboard";
 
 // The CLAUDE.md / AGENTS.md block a user pastes into a project so the agent pings the dashboard on
 // its own. Plain double-quoted JS strings (NOT template literals) so the shell's ${...}/$(...) and
@@ -749,9 +750,9 @@ function CopyButton({ text, label }: { text: string; label: string }) {
     <button
       type="button"
       onClick={() => {
-        navigator.clipboard?.writeText(text)
-          .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); })
-          .catch(() => {});
+        void copyText(text).then((ok) => {
+          if (ok) { setCopied(true); setTimeout(() => setCopied(false), 1500); }
+        });
       }}
       className="shrink-0 px-2.5 py-1 rounded bg-elevated hover:bg-edge text-xs text-fg hover:text-bright"
     >

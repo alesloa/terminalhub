@@ -1,3 +1,4 @@
+import { copyText } from "../lib/clipboard";
 import { useContext, useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -200,7 +201,7 @@ export function useTerminalSocket(
       if (!payload || payload === "?") return true;
       try {
         const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
-        void navigator.clipboard?.writeText(new TextDecoder().decode(bytes)).catch(() => {});
+        void copyText(new TextDecoder().decode(bytes));
       } catch { /* malformed base64 — ignore */ }
       return true;
     });
@@ -394,7 +395,7 @@ export function useTerminalSocket(
       const copyMod = isMac ? e.metaKey : e.ctrlKey && e.shiftKey;
       if (copyMod && e.key.toLowerCase() === "c") {
         const sel = term.getSelection();
-        if (sel) { void navigator.clipboard?.writeText(sel).catch(() => {}); return false; }
+        if (sel) { void copyText(sel); return false; }
       }
       // Cmd-F (mac) / Ctrl+Shift+F (else) opens the in-pane find bar. Ctrl-F alone is left to the
       // shell (readline forward-char), so it's only claimed with Shift off mac.
@@ -499,7 +500,7 @@ export function useTerminalSocket(
     // Cmd/Ctrl-C is optional (the common web-terminal convenience).
     const onMouseUp = () => {
       const sel = term.getSelection();
-      if (sel) void navigator.clipboard?.writeText(sel).catch(() => {});
+      if (sel) void copyText(sel);
     };
     container.addEventListener("mouseup", onMouseUp);
 

@@ -1,3 +1,4 @@
+import { copyText } from "../../lib/clipboard";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -59,7 +60,7 @@ export function PromptBuilderModal({ onClose }: { onClose: () => void }) {
   });
 
   const copy = async () => {
-    try { await navigator.clipboard.writeText(result); setCopied(true); setTimeout(() => setCopied(false), 1500); }
+    try { await copyText(result); setCopied(true); setTimeout(() => setCopied(false), 1500); }
     catch { push("Couldn't copy — select the text and copy manually"); }
   };
 

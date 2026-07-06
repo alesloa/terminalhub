@@ -1,3 +1,4 @@
+import { copyText } from "../../lib/clipboard";
 import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
@@ -148,8 +149,8 @@ export function ChangesSection({ rootPath, onOpenSubmodule }: { rootPath: string
             { label: "Open in Default App", onClick: () => api.openPath(abs).catch((e: Error) => push(e.message)) },
           ] as FileMenuEntry[]
         : []),
-      { label: "Copy Path", onClick: () => navigator.clipboard.writeText(abs).catch(() => {}) },
-      { label: "Copy Relative Path", onClick: () => navigator.clipboard.writeText(m.entry.path).catch(() => {}) },
+      { label: "Copy Path", onClick: () => copyText(abs) },
+      { label: "Copy Relative Path", onClick: () => copyText(m.entry.path) },
       "sep",
       // Delete the file from disk (fs unlink, not git): works for an untracked/new file where Discard
       // can't help. run() refreshes the git status so the row vanishes. confirmModal defaults to a red
@@ -189,8 +190,8 @@ export function ChangesSection({ rootPath, onOpenSubmodule }: { rootPath: string
         { onSuccess: () => { push(`Added ${n} path${n === 1 ? "" : "s"} to ${ignoreScopeLabel(scope)}`); done(); } },
       )),
       "sep",
-      { label: "Copy Paths", onClick: () => navigator.clipboard.writeText(abs.join("\n")).catch(() => {}) },
-      { label: "Copy Relative Paths", onClick: () => navigator.clipboard.writeText(all.join("\n")).catch(() => {}) },
+      { label: "Copy Paths", onClick: () => copyText(abs.join("\n")) },
+      { label: "Copy Relative Paths", onClick: () => copyText(all.join("\n")) },
       "sep",
       { label: `Delete ${n} ${word(n)}`, danger: true,
         onClick: async () => { if (await confirmModal({ title: "Delete files", body: `Permanently delete ${n} file${n === 1 ? "" : "s"} from disk? This cannot be undone.`, confirmLabel: "Delete" })) run(async () => { for (const p of abs) await api.fsDelete(p); }, { onSuccess: done }); } },
