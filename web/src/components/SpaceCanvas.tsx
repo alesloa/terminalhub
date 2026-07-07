@@ -8,6 +8,8 @@ import { WorkspaceCard } from "./WorkspaceCard";
 import { FolderTile } from "./Folders/FolderTile";
 import { FolderOverlay } from "./Folders/FolderOverlay";
 import { useFolders } from "./Folders/useFolders";
+import { CloningCard } from "./CloningCard";
+import { useCloneJobs } from "../hooks/useCloneJobs";
 import { useAttention } from "../hooks/useAttention";
 import { useWorking } from "../hooks/useWorking";
 import { useUi, itemKey, CANVAS_ZOOM_MIN, CANVAS_ZOOM_MAX, type RoomOrigin, type WinRect } from "../store/ui";
@@ -251,6 +253,8 @@ export function SpaceCanvas({ spaceId, workspaces, spaces, desktopWorkspaceId, g
   // canvas position; its member cards carry folderId and render INSIDE the folder, not on the canvas.
   const { folders, create: createFolder, save: saveFolder, addMember, removeMember, remove: removeFolder } = useFolders();
   const spaceFolders = folders.filter(f => f.spaceId === spaceId);
+  // In-flight async repo clones destined for THIS space — rendered as dimmed placeholder cards.
+  const cloneJobs = useCloneJobs().filter(j => j.ws.spaceId === spaceId);
   const membersOf = (folderId: string) => workspaces.filter(w => w.folderId === folderId);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
@@ -699,8 +703,9 @@ export function SpaceCanvas({ spaceId, workspaces, spaces, desktopWorkspaceId, g
               onOpen={(origin) => { setOpenFolderId(f.id); setOpenOrigin(origin); }}
               onContextMenu={(x, y, origin) => { setMenu(null); setFolderMenu({ id: f.id, x, y, origin }); }} />
           ))}
+          {cloneJobs.map(j => <CloningCard key={j.id} job={j} />)}
           </div>
-          {cards.length === 0 && spaceFolders.length === 0 && (
+          {cards.length === 0 && spaceFolders.length === 0 && cloneJobs.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center text-dim">
               No workspaces in this space yet — click “+ New workspace”.
             </div>

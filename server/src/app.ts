@@ -23,6 +23,7 @@ import { previewRoutes } from "./routes/preview.js";
 import { mediaRoutes } from "./routes/media.js";
 import { previewRewriteUrl } from "./preview/rewrite.js";
 import { gitRoutes } from "./routes/git.js";
+import { cloneJobRoutes } from "./routes/cloneJobs.js";
 import { aiRoutes } from "./routes/ai.js";
 import { claudeRoutes } from "./routes/claude.js";
 import { claudeUsageRoutes } from "./routes/claudeUsage.js";
@@ -135,6 +136,7 @@ export async function buildApp(config: Config, ctx: AppContext): Promise<Fastify
   await app.register(async (a) => previewRoutes(a, config));
   await app.register(async (a) => mediaRoutes(a, config));
   await app.register(async (a) => gitRoutes(a, ctx));
+  await app.register(async (a) => cloneJobRoutes(a, ctx));
   await app.register(async (a) => aiRoutes(a, ctx));
   await app.register(async (a) => claudeRoutes(a, ctx));
   await app.register(async (a) => claudeUsageRoutes(a, ctx));

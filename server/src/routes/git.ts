@@ -9,7 +9,7 @@ import { writeGitignore, gitignorePreview } from "../git/gitignore.js";
 
 // A folder name that becomes a single new directory under the clone parent: no path separators and
 // not "."/".." (so it can't traverse out). The url/repo guards stop arg-injection separately.
-const cloneName = z.string().min(1).regex(/^[^/\\]+$/).refine(n => n !== "." && n !== "..", "invalid name");
+export const cloneName = z.string().min(1).regex(/^[^/\\]+$/).refine(n => n !== "." && n !== "..", "invalid name");
 
 // Every git op is scoped to a folder the client names — the workspace's host path,
 // exactly like the fs routes. The auth guard already gates /api/* when exposed.

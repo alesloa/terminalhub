@@ -1,8 +1,8 @@
 import { copyText } from "../../lib/clipboard";
 import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import type { GitFileEntry, AiProvider, SubmoduleEntry } from "../../api/types";
+import type { GitFileEntry, GitStatus, AiProvider, SubmoduleEntry } from "../../api/types";
 import { useRoom } from "../../store/room";
 import { useToasts } from "../../store/toasts";
 import { useCommitDraft } from "../../store/commitDraft";
@@ -54,7 +54,7 @@ export function ChangesSection({ rootPath, onOpenSubmodule }: { rootPath: string
   const [aiMenu, setAiMenu] = useState(false);
   const [aiSettings, setAiSettings] = useState(false);
 
-  const { data: status } = useQuery({
+  const { data: status, isError: statusStale } = useQuery({
     queryKey: ["git", "status", rootPath],
     queryFn: () => api.git.status(rootPath),
     refetchInterval: 2500,
@@ -205,8 +205,8 @@ export function ChangesSection({ rootPath, onOpenSubmodule }: { rootPath: string
     const untracked = status.untracked;
     const hasStash = (stash?.stashes.length ?? 0) > 0;
     return [
-      { label: "Stage All Changes", disabled: !hasUnstaged, onClick: () => run(() => api.git.stageAll(rootPath)) },
-      { label: "Unstage All", disabled: !hasStaged, onClick: () => run(() => api.git.unstageAll(rootPath)) },
+      { label: "Stage All Changes", disabled: !hasUnstaged, onClick: () => run(() => api.git.stageAll(rootPath), { optimistic: () => optimisticStageAll(qc, rootPath) }) },
+      { label: "Unstage All", disabled: !hasStaged, onClick: () => run(() => api.git.unstageAll(rootPath), { optimistic: () => optimisticUnstageAll(qc, rootPath) }) },
       "sep",
       { label: "Stash All Changes", disabled: changeCount === 0, onClick: () => run(() => api.git.stashSave(rootPath, "", true)) },
       { label: "Pop Latest Stash", disabled: !hasStash, onClick: () => run(() => api.git.stashPop(rootPath, "stash@{0}")) },
@@ -320,12 +320,15 @@ export function ChangesSection({ rootPath, onOpenSubmodule }: { rootPath: string
 
       {/* changes count + stage-all + overflow */}
       <div className="flex items-center justify-between mt-2 mb-0.5 px-1 text-[11px] tracking-wide text-muted shrink-0">
-        <span>{changeCount > 0 ? `${changeCount} Change${changeCount > 1 ? "s" : ""}` : "No Changes"}</span>
+        <span className="flex items-center gap-1.5">
+          {changeCount > 0 ? `${changeCount} Change${changeCount > 1 ? "s" : ""}` : "No Changes"}
+          {statusStale && <span className="text-red-400" title="Couldn't refresh from git — this list may be out of date. Retrying…">⚠ stale</span>}
+        </span>
         <div className="flex items-center gap-3">
           {hasUnstaged ? (
-            <button title="Stage all changes" onClick={() => run(() => api.git.stageAll(rootPath))} className="hover:text-bright">Stage All</button>
+            <button title="Stage all changes" onClick={() => run(() => api.git.stageAll(rootPath), { optimistic: () => optimisticStageAll(qc, rootPath) })} className="hover:text-bright">Stage All</button>
           ) : hasStaged ? (
-            <button title="Unstage all changes" onClick={() => run(() => api.git.unstageAll(rootPath))} className="hover:text-bright">Unstage All</button>
+            <button title="Unstage all changes" onClick={() => run(() => api.git.unstageAll(rootPath), { optimistic: () => optimisticUnstageAll(qc, rootPath) })} className="hover:text-bright">Unstage All</button>
           ) : null}
           <div className="relative">
             <button title="More actions" onClick={() => setMoreMenu(v => !v)} className="hover:text-bright leading-none">⋯</button>
@@ -403,6 +406,55 @@ export function ChangesSection({ rootPath, onOpenSubmodule }: { rootPath: string
       )}
     </div>
   );
+}
+
+// Optimistic status transforms so the stage checkboxes flip the INSTANT you click Stage All /
+// Unstage All, instead of sitting frozen while a slow, per-repo-serialized `git status -uall`
+// round-trips. `cancelQueries` kills any in-flight status poll so a pre-op read can't land late and
+// overwrite us; useGit's shared invalidate reconciles to real git within ~1s, and rolls this back (+
+// toasts) if the op fails. This is the true result of the operation, not fabricated state — the
+// server's next status replaces it wholesale.
+const STATUS_KEY = (rootPath: string) => ["git", "status", rootPath] as const;
+
+/** Snapshot + cancel in-flight polls; returns a rollback that restores the snapshot. */
+function beginOptimistic(qc: QueryClient, rootPath: string): { prev: GitStatus | undefined; rollback: () => void } {
+  const key = STATUS_KEY(rootPath);
+  void qc.cancelQueries({ queryKey: key });
+  const prev = qc.getQueryData<GitStatus>(key);
+  return { prev, rollback: () => { if (prev) qc.setQueryData<GitStatus>(key, prev); } };
+}
+
+/** Stage All (`git add -A`): everything moves into `staged`; worktree/untracked/conflicts clear. */
+function optimisticStageAll(qc: QueryClient, rootPath: string): () => void {
+  const { prev, rollback } = beginOptimistic(qc, rootPath);
+  if (!prev) return rollback;
+  // Best-effort index char (real value lands on refetch): keep a staged entry as-is; for an unstaged
+  // edit reuse its worktree letter; a brand-new (untracked) file stages as Added.
+  const asStaged = (e: GitFileEntry): GitFileEntry => ({ ...e, index: e.worktree !== "." && e.worktree !== "?" ? e.worktree : "A", worktree: "." });
+  const staged: GitFileEntry[] = [
+    ...prev.staged,
+    ...prev.unstaged.filter(u => !prev.staged.some(s => s.path === u.path)).map(asStaged),
+    ...prev.conflicted.map(asStaged),
+    ...prev.untracked.map(p => ({ path: p, index: "A", worktree: "." })),
+  ];
+  qc.setQueryData<GitStatus>(STATUS_KEY(rootPath), { ...prev, staged, unstaged: [], untracked: [], conflicted: [] });
+  return rollback;
+}
+
+/** Unstage All (`git reset HEAD`): staged empties; a previously-Added file becomes untracked again,
+ *  everything else drops back to the worktree. Untracked files were never staged, so they're kept. */
+function optimisticUnstageAll(qc: QueryClient, rootPath: string): () => void {
+  const { prev, rollback } = beginOptimistic(qc, rootPath);
+  if (!prev) return rollback;
+  const unstaged: GitFileEntry[] = [...prev.unstaged];
+  const untracked: string[] = [...prev.untracked];
+  for (const s of prev.staged) {
+    if (s.index === "A") { if (!untracked.includes(s.path)) untracked.push(s.path); }
+    else if (!unstaged.some(u => u.path === s.path))
+      unstaged.push({ ...s, worktree: s.index !== "." && s.index !== "?" ? s.index : "M", index: "." });
+  }
+  qc.setQueryData<GitStatus>(STATUS_KEY(rootPath), { ...prev, staged: [], unstaged, untracked });
+  return rollback;
 }
 
 /** One-word state for a dirty submodule row (what you'd go in and commit). */

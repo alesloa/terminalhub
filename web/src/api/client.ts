@@ -1,6 +1,6 @@
 import type {
   Workspace, Folder, Space, SpaceConfig, SpaceCatalog, SpacePreset, SpaceSeedReport, SeedResult, InstalledSet, InstallKind, CanvasBackground, Wallpaper, WallpaperData, Terminal, FsListing, FsFile, FsFileBytes, DriveAccountPublic, DriveEntry, AgentsResponse, HeadroomStatus, HeadroomSavings, CustomAgent, ProcessInfo, PortInfo, AttentionResponse, WorkingResponse, ClaudeUsageResult, CodexUsageResult,
-  GitInfo, GitStatus, GitCommit, GitBranch, GitWorktree, StashEntry, CommitFile, MergePreview, PrMergeMethod, GithubInfo, GithubOwners, GithubRepo, GithubAccount, GithubIdentity, GitignorePreview, PullRequest, ActionRun,
+  GitInfo, GitStatus, GitCommit, GitBranch, GitWorktree, StashEntry, CommitFile, MergePreview, PrMergeMethod, GithubInfo, GithubOwners, GithubRepo, GithubAccount, GithubIdentity, GitignorePreview, PullRequest, ActionRun, CloneJob,
   SystemStats,
   AiProvider, AiProviderKind, AiProvidersResponse, PromptBuilderInputs, AiBuilderResponse, AiChatMessage, AiChatResponse, SettingsResponse, KeptVoice, Bookmark, FavoriteGroup, Favorite, Note, NoteGroup, Link, LinkFolder, StickyNote, SpaceWidget, SpaceWidgetKind, BoardCard, BoardColumn, TimeEntry, TimeClient, TimeProject, TimeTask, SttStatus, TranscribeResult,
   Blueprint, BlueprintSummary, BlueprintGraph,
@@ -320,6 +320,14 @@ export const api = {
     // Clone a remote repo into <parent>/<name> on the host; returns the new folder's path, which
     // the New Workspace flow then opens as a workspace.
     clone: (b: { url: string; parent: string; name: string }) => req<{ path: string }>("POST", "/api/git/clone", b),
+    // Async clone jobs — start returns immediately; the canvas polls the list and renders an
+    // in-flight card; cancel kills the clone and deletes the partial folder (or dismisses an error).
+    cloneJobs: {
+      start: (b: { url?: string; repo?: string; account?: string; host?: string; parent: string; name: string; spaceId?: string | null; x: number; y: number }) =>
+        req<{ job: CloneJob }>("POST", "/api/git/clone/jobs", b),
+      list: () => req<{ jobs: CloneJob[] }>("GET", "/api/git/clone/jobs"),
+      cancel: (id: string) => req<{ ok: true }>("DELETE", `/api/git/clone/jobs/${id}`),
+    },
     status: (p: string) => req<GitStatus>("GET", `/api/git/status?path=${encodeURIComponent(p)}`),
     ignored: (p: string) => req<{ ignored: string[] }>("GET", `/api/git/ignored?path=${encodeURIComponent(p)}`),
     diff: (p: string, file: string, o: { staged?: boolean; untracked?: boolean } = {}) =>

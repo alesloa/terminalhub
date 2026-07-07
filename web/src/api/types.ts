@@ -320,6 +320,14 @@ export interface GithubOwners { login: string; orgs: string[]; }
 export interface GithubRepo { nameWithOwner: string; name: string; description: string; isPrivate: boolean; isFork: boolean; url: string; sshUrl: string; updatedAt: string; }
 /** One signed-in `gh` account (gh can hold several — personal + work, even across hosts). */
 export interface GithubAccount { host: string; login: string; active: boolean; }
+/** An in-flight (or just-finished) async repo clone (mirrors server git/cloneJobs). `ws` is where the
+ *  finished workspace card lands — the canvas renders the placeholder card at those coords meanwhile. */
+export interface CloneJob {
+  id: string; name: string; parent: string; path: string;
+  source: "url" | "github"; url?: string; repo?: string;
+  status: "running" | "done" | "error"; error?: string; createdAt: number;
+  ws: { spaceId: string | null; x: number; y: number };
+}
 /** A signed-in account's resolved git commit identity (mirrors server). `email` is the account's
  *  noreply address when its GitHub profile email is private, so it's never blank. */
 export interface GithubIdentity { login: string; name: string; email: string; }

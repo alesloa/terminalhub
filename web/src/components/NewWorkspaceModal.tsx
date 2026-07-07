@@ -23,8 +23,14 @@ const INPUT =
   "w-full px-3 py-2 bg-surface border border-edge rounded-lg text-sm text-fg placeholder:text-dim " +
   "outline-none transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500/40";
 
-export function NewWorkspaceModal({ onCreate, onCancel }:
-  { onCreate: (v: { name: string; folder: string }) => void; onCancel: () => void }) {
+export function NewWorkspaceModal({ onCreate, onClone, onCancel }: {
+  onCreate: (v: { name: string; folder: string }) => void;
+  // Clone mode hands off to an async server-side job: the parent starts it (fast POST), drops a
+  // placeholder card on the canvas, and closes this modal — the download itself never blocks the UI.
+  // Rejections (target exists, bad url) surface back here as the inline error.
+  onClone: (v: { name: string; parent: string; url?: string; repo?: string; account?: string; host?: string }) => Promise<void>;
+  onCancel: () => void;
+}) {
   const [mode, setMode] = useState<Mode>("local");
   const [name, setName] = useState("");
   const [nameTouched, setNameTouched] = useState(false);
@@ -94,11 +100,12 @@ export function NewWorkspaceModal({ onCreate, onCancel }:
     if (mode === "local") { onCreate({ name, folder: resolved }); return; }
     setCloning(true);
     setCloneError(null);
-    const p = source === "github" && ghRepo
-      ? api.git.github.clone({ repo: ghRepo, parent: resolved, name, account: ghAccount?.login, host: ghAccount?.host })
-      : api.git.clone({ url: url.trim(), parent: resolved, name });
-    p.then(r => onCreate({ name, folder: r.path }))
-      .catch(e => { setCloneError(String(e.message)); setCloning(false); });
+    // Only the job START is awaited (a fast validation round-trip) — the parent closes the modal on
+    // success and the clone continues as a canvas card. Failures come straight back inline.
+    const v = source === "github" && ghRepo
+      ? { name, parent: resolved, repo: ghRepo, account: ghAccount?.login, host: ghAccount?.host }
+      : { name, parent: resolved, url: url.trim() };
+    onClone(v).catch(e => { setCloneError(String(e.message)); setCloning(false); });
   };
   const onFieldKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") { e.preventDefault(); submit(); }

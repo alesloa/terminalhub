@@ -75,6 +75,13 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
   `git clone`; GitHub-picked clones use the `gh` CLI's own auth, so **private repos work**. Credential
   prompts are disabled server-side, so a private https repo with no configured creds fails fast instead
   of hanging.
+- **Clones never block the app** — *Clone & Create* starts the download as a background job on the
+  server and closes the dialog immediately. A dimmed **placeholder card** (spinner + repo name) appears
+  on the canvas at the spot the workspace will land, with an **X to cancel** — cancelling kills the
+  clone and deletes the partially downloaded folder (confirmed first). When the clone finishes, the
+  server creates the workspace itself (even if no browser is watching) and the real card replaces the
+  placeholder; a failed clone shows its git error on the card, X to dismiss. In-flight clone cards
+  survive a browser refresh.
 - **Browse your GitHub repos** — when `gh` is installed and signed in (`gh auth login`), the clone
   dialog lists your repositories (filterable, with private/fork badges) to pick from; otherwise it
   shows a one-line hint to run `gh auth login`.

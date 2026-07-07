@@ -159,8 +159,12 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
   return (
     <>
       {/* data-spaces-strip: the bottom of this bar is the floor maximized rooms / floating windows
-          never cross (measured by spacesBarBottom()). The spaces switcher lives in it now. */}
-      <div data-spaces-strip className="h-14 flex items-center justify-between gap-4 px-4 border-b border-edge">
+          never cross (measured by spacesBarBottom()). The spaces switcher lives in it now.
+          z-[110]: above rooms (40), floating windows/modals (50-80), drag ghosts (90) and the stats
+          bar (100) — the bar is the app's fixed chrome and nothing may paint over it — but below
+          toasts (120), the shared-cursor layer (150) and the break overlay (200). Needs `relative`
+          so z applies; its own popovers (launcher, spaces menu, notifications) ride along too. */}
+      <div data-spaces-strip className="relative z-[110] h-14 flex items-center justify-between gap-4 px-4 border-b border-edge bg-canvas">
         <div className="flex-1 min-w-0 flex items-center gap-4">
           <div className="font-bold tracking-wide">Terminal Hub</div>
           <label title="Snap workspace cards to the grid"

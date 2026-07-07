@@ -137,6 +137,9 @@ export interface GithubController {
   // PRIVATE repos a plain `git clone` couldn't. `account` scopes it to a specific signed-in account
   // so a repo only that account can see still clones. Returns the new folder's absolute path.
   cloneRepo(parentDir: string, nameWithOwner: string, folderName: string, account?: AccountRef): Promise<{ path: string }>;
+  // The GH_TOKEN/GH_HOST overlay that scopes a gh invocation to a specific signed-in account —
+  // for callers (the async clone-job runner) that spawn gh themselves so the process is killable.
+  authEnv(cwd: string, account?: AccountRef): Promise<Record<string, string> | undefined>;
   listPullRequests(cwd: string): Promise<PullRequest[]>;
   listRuns(cwd: string): Promise<ActionRun[]>;
   // `gh pr create` for the current branch. `base` omitted ⇒ gh targets the repo's default branch.
@@ -168,6 +171,8 @@ export function createGithubController(run: GhRunner = realGhRunner): GithubCont
   };
 
   return {
+    authEnv: accountEnv,
+
     async info(cwd) {
       const ver = await run(["--version"], cwd);
       if (ver.code === -1) return { installed: false, authed: false };

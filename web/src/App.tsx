@@ -150,6 +150,28 @@ export default function App() {
     const { x, y } = nextFreeCell(occupied, height);
     create.mutate({ ...v, x, y, ...(activeSpaceId ? { spaceId: activeSpaceId } : {}) });
   };
+  // Clone mode: start an async server-side clone job (fast POST), close the modal, and let the
+  // canvas poll ["cloneJobs"] to show the in-flight placeholder card. Placement mirrors handleCreate
+  // (the right-clicked spot, else the first free grid cell). Rejections bubble back to the modal.
+  const handleClone = async (v: { name: string; parent: string; url?: string; repo?: string; account?: string; host?: string }) => {
+    let pos: { spaceId: string | null; x: number; y: number };
+    if (pendingPos) {
+      pos = pendingPos;
+    } else {
+      const all = qc.getQueryData<{ workspaces: Workspace[] }>(["workspaces"])?.workspaces ?? [];
+      const allFolders = qc.getQueryData<{ folders: Folder[] }>(["folders"])?.folders ?? [];
+      const inSpace = (sid: string | null | undefined) => (activeSpaceId ? sid === activeSpaceId : !sid);
+      const occupied = [
+        ...all.filter(w => inSpace(w.spaceId) && !w.folderId),
+        ...allFolders.filter(f => inSpace(f.spaceId)),
+      ];
+      const height = canvasRef.current?.clientHeight ?? window.innerHeight;
+      pos = { spaceId: activeSpaceId ?? null, ...nextFreeCell(occupied, height) };
+    }
+    await api.git.cloneJobs.start({ ...v, spaceId: pos.spaceId, x: pos.x, y: pos.y });
+    qc.invalidateQueries({ queryKey: ["cloneJobs"] });
+    setShowNew(false); setPendingPos(null);
+  };
 
   useNotificationSocket(); // single renderer: agent / reminder / attention notifications → toast + chime + speak + OS notif
   useClearViewedNotifications(); // viewing a terminal clears its notification-center entries
@@ -202,7 +224,7 @@ export default function App() {
           <CanvasSelection />
         </div>
       </div>
-      {showNew && <NewWorkspaceModal onCreate={handleCreate} onCancel={() => { setShowNew(false); setPendingPos(null); }} />}
+      {showNew && <NewWorkspaceModal onCreate={handleCreate} onClone={handleClone} onCancel={() => { setShowNew(false); setPendingPos(null); }} />}
       {/* Rooms stage: a viewport-fixed, clipped layer (z-40, below modals/toasts/spaces-bar). Every
           open room stays mounted (live WS + agent survive) inside its own space's column and slides
           horizontally in lockstep with the card filmstrip when you switch spaces, instead of just

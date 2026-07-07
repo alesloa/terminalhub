@@ -87,7 +87,7 @@ export function Toaster() {
   const ordered = b === "top" ? [...toasts].reverse() : toasts;
 
   return (
-    <div className={`pointer-events-none fixed z-[60] flex flex-col gap-2.5 ${POS[position]}`}>
+    <div className={`pointer-events-none fixed z-[120] flex flex-col gap-2.5 ${POS[position]}`}>
       {ordered.map((t) => (
         <ToastItem
           key={t.id}
