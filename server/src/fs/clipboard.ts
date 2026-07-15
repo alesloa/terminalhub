@@ -34,6 +34,41 @@ export function uriListToPaths(text: string): string[] {
     .filter(Boolean);
 }
 
+// JXA writer for the macOS pasteboard — the mirror of MAC_READER. Sets the legacy
+// NSFilenamesPboardType (a plist of POSIX path strings): the type Finder writes on Copy and reads on
+// Paste, and the one that carries MULTIPLE files + folders at once (public.file-url only exposes a
+// single URL). The path list is embedded as a JSON literal — JSON is a subset of JS, so it parses as
+// an array of strings, and JSON escaping makes it injection-safe (a quote/backslash in a path can't
+// break out of the script). execFile passes the whole script as one argv, so there's no shell to
+// escape either. Round-trip verified against MAC_READER (file + folder both come back).
+export function macWriteScript(paths: string[]): string {
+  return "ObjC.import('AppKit');var pb=$.NSPasteboard.generalPasteboard;var T='NSFilenamesPboardType';" +
+    "pb.declareTypesOwner($.NSArray.arrayWithObject($(T)),$());var m=$.NSMutableArray.alloc.init;" +
+    "var ps=" + JSON.stringify(paths) + ";ps.forEach(function(p){m.addObject($(p))});" +
+    "pb.setPropertyListForType(m,T);";
+}
+
+/**
+ * Put files/folders onto the host OS clipboard as a Finder/Explorer "Copy", so a native Cmd/Ctrl+V
+ * in Finder pastes the REAL files (recursively — whole folders and multi-selections). The mirror of
+ * `readClipboardFiles`. macOS only for now (writes NSFilenamesPboardType via JXA); returns false on
+ * any other platform or if the tooling fails — best-effort, never throws. Caller owns the local-only
+ * gate: writing the host clipboard is only meaningful when the browser and host are the same machine.
+ */
+export async function writeClipboardFiles(paths: string[]): Promise<boolean> {
+  const clean = paths.filter((p): p is string => typeof p === "string" && p.length > 0);
+  if (!clean.length) return false;
+  try {
+    if (platform() === "darwin") {
+      await run("osascript", ["-l", "JavaScript", "-e", macWriteScript(clean)], { maxBuffer: MAX_BUFFER });
+      return true;
+    }
+    return false; // Linux/Windows file-manager clipboard write not wired up yet
+  } catch {
+    return false;
+  }
+}
+
 async function readLinuxClipboardFiles(): Promise<string[]> {
   // Wayland first, then X11. Both expose copied files as file:// URIs under the text/uri-list target.
   const tries: [string, string[]][] = [

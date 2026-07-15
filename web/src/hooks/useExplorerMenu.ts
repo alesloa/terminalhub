@@ -54,22 +54,42 @@ export function useExplorerMenu(rootPath: string, gitInfo: GitInfo | undefined, 
   // Paste the clipboard into a destination dir: copy keeps a deduped name in that dir; cut moves
   // (rename) the original and empties the clipboard. Lifted out of buildItems so the keyboard
   // shortcut (Cmd/Ctrl+V) and the right-click Paste run the exact same path.
-  const pasteInto = (container: string) => run("Paste failed", async () => {
+  const pasteInto = async (container: string) => {
     if (!clipboard) return;
-    // Paste every clipboard path (the whole multi-selection). Dedupe as we go: copy starts from the
-    // container's names (so a duplicate becomes "name copy"); cut starts empty (a move keeps its
-    // name). Either way each pasted name is added to `taken` so two items in one batch can't clobber.
-    const taken = clipboard.op === "copy" ? namesIn(container) : new Set<string>();
+    const isCopy = clipboard.op === "copy";
+    // Dedupe per destination dir so a batch never clobbers an existing entry or an earlier item.
+    // Copy seeds from the dir's current names (a duplicate becomes "name copy"); cut starts empty
+    // so a move keeps its name (and only collides against other moved items in the same batch).
+    const takenByDir = new Map<string, Set<string>>();
+    const takenIn = (dir: string) => {
+      let t = takenByDir.get(dir);
+      if (!t) { t = isCopy ? new Set(namesIn(dir)) : new Set<string>(); takenByDir.set(dir, t); }
+      return t;
+    };
+    const failed: string[] = [];
     for (const src of clipboard.paths) {
+      // Never paste an item into itself or one of its own descendants — node's cp rejects that
+      // (ERR_FS_CP_EINVAL, the old "operation failed"). It happens when you copy a folder and paste
+      // while it's still the selected row, so the target resolves to that same folder. For a copy,
+      // duplicate it beside itself instead ("name copy"); a move into itself is impossible, so skip.
+      const intoSelf = container === src || container.startsWith(src + "/");
+      if (!isCopy && intoSelf) { failed.push(basename(src)); continue; }
+      const dir = isCopy && intoSelf ? dirname(src) : container;
+      const taken = takenIn(dir);
+      if (isCopy && intoSelf) taken.add(basename(src)); // force a "copy" suffix; never write onto the original
       const name = dedupeName(basename(src), taken);
       taken.add(name);
-      const dest = join(container, name);
-      if (clipboard.op === "copy") await api.fsCopy(src, dest);
-      else await api.fsRename(src, dest);
+      const dest = join(dir, name);
+      try {
+        if (isCopy) await api.fsCopy(src, dest);
+        else await api.fsRename(src, dest);
+      } catch { failed.push(basename(src)); } // one bad item doesn't sink the rest of the paste
     }
-    if (clipboard.op === "cut") clearClipboard();
-    expandDirs([container]); // open the target so the pasted items show without a manual re-click
-  });
+    if (clipboard.op === "cut" && !failed.length) clearClipboard(); // keep the cut alive if a move failed
+    expandDirs([...takenByDir.keys()]); // open every dir we wrote into so the pasted items show
+    invalidate();
+    if (failed.length) push(`Couldn't paste ${failed.length === 1 ? `"${failed[0]}"` : `${failed.length} items`}`);
+  };
 
   // Delete acts on the whole multi-selection when the right-clicked row is part of it (VS Code /
   // Finder behaviour); otherwise just that one row. openExplorerMenu already guarantees the target
@@ -92,6 +112,15 @@ export function useExplorerMenu(rootPath: string, gitInfo: GitInfo | undefined, 
     return sel.size > 1 && sel.has(path) ? [...sel] : [path];
   };
 
+  // Copy sets the in-app clipboard AND (on a local host) mirrors the selection onto the real macOS/
+  // OS clipboard, so a native paste (Cmd/Ctrl+V) in Finder/Explorer drops the actual files/folders.
+  // The OS write is best-effort and fire-and-forget — it never blocks or fails the in-app copy, and
+  // it's skipped when exposed (a tunnel mustn't push a remote selection onto the host's clipboard).
+  const copyPaths = (paths: string[]) => {
+    setClipboard({ op: "copy", paths });
+    if (isLocalHost) api.fsCopyClipboard(paths).catch(() => { /* OS clipboard best-effort */ });
+  };
+
   // Resolve the dir a keyboard paste targets from the current selection: into a selected folder,
   // else alongside a selected file (its parent), else the tree root. Type comes from the parent
   // listing already cached for any visible row.
@@ -108,7 +137,7 @@ export function useExplorerMenu(rootPath: string, gitInfo: GitInfo | undefined, 
   // Clipboard actions for the keyboard handler. Copy+Paste in the same folder duplicates (the
   // dedupe yields "name copy.ext"); paste into a selected folder drops it there, like VS Code.
   const clip = {
-    copy: (path: string) => setClipboard({ op: "copy", paths: selectionPaths(path) }),
+    copy: (path: string) => copyPaths(selectionPaths(path)),
     cut: (path: string) => setClipboard({ op: "cut", paths: selectionPaths(path) }),
     paste: (selectedPath: string | null) => pasteInto(containerFor(selectedPath)),
   };
@@ -224,7 +253,7 @@ export function useExplorerMenu(rootPath: string, gitInfo: GitInfo | undefined, 
       entries.push(
         "sep",
         { label: "Cut", onClick: () => setClipboard({ op: "cut", paths: selectionPaths(target.path) }) },
-        { label: "Copy", onClick: () => setClipboard({ op: "copy", paths: selectionPaths(target.path) }) },
+        { label: "Copy", onClick: () => copyPaths(selectionPaths(target.path)) },
         { label: "Duplicate", onClick: duplicate },
       );
     }

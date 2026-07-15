@@ -24,18 +24,20 @@ const RESIZE_CURSOR: Record<ResizeDir, string> = {
   nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize",
 };
 
-// Keep just a grabbable strip of the title bar on-screen — don't trap the whole window inside the
+// Keep just a grabbable strip of the window on-screen — don't trap the whole thing inside the
 // viewport. This lets you shove a window almost entirely off any edge (the old full-containment
-// clamp pinned a screen-sized window at 0,0, so it couldn't move at all). The top stays >= `minY`
-// (the bottom of the spaces bar, which paints above rooms) so the title bar — the only drag handle —
-// can never slide under that bar and become unreachable, and a window can't get lost off-screen.
+// clamp pinned a screen-sized window at 0,0, so it couldn't move at all). The top is clamped the
+// same as every other edge (a KEEP strip stays on-screen) — NOT pinned below the spaces bar: the
+// canvas is infinite and a windowed room pans with the canvas camera (RoomPanLayer), so a window
+// dragged up under the bar / off the top is always recoverable by panning the board back down (or
+// via the room taskbar). `minY` is still passed through for the north-resize edge below.
 const KEEP = 48;
-const clampDraggable = (r: WinRect, minY: number): WinRect => {
+const clampDraggable = (r: WinRect): WinRect => {
   const vw = window.innerWidth, vh = window.innerHeight;
   return {
     w: r.w, h: r.h,
     x: Math.max(KEEP - r.w, Math.min(vw - KEEP, r.x)),
-    y: Math.max(minY, Math.min(vh - KEEP, r.y)),
+    y: Math.max(KEEP - r.h, Math.min(vh - KEEP, r.y)),
   };
 };
 
@@ -88,8 +90,8 @@ export function useWindowDrag(setDragging?: (dragging: boolean) => void) {
     if (e.button !== 0 || !rect || (e.target as HTMLElement).closest("button")) return;
     e.preventDefault();
     const sx = e.clientX, sy = e.clientY;
-    runDrag("move", (ev, start, minY) =>
-      clampDraggable({ ...start, x: start.x + (ev.clientX - sx), y: start.y + (ev.clientY - sy) }, minY));
+    runDrag("move", (ev, start) =>
+      clampDraggable({ ...start, x: start.x + (ev.clientX - sx), y: start.y + (ev.clientY - sy) }));
   };
 
   // Resize from an edge or corner. Edges anchored opposite the dragged side.

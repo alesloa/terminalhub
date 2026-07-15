@@ -3,7 +3,7 @@ import { z } from "zod";
 import { listDir, listVolumes, readFile, writeFile, readFileBytes, writeFileBytes, writeDocxFromHtml, createFile, createDir, renamePath, copyPath, deletePath, writeUpload, pasteClipboardInto } from "../fs/browser.js";
 import { extractZipInto } from "../fs/archive.js";
 import { listFiles } from "../fs/search.js";
-import { readClipboardFiles } from "../fs/clipboard.js";
+import { readClipboardFiles, writeClipboardFiles } from "../fs/clipboard.js";
 import { isLoopback } from "../auth/guard.js";
 
 const MB = 1024 * 1024;
@@ -13,9 +13,13 @@ const MAX_ZIP_BYTES = 100 * MB;   // cap per zipped folder/multi-file batch (raw
 /** Map a node fs error to a client-friendly 400. */
 function fsError(reply: FastifyReply, err: any) {
   const msg = err.code === "EACCES" ? "permission denied"
-    : err.code === "EEXIST" ? "already exists"
+    : err.code === "EEXIST" || err.code === "ERR_FS_CP_EEXIST" ? "already exists"
     : err.code === "ENOENT" ? "no such file or directory"
     : err.code === "ENOTEMPTY" ? "directory not empty"
+    // node's cp rejects copying a folder into its own subtree (ERR_FS_CP_EINVAL) and file↔folder
+    // type mismatches — surface those plainly instead of a mystery "operation failed".
+    : err.code === "ERR_FS_CP_EINVAL" ? "can't copy a folder into itself"
+    : err.code === "ERR_FS_CP_DIR_TO_NON_DIR" || err.code === "ERR_FS_CP_NON_DIR_TO_DIR" ? "can't copy a folder onto a file (or vice-versa)"
     : "operation failed";
   return reply.code(400).send({ error: msg, code: err.code });
 }
@@ -160,6 +164,19 @@ export async function fsRoutes(app: FastifyInstance) {
     if (!b.success) return reply.code(400).send({ error: "dir required" });
     try { return await pasteClipboardInto(b.data.dir, await readClipboardFiles()); }
     catch (err: any) { return fsError(reply, err); }
+  });
+
+  // Copy files/folders FROM the explorer TO the host OS clipboard, so a native paste (Cmd/Ctrl+V) in
+  // Finder/Explorer drops the real files. The mirror of /paste-clipboard, local-only for the same
+  // reason: writing the host's clipboard over a tunnel would shove a remote user's selection onto the
+  // operator's machine. Best-effort — `copied:0` (ok:false) means the platform can't do it.
+  app.post("/api/fs/copy-clipboard", async (req, reply) => {
+    const exposed = Boolean(req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"]) || !isLoopback(req.ip);
+    if (exposed) return reply.code(403).send({ error: "clipboard copy is local-only" });
+    const b = z.object({ paths: z.array(z.string().min(1)).min(1) }).safeParse(req.body);
+    if (!b.success) return reply.code(400).send({ error: "paths required" });
+    const ok = await writeClipboardFiles(b.data.paths);
+    return reply.send({ ok, copied: ok ? b.data.paths.length : 0 });
   });
 
   app.post("/api/fs/delete", async (req, reply) => {

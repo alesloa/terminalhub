@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseJsonPaths, uriListToPaths } from "./clipboard.js";
+import { parseJsonPaths, uriListToPaths, macWriteScript } from "./clipboard.js";
 
 describe("parseJsonPaths", () => {
   it("parses a JSON array of paths", () => {
@@ -23,5 +23,19 @@ describe("uriListToPaths", () => {
   it("ignores comments, blanks and non-file URIs", () => {
     const list = "# comment\n\nhttps://example.com\nfile:///tmp/x";
     expect(uriListToPaths(list)).toEqual(["/tmp/x"]);
+  });
+});
+
+describe("macWriteScript", () => {
+  it("targets NSFilenamesPboardType and embeds the paths as a JSON literal", () => {
+    const s = macWriteScript(["/a/b.txt", "/c/dir"]);
+    expect(s).toContain("NSFilenamesPboardType");
+    expect(s).toContain("setPropertyListForType");
+    expect(s).toContain('["/a/b.txt","/c/dir"]');
+  });
+  it("JSON-escapes paths so a quote/backslash can't break out of the script (injection-safe)", () => {
+    const weird = '/weird/" + osascript_danger + "/x.txt';
+    const s = macWriteScript([weird]);
+    expect(s).toContain(JSON.stringify([weird])); // the only place the path appears is escaped JSON
   });
 });

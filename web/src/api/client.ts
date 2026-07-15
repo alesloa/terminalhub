@@ -199,6 +199,9 @@ export const api = {
   // `dir` with a real recursive cp. Returns the created destination paths (empty = clipboard had no
   // files). 403s when the request is exposed (a tunnel mustn't read the host's clipboard).
   fsPasteClipboard: (dir: string) => req<{ pasted: string[] }>("POST", "/api/fs/paste-clipboard", { dir }),
+  // Copy the selection (files/folders) onto the host OS clipboard so a native paste in Finder/Explorer
+  // drops the real files. Local only; `copied:0` means the host platform can't do it (best-effort).
+  fsCopyClipboard: (paths: string[]) => req<{ ok: boolean; copied: number }>("POST", "/api/fs/copy-clipboard", { paths }),
   // Upload a folder / multiple files as one zip — the server unpacks it into `dir`. One round-trip
   // for a whole tree (the workable path on a remote VPS, where the host can't read your clipboard).
   fsUploadZip: (dir: string, archive: Uint8Array) =>

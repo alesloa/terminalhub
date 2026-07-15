@@ -9,8 +9,11 @@ import { fsRoutes } from "./fs.js";
 // The host-clipboard read is environment-dependent, so stub it — the route's job is to copy
 // whatever paths it returns into the target dir (and to refuse exposed requests). vi.hoisted keeps
 // the mock fn available to the (hoisted) vi.mock factory.
-const { clipboardSources } = vi.hoisted(() => ({ clipboardSources: vi.fn(async (): Promise<string[]> => []) }));
-vi.mock("../fs/clipboard.js", () => ({ readClipboardFiles: clipboardSources }));
+const { clipboardSources, clipboardWrite } = vi.hoisted(() => ({
+  clipboardSources: vi.fn(async (): Promise<string[]> => []),
+  clipboardWrite: vi.fn(async (_paths: string[]): Promise<boolean> => true),
+}));
+vi.mock("../fs/clipboard.js", () => ({ readClipboardFiles: clipboardSources, writeClipboardFiles: clipboardWrite }));
 
 let root: string;
 beforeAll(() => {
@@ -160,6 +163,28 @@ describe("fs mutation routes", () => {
     expect(existsSync(from)).toBe(true);
   });
 
+  it("POST /api/fs/copy duplicates a folder recursively", async () => {
+    const src = join(root, "cp-src"); mkdirSync(src); writeFileSync(join(src, "inner.txt"), "deep");
+    mkdirSync(join(src, "sub")); writeFileSync(join(src, "sub", "n.txt"), "nested");
+    const to = join(root, "cp-dst");
+    const res = await app.inject({ method: "POST", url: "/api/fs/copy", payload: { from: src, to } });
+    expect(res.statusCode).toBe(200);
+    expect(readFileSync(join(to, "inner.txt"), "utf8")).toBe("deep");
+    expect(readFileSync(join(to, "sub", "n.txt"), "utf8")).toBe("nested");
+  });
+
+  // Copying a folder into its own subtree (what a Ctrl+C/Ctrl+V on a selected folder used to build)
+  // makes node's cp throw ERR_FS_CP_EINVAL. That must surface as a clear message, never the generic
+  // "operation failed" — so a slipped-through case is legible instead of a mystery toast.
+  it("POST /api/fs/copy 400s with a clear message when copying a folder into itself", async () => {
+    const src = join(root, "self-src"); mkdirSync(src); writeFileSync(join(src, "f.txt"), "x");
+    const res = await app.inject({ method: "POST", url: "/api/fs/copy", payload: { from: src, to: join(src, "self-src") } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe("ERR_FS_CP_EINVAL");
+    expect(res.json().error).not.toBe("operation failed");
+    expect(res.json().error).toMatch(/itself/i);
+  });
+
   it("POST /api/fs/upload writes base64 bytes, creating parent dirs", async () => {
     const data = Buffer.from([0x89, 0x50, 0x4e, 0x00]); // binary, with a null byte
     const res = await app.inject({ method: "POST", url: "/api/fs/upload",
@@ -209,6 +234,33 @@ describe("fs mutation routes", () => {
   it("POST /api/fs/paste-clipboard 403s an exposed (forwarded) request", async () => {
     const res = await app.inject({ method: "POST", url: "/api/fs/paste-clipboard",
       headers: { "x-forwarded-for": "203.0.113.7" }, payload: { dir: root } });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("POST /api/fs/copy-clipboard writes the selected paths onto the host clipboard", async () => {
+    clipboardWrite.mockResolvedValueOnce(true);
+    const paths = [join(root, "hello.txt"), join(root, "somedir")];
+    const res = await app.inject({ method: "POST", url: "/api/fs/copy-clipboard", payload: { paths } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, copied: 2 });
+    expect(clipboardWrite).toHaveBeenCalledWith(paths);
+  });
+
+  it("POST /api/fs/copy-clipboard reports copied:0 when the OS write is unsupported", async () => {
+    clipboardWrite.mockResolvedValueOnce(false);
+    const res = await app.inject({ method: "POST", url: "/api/fs/copy-clipboard", payload: { paths: [join(root, "hello.txt")] } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: false, copied: 0 });
+  });
+
+  it("POST /api/fs/copy-clipboard 400s with no paths", async () => {
+    const res = await app.inject({ method: "POST", url: "/api/fs/copy-clipboard", payload: { paths: [] } });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("POST /api/fs/copy-clipboard 403s an exposed (forwarded) request", async () => {
+    const res = await app.inject({ method: "POST", url: "/api/fs/copy-clipboard",
+      headers: { "x-forwarded-for": "203.0.113.7" }, payload: { paths: [join(root, "hello.txt")] } });
     expect(res.statusCode).toBe(403);
   });
 

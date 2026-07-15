@@ -299,6 +299,11 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
 
 - **Explorer** — a file tree rooted at the workspace folder, with create/rename/delete/copy-path,
   add-to-`.gitignore`, and keyboard shortcuts (F2 rename, cut/copy/paste, collapse/expand).
+- **Copy to / paste from the real OS clipboard (local, macOS)** — Copy (or Ctrl/Cmd+C) a file, a folder,
+  or a multi-selection in the Explorer and it *also* lands on the host OS clipboard, so a native Cmd/Ctrl+V
+  in **Finder** pastes the actual files/folders (whole trees, intact — no re-upload). The reverse already
+  works: Cmd/Ctrl+V into a folder pastes whatever you copied in Finder. Local-only — disabled over a tunnel
+  so a remote user can never reach the host's clipboard.
 - **Filter Files** — indexed, fuzzy filename search across the whole workspace (the file list is fetched
   once and filtered in memory, so every keystroke is instant). Matches the file's basename by default, so
   typing a name finds it no matter how deeply it's nested; include a `/` in the query to fuzzy-match the

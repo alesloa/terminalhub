@@ -1,5 +1,5 @@
 import { copyText } from "../../lib/clipboard";
-import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { GitFileEntry, GitStatus, AiProvider, SubmoduleEntry } from "../../api/types";
@@ -48,6 +48,22 @@ export function ChangesSection({ rootPath, onOpenSubmodule }: { rootPath: string
   const clearError = useCommitDraft(s => s.clearError);
   const resetDraft = useCommitDraft(s => s.reset);
   const runGenerate = useCommitDraft(s => s.generate);
+
+  // The commit box is an UNCONTROLLED textarea (defaultValue + ref), not `value={msg}`. A controlled
+  // value is reasserted from React state on every keystroke, which wipes the browser's own undo/redo
+  // stack — so Cmd/Ctrl+Z, Ctrl+Y / Cmd+Shift+Z, Cmd/Ctrl+A etc. did nothing. Uncontrolled hands the
+  // field's edit history back to the browser, so all the native text shortcuts just work. onChange
+  // still mirrors each keystroke into the store (the Commit button + `canCommit` read `msg`).
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  // Push an EXTERNAL msg change into the box: AI ✨ generate, post-commit reset, or switching repos
+  // (rootPath changes → a different draft). During plain typing the box already holds `msg` (onChange
+  // synced it), so `ta.value === msg` and this is a no-op — which is exactly what preserves the undo
+  // history. Only an outside value diverges, and writing it via the DOM (which resets undo) is fine there.
+  useEffect(() => {
+    const ta = taRef.current;
+    if (ta && ta.value !== msg) ta.value = msg;
+  }, [msg]);
+
   const [expanded, setExpanded] = useState(false);
   const [commitMenu, setCommitMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
@@ -255,7 +271,7 @@ export function ChangesSection({ rootPath, onOpenSubmodule }: { rootPath: string
     <div className="flex-1 min-h-0 px-2 pt-2 pb-1 flex flex-col overflow-hidden">
       {/* commit message box — drag the bottom-right grip (resize-y) or toggle expand */}
       <div className="relative shrink-0">
-        <textarea value={msg} onChange={e => { setMsg(rootPath, e.target.value); if (genError) clearError(rootPath); }} rows={expanded ? 10 : 5}
+        <textarea ref={taRef} defaultValue={msg} onChange={e => { setMsg(rootPath, e.target.value); if (genError) clearError(rootPath); }} rows={expanded ? 10 : 5}
           placeholder="Enter commit message"
           className="w-full px-2 py-1.5 pr-7 text-sm bg-panel border border-edge rounded outline-none focus:border-blue-500 resize-y min-h-[2.5rem]" />
         <button title={expanded ? "Collapse" : "Expand"} onClick={() => setExpanded(v => !v)}
