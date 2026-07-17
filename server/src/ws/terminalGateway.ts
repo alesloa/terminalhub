@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import * as pty from "node-pty";
 import type { AppContext } from "../context.js";
 import { authorizeWs } from "./wsAuth.js";
+import { attachHeartbeat } from "./heartbeat.js";
 import { isLockedViewer } from "../auth/access.js";
 import { tmuxStatusStyle } from "../tmux/controller.js";
 import { cleanShellEnv } from "../tmux/cleanEnv.js";
@@ -19,7 +20,25 @@ function resolveTmuxBin(): string {
 }
 const TMUX_BIN = resolveTmuxBin();
 
+// Server→client WS liveness. A client that vanishes ungracefully (browser force-quit, laptop sleep,
+// Cloudflare-tunnel/network drop mid-stream) never sends a TCP FIN, so socket 'close' never fires and
+// the attach PTY's master fd leaks until the OS pty cap (~511 on macOS). The heartbeat pings each
+// interval and terminate()s a peer that stops ponging, which fires 'close' → cleanup → PTY freed. 30s
+// is the independent server-driven direction; the client separately app-level-pings every 25s.
+const HEARTBEAT_MS = 30_000;
+// If the tmux attach client ignores SIGHUP, force it so node-pty releases the master fd. Kills only the
+// attach client — the tmux session and the agent inside it survive (the whole durability point).
+const KILL_GRACE_MS = 2_000;
+
 export async function terminalGateway(app: FastifyInstance, ctx: AppContext, config: Config) {
+  // Every live attach PTY, so a server shutdown reaps them all (mirrors lsp/manager.ts). Function-scoped
+  // — one Set per registered app — so tests don't bleed children across instances.
+  const liveChildren = new Set<pty.IPty>();
+  app.addHook("onClose", async () => {
+    for (const child of liveChildren) { try { child.kill(); } catch { /* already gone */ } }
+    liveChildren.clear();
+  });
+
   app.get("/ws/terminal/:id", { websocket: true }, (socket, req) => {
     // auth on the upgrade request (loopback/token = owner; valid access-key secret = teammate)
     const url = new URL(req.url, "http://localhost");
@@ -62,12 +81,36 @@ export async function terminalGateway(app: FastifyInstance, ctx: AppContext, con
       cols, rows,
       env: { ...tmuxEnv, TERM: "xterm-256color", COLORTERM: "truecolor" },
     });
+    liveChildren.add(child);
+    const stopHeartbeat = attachHeartbeat(socket, HEARTBEAT_MS);
+
+    // Reap the attach PTY exactly once, whether the trigger is the socket closing (normal close or a
+    // heartbeat-forced terminate) or the tmux client exiting on its own. Killing the client detaches
+    // only — the tmux session/agent keep running. child.kill() sends SIGHUP; node-pty releases the
+    // master fd when the client dies and its read stream hits EOF, so the SIGKILL backstop guarantees
+    // the fd is freed even if SIGHUP is ignored (that fd is the "pty node" that was leaking).
+    let childExited = false;
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      stopHeartbeat();
+      liveChildren.delete(child);
+      if (childExited) return;
+      try { child.kill(); } catch { /* already gone */ }
+      const forceKill = setTimeout(() => {
+        if (!childExited) { try { child.kill("SIGKILL"); } catch { /* already gone */ } }
+      }, KILL_GRACE_MS);
+      if (typeof forceKill.unref === "function") forceKill.unref();
+    };
 
     child.onData((data) => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ type: "output", data }));
     });
     child.onExit(() => {
+      childExited = true;
       if (socket.readyState === socket.OPEN) { socket.send(JSON.stringify({ type: "exit" })); socket.close(); }
+      cleanup();
     });
 
     // Scroll state. Scrolling up parks the pane in tmux copy-mode (ctx.tmux.scroll), which captures
@@ -120,6 +163,6 @@ export async function terminalGateway(app: FastifyInstance, ctx: AppContext, con
       }
     });
 
-    socket.on("close", () => { try { child.kill(); } catch { /* detach only; tmux session survives */ } });
+    socket.on("close", cleanup);
   });
 }
