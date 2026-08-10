@@ -2,6 +2,7 @@ import { copyText } from "../lib/clipboard";
 import { useCallback, useMemo, useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTerminalSocket } from "../hooks/useTerminalSocket";
+import { useSetTerminalMode } from "../hooks/useTerminalMode";
 import { useRoom } from "../store/room";
 import { useUi, rectOf } from "../store/ui";
 import { useToasts } from "../store/toasts";
@@ -155,6 +156,12 @@ export function TerminalView({ terminalId }: { terminalId: string }) {
   // capture path. Runs while the tab is still auto-titled (titleAuto — placeholder OR a prior auto
   // name like a stale "Claude Code"), so it corrects a wrong name but never a user rename. Stops once
   // a title is found, or after ~2 min if no session is ever detected.
+  // Pane ⇄ GUI chat, from the floating control cluster. Same mutation the terminal row's context menu
+  // uses; this view only ever renders in tmux mode, so the switch here always heads to "gui" (the way
+  // back lives on the chat's row in the list). A mid-turn switch 409s and toasts the server's reason.
+  const setMode = useSetTerminalMode();
+  const mode = term?.mode ?? "tmux";
+
   const isAiLaunch = !!detectAiTool(launchCommand);
   const titleAuto = term?.titleAuto ?? true;
   const pollsRef = useRef(0);
@@ -268,8 +275,9 @@ export function TerminalView({ terminalId }: { terminalId: string }) {
     >
       <div ref={ref} className="w-full h-full" />
       {/* Floating controls — faint until hovered. preventDefault on mousedown keeps focus in xterm so
-          clicking one doesn't drop the green focus bar. 2×2 grid: zoom +/− on the top row, copy-buffer
-          and view-buffer below. The bg-edge grid with gap-px paints the 1px separators between cells. */}
+          clicking one doesn't drop the green focus bar. 2×3 grid: zoom +/− on the top row, copy-buffer
+          and view-buffer next, then the pane/chat surface switch. The bg-edge grid with gap-px paints
+          the 1px separators between cells. */}
       <div
         onMouseDown={(e) => e.preventDefault()}
         // right-3 (12px) lines the cluster up with the terminal's content padding (--tr-term-pad) so
@@ -288,6 +296,17 @@ export function TerminalView({ terminalId }: { terminalId: string }) {
         <button onClick={viewBuffer} title="Open the buffer in a selectable window" aria-label="View terminal buffer"
           className={`w-6 h-6 inline-flex items-center justify-center hover:bg-surface hover:text-bright ${scrollbackOpenId === terminalId ? "bg-surface text-bright" : "bg-panel/85"}`}>
           <BufferGlyph /></button>
+        {/* Surface switch: this pane (left) vs the in-app Claude chat (right). A segmented pair rather
+            than one toggle so the terminal you're looking at is always the lit half — the same
+            active treatment the buffer button uses. */}
+        <button onClick={() => setMode.mutate({ id: terminalId, mode: "tmux" })} disabled={mode === "tmux" || setMode.isPending}
+          title="Terminal pane" aria-label="Show the terminal pane" aria-pressed={mode === "tmux"}
+          className={segmentClass(mode === "tmux", setMode.isPending)}>
+          <PaneGlyph /></button>
+        <button onClick={() => setMode.mutate({ id: terminalId, mode: "gui" })} disabled={mode === "gui" || setMode.isPending}
+          title="Open in GUI chat" aria-label="Switch to the in-app Claude chat" aria-pressed={mode === "gui"}
+          className={segmentClass(mode === "gui", setMode.isPending)}>
+          <ChatGlyph /></button>
       </div>
       {menu && (
         <FileContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} dismiss={() => setMenu(null)} />
@@ -296,6 +315,33 @@ export function TerminalView({ terminalId }: { terminalId: string }) {
         <TerminalFindBar onSearch={search} onClose={() => { setFindOpen(false); endSearch(); }} />
       )}
     </div>
+  );
+}
+
+/** One half of the pane/chat surface switch. The segment you're currently on stays lit and inert (no
+ *  hover shift — there's nothing to switch to); the other one lights on hover like the buttons above
+ *  it, and dims while a switch is in flight. */
+function segmentClass(on: boolean, pending: boolean): string {
+  return `w-6 h-6 inline-flex items-center justify-center
+    ${on ? "bg-surface text-bright" : "bg-panel/85 hover:bg-surface hover:text-bright"}
+    ${pending ? "opacity-50" : ""}`;
+}
+
+/** A prompt chevron over a caret — the "this is a shell pane" glyph. */
+function PaneGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5" aria-hidden>
+      <path d="m5 7 4 4-4 4M13 15h6" />
+    </svg>
+  );
+}
+
+/** A speech bubble — the "in-app chat" glyph, paired with PaneGlyph in the surface switch. */
+function ChatGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5" aria-hidden>
+      <path d="M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2Z" />
+    </svg>
   );
 }
 

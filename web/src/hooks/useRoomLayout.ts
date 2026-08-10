@@ -16,6 +16,7 @@ export function usePersistRoomLayout(workspaceId: string) {
   const sidebarWidth = useRoom(s => s.sidebarWidth);
   const terminalListWidth = useRoom(s => s.terminalListWidth);
   const dockHeight = useRoom(s => s.dockHeight);
+  const dockFull = useRoom(s => s.dockFull);
   const leftOpen = useRoom(s => s.leftOpen);
   const rightOpen = useRoom(s => s.rightOpen);
   const activeView = useRoom(s => s.activeView);
@@ -30,7 +31,7 @@ export function usePersistRoomLayout(workspaceId: string) {
 
   useEffect(() => {
     if (first.current) { first.current = false; return; }
-    const json = JSON.stringify({ sidebarWidth, terminalListWidth, dockHeight, leftOpen, rightOpen, activeView, activeTerminalId, windowed, windowRect, windowMoved, openFiles, activeFile });
+    const json = JSON.stringify({ sidebarWidth, terminalListWidth, dockHeight, dockFull, leftOpen, rightOpen, activeView, activeTerminalId, windowed, windowRect, windowMoved, openFiles, activeFile });
     const t = setTimeout(() => {
       api.updateWorkspace(workspaceId, { layout: json }).catch(() => { /* best-effort; the next change retries */ });
       // Mirror into the cached workspaces list so an immediate reopen hydrates the latest layout
@@ -40,5 +41,5 @@ export function usePersistRoomLayout(workspaceId: string) {
       );
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [sidebarWidth, terminalListWidth, dockHeight, leftOpen, rightOpen, activeView, activeTerminalId, windowed, windowRect, windowMoved, openFiles, activeFile, workspaceId, qc]);
+  }, [sidebarWidth, terminalListWidth, dockHeight, dockFull, leftOpen, rightOpen, activeView, activeTerminalId, windowed, windowRect, windowMoved, openFiles, activeFile, workspaceId, qc]);
 }

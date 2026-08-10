@@ -7,13 +7,14 @@ import { buildApp } from "../app.js";
 import { createStore } from "../db/store.js";
 import { createTmuxController } from "../tmux/controller.js";
 import { createSessionsController } from "../presence/sessions.js";
+import { createGuiManager } from "../gui/manager.js";
 import { previewRoutes } from "./preview.js";
 import type { Config } from "../config.js";
 
 const config: Config = { port: 0, host: "127.0.0.1", token: "secret", dbPath: ":memory:", fsRoots: null, reveal: null };
 
 function build() {
-  const ctx: any = { store: createStore(":memory:"), tmux: createTmuxController(async () => ""), sessions: createSessionsController() };
+  const ctx: any = { store: createStore(":memory:"), tmux: createTmuxController(async () => ""), sessions: createSessionsController(), gui: createGuiManager() };
   return buildApp(config, ctx);
 }
 

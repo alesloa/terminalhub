@@ -40,7 +40,10 @@ CREATE TABLE IF NOT EXISTS terminals (
   position INTEGER NOT NULL DEFAULT 0,
   createdAt INTEGER NOT NULL,
   titleAuto INTEGER NOT NULL DEFAULT 1,
-  systemPrompt TEXT
+  systemPrompt TEXT,
+  mode TEXT NOT NULL DEFAULT 'tmux',
+  agentSessionId TEXT,
+  guiConfig TEXT
 );
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,

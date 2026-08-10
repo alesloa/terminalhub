@@ -79,6 +79,7 @@ export interface RoomLayout {
   sidebarWidth?: number;       // explorer/side-panel width (px)
   terminalListWidth?: number;  // terminal-list panel width (px)
   dockHeight?: number;         // terminal dock height (px)
+  dockFull?: boolean;          // dock dragged to the very top — it covers the editor, tab strip and all
   leftOpen?: boolean;          // sidebar shown vs collapsed
   rightOpen?: boolean;         // terminal-list shown vs hidden
   activeView?: SidebarView;    // which activity-bar view the sidebar shows
@@ -162,6 +163,13 @@ export interface RoomState {
   sidebarWidth: number;
   terminalListWidth: number;
   dockHeight: number;
+  // The dock pulled all the way to the top: it covers the whole centre column — editor, tab strip
+  // and all — for a distraction-free terminal. Kept apart from `dockHeight` on purpose, because a
+  // height can only say "covering" relative to the column it was measured in, so resizing the
+  // window would quietly slide the editor back into view. The chosen height is preserved
+  // underneath, and the drag handle stays on screen so pulling back down brings the file straight
+  // back.
+  dockFull: boolean;
 
   setActiveTerminal(id: string | null): void;
   setTerminalSender(fn: ((text: string) => void) | null): void;
@@ -218,10 +226,18 @@ export interface RoomState {
   setSearch(patch: Partial<SearchUiState>): void; // merge into the Search-tab input state
   setSidebarWidth(px: number): void;
   setTerminalListWidth(px: number): void;
-  setDockHeight(px: number): void;
+  setDockHeight(px: number): void;      // also un-covers: naming a height means the editor is back
+  setDockFull(full: boolean): void;     // cover the editor with the dock (or stop covering it)
 }
 
 const NAV_MAX = 50; // cap the jump history so it can't grow without bound
+
+/** Opening a file has to bring the editor back out from under the dock, or clicking a file in the
+ *  Explorer while the dock is covering it would look like the click did nothing at all. The chosen
+ *  dock height is untouched, so the split lands exactly where it was last dragged. Hydration fills
+ *  `openFiles` straight into the initial state and never runs these actions, so reopening a room
+ *  keeps the covered split it was closed in. */
+const UNCOVER = { dockFull: false } as const;
 const TERMINAL_HISTORY_MAX = 20; // cap the active-terminal recency stack
 
 /** Push `loc` onto the jump history: truncate any forward entries, append, and cap the length. If the
@@ -307,6 +323,7 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
     sidebarWidth: L?.sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH,
     terminalListWidth: L?.terminalListWidth ?? DEFAULT_TERMINAL_LIST_WIDTH,
     dockHeight: L?.dockHeight ?? DEFAULT_DOCK_HEIGHT,
+    dockFull: L?.dockFull ?? false,
     expandedDirs: new Set<string>(),
     collapsedRoots: new Set<string>(),
     revealTarget: null,
@@ -361,6 +378,7 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
         // go-to-definition opens the target tab itself then records the destination via jumpToPosition,
         // so it passes recordNav:false here to avoid a duplicate file-level stop.
         ...(opts?.recordNav === false ? {} : navTab(s, entry.path, entry.name)),
+        ...UNCOVER,
       };
     }),
     openMarkdownPreview: (f) => set((s) => {
@@ -375,14 +393,15 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
           : [...s.openFiles.filter(o => o.path !== oldSyntheticKey), entry],
         activeFile: f.path,
         ...navTab(s, f.path, f.name),
+        ...UNCOVER,
       };
     }),
     // CSV / Word / "edit as code" all just flip an existing tab's kind in place (the tab key is the
     // real file path for these), or open a fresh tab of that kind. One tab per file path.
-    openCsvPreview: (f) => set((s) => ({ ...reKindTab(s, f, "csv-preview"), ...navTab(s, f.path, f.name) })),
-    openDocxPreview: (f) => set((s) => ({ ...reKindTab(s, f, "docx-preview"), ...navTab(s, f.path, f.name) })),
-    openHtmlPreview: (f) => set((s) => ({ ...reKindTab(s, f, "html-preview"), ...navTab(s, f.path, f.name) })),
-    openAsCode: (f) => set((s) => ({ ...reKindTab(s, f, "file"), ...navTab(s, f.path, f.name) })),
+    openCsvPreview: (f) => set((s) => ({ ...reKindTab(s, f, "csv-preview"), ...navTab(s, f.path, f.name), ...UNCOVER })),
+    openDocxPreview: (f) => set((s) => ({ ...reKindTab(s, f, "docx-preview"), ...navTab(s, f.path, f.name), ...UNCOVER })),
+    openHtmlPreview: (f) => set((s) => ({ ...reKindTab(s, f, "html-preview"), ...navTab(s, f.path, f.name), ...UNCOVER })),
+    openAsCode: (f) => set((s) => ({ ...reKindTab(s, f, "file"), ...navTab(s, f.path, f.name), ...UNCOVER })),
     // Diff tabs get a synthetic key so they coexist with a normal editor tab for the
     // same file (and staged vs worktree diffs are distinct tabs).
     openDiff: (d) => set((s) => {
@@ -394,6 +413,7 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
       return {
         openFiles: s.openFiles.some(o => o.path === key) ? s.openFiles : [...s.openFiles, entry],
         activeFile: key,
+        ...UNCOVER,
       };
     }),
     // A whole-commit diff tab, keyed by hash so each commit gets one reusable tab.
@@ -403,6 +423,7 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
       return {
         openFiles: s.openFiles.some(o => o.path === key) ? s.openFiles : [...s.openFiles, entry],
         activeFile: key,
+        ...UNCOVER,
       };
     }),
     // One file of a commit — a single side-by-side diff (parent's version vs the commit's),
@@ -413,6 +434,7 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
       return {
         openFiles: s.openFiles.some(o => o.path === key) ? s.openFiles : [...s.openFiles, entry],
         activeFile: key,
+        ...UNCOVER,
       };
     }),
     // A stash diff tab (the stash's changes vs the commit it was made from), keyed by ref.
@@ -422,6 +444,7 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
       return {
         openFiles: s.openFiles.some(o => o.path === key) ? s.openFiles : [...s.openFiles, entry],
         activeFile: key,
+        ...UNCOVER,
       };
     }),
     closeFile: (path) => get().closeMany([path]),
@@ -559,7 +582,8 @@ export function createRoomStore(init: { workspaceId: string; windowed: boolean; 
     setSearch: (patch) => set((s) => ({ search: { ...s.search, ...patch } })),
     setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
     setTerminalListWidth: (terminalListWidth) => set({ terminalListWidth }),
-    setDockHeight: (dockHeight) => set({ dockHeight }),
+    setDockHeight: (dockHeight) => set({ dockHeight, dockFull: false }),
+    setDockFull: (dockFull) => set({ dockFull }),
   }));
 }
 

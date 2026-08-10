@@ -69,7 +69,10 @@ export function StageMiniWindow({
 
   const sidebarPct = view?.leftOpen ? clamp((view.sidebarWidth / W) * 100, 14, 36) : 0;
   const termListPct = view?.rightOpen ? clamp((view.terminalListWidth / W) * 100, 10, 28) : 0;
-  const dockPct = clamp(((view?.dockHeight ?? H * 0.32) / H) * 100, 18, 58);
+  // A dock dragged over the whole centre column takes the thumbnail's whole centre column too —
+  // the editor half is dropped entirely, tab strip and all, so the tile shows what the room shows.
+  const dockFull = view?.dockFull === true;
+  const dockPct = dockFull ? 100 : clamp(((view?.dockHeight ?? H * 0.32) / H) * 100, 18, 58);
 
   // Peacock accent — the workspace's real color (card color wins, like the room frame). Set as the
   // --peacock var so the shared color-mix tints (PEACOCK_BAR/SEAM) wash the chrome exactly as the
@@ -120,6 +123,7 @@ export function StageMiniWindow({
 
         <div className="flex-1 min-w-0 flex flex-col">
           {/* editor area: real open-file tabs + an empty editor surface (content can't be captured) */}
+          {!dockFull && (
           <div className="flex-1 min-h-0 flex flex-col bg-code">
             {tabs.length > 0 && (
               <div className="h-2.5 shrink-0 flex items-stretch bg-elevated/70 border-b border-edge">
@@ -136,6 +140,7 @@ export function StageMiniWindow({
             )}
             <div className="flex-1 min-h-0" />
           </div>
+          )}
 
           {/* terminal dock: optional terminal-list strip + the live terminal capture */}
           <div className="shrink-0 flex border-t border-edge" style={{ height: `${dockPct}%` }}>

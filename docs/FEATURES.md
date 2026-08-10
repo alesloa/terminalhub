@@ -149,6 +149,15 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
 
 - **Room** — opening a workspace gives a floating, resizable window (or fullscreen) with a title bar
   (workspace name + git branch), a left activity sidebar, a code editor, and a terminal dock.
+- **Zen mode — pull the terminal over everything** — the handle between the editor and the terminal
+  dock drags all the way to the top: past the point where the editor would be too short to read, the
+  dock snaps over the whole centre column and covers the file, the tab strip and the Back/Forward
+  row, leaving nothing but terminal. No gap, no leftover sliver. The handle stays put under the title
+  bar, so dragging it back down brings the file — same tab, same scroll position, same unsaved edits
+  — straight back at the height you left it. The covered state is saved with the workspace and
+  survives resizing the window (a height alone couldn't say "covering", so growing the window would
+  otherwise slide the editor back into view). Opening a file uncovers it, so a click in the Explorer
+  never looks like it did nothing.
 - **Opens at its card, remembers where you leave it** — a workspace's first open grows the room out
   of its card and settles as a floating window pinned to the card's top-left corner. Once you drag,
   resize, or maximize it, that exact geometry + mode is restored on every reopen; until then the room
@@ -294,6 +303,88 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
   new session, optionally into a different workspace.
 - **Resume sessions** — reopening a workspace reattaches to its existing tmux sessions instead of
   spawning fresh agents — the "pick up where you left off" behavior.
+
+## Claude GUI mode
+
+A terminal can run Claude as a **chat panel instead of a terminal** — same agent, same session, same
+project files, but rendered as messages, tool cards, and diffs rather than a TUI in a pane. Under the
+hood it's the real `claude` binary driven headlessly, so everything your CLI does (skills, MCP servers,
+`CLAUDE.md`, settings) applies unchanged.
+
+- **Start a terminal in GUI mode** — the New-terminal picker has a **Claude (GUI)** card next to the
+  regular Claude card. Picking it opens the chat panel instead of a tmux pane; no shell is launched.
+- **Open a past session in GUI** — the Claude/Codex session panel's menu adds **Open in GUI** alongside
+  "Resume in terminal", so any prior conversation can be reopened as chat with its full history loaded.
+  Claude sessions only — Codex has no equivalent headless mode, so the entry is disabled there.
+- **Switch either way, any time** — a terminal running in a pane can flip to GUI and back, from the
+  pane/chat segmented switch in the terminal's floating control cluster or from **Open in GUI Chat** /
+  **Back to Terminal** in a terminal tab's right-click menu. A terminal that's currently a chat wears the
+  Claude icon and a small **GUI** tag in the terminals list, so the two surfaces are told apart at a glance.
+  Switching to GUI quits the agent inside the pane (the tmux session itself stays alive and keeps its
+  scrollback) and reattaches the same conversation in the chat panel; switching back types
+  `claude --resume <id>` into that same pane — or, for a chat you never sent a prompt to, the workspace's
+  normal launch command, so you land on a running agent either way. The conversation is continuous across
+  the handoff because both surfaces read and write Claude's own transcript.
+- **One agent at a time, on purpose** — a session id can only have one live Claude attached; two would
+  corrupt the shared transcript. So the switch is a handoff, not a fork, and a switch requested while the
+  agent is mid-turn is refused with a "the agent is working — interrupt it first" message instead of
+  silently dropping the in-flight turn.
+- **History comes from the transcript** — opening GUI on a terminal that has been running in a pane
+  replays the whole prior conversation (read from `~/.claude/projects/…/<session>.jsonl`), so you're not
+  starting from a blank panel.
+- **Real approval buttons** — permission prompts arrive as an **Allow / Allow always / Deny** bar instead
+  of a keyboard menu, and Claude's questions render as an answerable form. Plan mode is captured and shown
+  as a proposed plan rather than dropping you into a TUI picker.
+- **Streaming with tool cards** — assistant text and thinking stream token-by-token; each tool call gets a
+  collapsible card with its input, status, and result, and file edits render as syntax-aware diffs.
+- **Edit or delete a message you sent** — hover one of your own turns for a pencil and a bin. Editing
+  reopens it in place; sending the edit rewinds the conversation to that point and re-runs it with the
+  new wording. Deleting drops that turn and everything after it. Both say so before they do it, because
+  Claude's conversation is an append-only chain: cutting at a turn necessarily drops what followed.
+  The rewind **forks** rather than truncates — the original transcript stays on disk untouched, so a
+  rewind you didn't mean is recoverable from the Claude session panel.
+- **Undo the file changes too** — the edit and delete confirmations carry an "undo file changes"
+  checkbox. The agent keeps a backup of every file it touches, so ticking it restores the working
+  tree to exactly how it was at that message and reports how many files moved. Off by default:
+  dropping a message is not the same request as throwing away the code it produced.
+- **Plans get a card, not a shrug** — when Claude proposes a plan it lands as a "Plan ready" panel
+  above the composer with the plan rendered in full, a **Go ahead** button, and the option to just
+  type a reply to change it. Approving sends an ordinary message; it never quietly widens permissions.
+- **Paste or drop images into the prompt** — screenshots go straight into the message as thumbnails
+  (PNG, JPEG, GIF, WebP, up to five per turn) and show inline in the transcript afterwards.
+- **`@` for files, `/` for commands** — typing `@` opens a fuzzy picker over the workspace's files;
+  typing `/` at the start of a message lists the slash commands and skills the installed CLI actually
+  reports. Arrows and Enter or Tab pick; Escape closes.
+- **Context and cost readout** — a ring in the composer shows how full the model's context window is,
+  amber past 75% and red past 90%, with the running session cost beside it. Both numbers come from
+  the CLI's own accounting, so they include the system prompt, tools, skills and memory files.
+- **Long tool runs fold up** — a stretch of back-to-back tool calls collapses to the newest one plus a
+  "+N previous tool calls" toggle, so a turn that ran thirty greps doesn't bury the actual answer.
+  Anything that failed stays visible, and text or thinking always breaks the run.
+- **Composer controls** — three pills sit inside the prompt box, under the text, so what the next turn will
+  run with is visible without opening a settings panel. **Model** opens a searchable picker (`⌘1`–`⌘9` pick
+  the first nine visible rows). **Reasoning** holds the thinking depth the model supports — Low through Max,
+  plus Ultracode and Ultrathink — and, for models that have them, a 200k/1M context toggle and a fast-mode
+  switch; it hides itself entirely on a model with none of those. **Permissions** is the four-way choice
+  between Supervised, Auto-accept edits, Auto, and Full access, and goes amber on Full access because that
+  one skips every prompt. Picks apply immediately; changing permissions restarts the agent behind the chat
+  and resumes the same conversation.
+- **The model list comes from your CLI** — nothing about which models exist is baked into Terminalhub. The
+  picker is built from what the installed Claude Code reports at runtime, along with each model's real
+  effort levels and whether it has a 1M-context or fast-mode variant, so a model that ships tomorrow shows
+  up without an update here.
+- **Empty chat asks a question** — a fresh GUI terminal opens on "What should we build in *folder*?" with
+  the composer centred underneath it, and drops back to the normal pinned-to-the-bottom layout as soon as
+  there's a message.
+- **The panel outlives the tab** — closing the browser does not stop a GUI session, exactly like detaching
+  from tmux. Reopening replays history and rejoins the live turn already in progress.
+- **Nothing is lost when you switch tabs** — a GUI terminal keeps its own transcript on the server, so
+  clicking to another terminal and back returns the full conversation (and any turn still running),
+  instead of a blank chat. A question or approval the agent is still waiting on comes back with it, so
+  a prompt raised while you were looking elsewhere is answerable the moment you return.
+- **Same working animation and done-alert as a pane** — a GUI terminal shows the equalizer bars and KITT
+  sweep in the terminals list while its turn is in flight, and fires the same toast, notification and
+  spoken line when the turn finishes or Claude asks you something.
 
 ## Code editor & files
 
@@ -538,7 +629,8 @@ floating window that grows from its launcher tile and minimizes back into it.
   (like the bottom stats bar — gray when idle, green while its agent is working, amber when it needs you,
   so the row shows how many terminals there are and what each is doing), the sidebar
   (when open, sized to the real sidebar width, showing the folder's real top-level files), the editor
-  area with the room's real open-file tabs, and the terminal dock holding the live terminal screen —
+  area with the room's real open-file tabs (dropped entirely when that room is in Zen mode, so the
+  tile's terminal fills it exactly as the room does), and the terminal dock holding the live terminal screen —
   the whole captured screen scaled to fit (no crop; ~2s refresh, ANSI colors, captured server-side so
   it stays live even when the room is off-canvas). Slide/scroll through the tiles (scroll-snap, the
   centered tile enlarges). Two modes, chosen in **Settings → Stage Manager** (the dock itself has no

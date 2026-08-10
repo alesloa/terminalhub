@@ -4,10 +4,13 @@ import { useRoom } from "../../store/room";
 import { lockCursor } from "../../lib/dragCursor";
 import { TerminalView } from "../TerminalView";
 import { TerminalList } from "../TerminalList";
+import { GuiChatView } from "../Gui/GuiChatView";
 
-export function TerminalDock({ workspaceId, terminals, activeTerminal, onStartTerminal, starting }:
+export function TerminalDock({ workspaceId, folder, terminals, activeTerminal, onStartTerminal, starting }:
   {
     workspaceId: string;
+    /** The workspace's host folder — the GUI chat runs its agent there and labels itself with it. */
+    folder: string;
     terminals: Terminal[];
     activeTerminal: Terminal | null;
     onStartTerminal: () => void;
@@ -47,8 +50,15 @@ export function TerminalDock({ workspaceId, terminals, activeTerminal, onStartTe
   return (
     <div ref={rowRef} className="flex min-h-0 h-full border-t border-edge">
       <div className="flex-1 min-w-0">
+        {/* The active terminal's `mode` picks the surface: the xterm pane, or the in-app Claude chat
+            in its place. Keyed by id AND mode so switching surfaces tears the old one down (the
+            xterm instance / the GUI socket) instead of re-using its state. */}
         {activeTerminal ? (
-          <TerminalView key={activeTerminal.id} terminalId={activeTerminal.id} />
+          activeTerminal.mode === "gui" ? (
+            <GuiChatView key={`${activeTerminal.id}:gui`} terminalId={activeTerminal.id} folder={folder} />
+          ) : (
+            <TerminalView key={activeTerminal.id} terminalId={activeTerminal.id} />
+          )
         ) : (
           <div className="h-full flex items-center justify-center">
             <button onClick={onStartTerminal} disabled={starting}

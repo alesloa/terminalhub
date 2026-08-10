@@ -203,6 +203,72 @@ describe("isAgentWorkingNow — non-Claude agents (per-binary signatures)", () =
   });
 });
 
+describe("createWorkingTracker — GUI-mode terminals", () => {
+  // A GUI terminal's pane sits at a bare shell (the agent is an SDK child), so pane scraping can
+  // never see it work. Its session state is the signal instead.
+  function guiCtx(states: Record<string, string | undefined>, panes: Record<string, string> = {}): AppContext {
+    const terminals = Object.keys(states).map((id) => ({ ...tm(id, "w", `s_${id}`), mode: "gui" as const }));
+    return {
+      store: {
+        listAllTerminals: () => [...terminals, tm("t_pane", "w", "s_pane")],
+        listWorkspaces: () => [ws("w", "claude")],
+        listCustomAgents: () => [],
+      },
+      tmux: {
+        listSessions: async () => ["s_pane", ...terminals.map((t) => t.tmuxSession)],
+        capturePane: async (name: string) => panes[name] ?? "",
+      },
+      gui: {
+        get: (id: string) => (states[id] ? { state: () => states[id] } : undefined),
+      },
+    } as unknown as AppContext;
+  }
+
+  it("reports a GUI terminal whose session is running", async () => {
+    const tracker = createWorkingTracker(guiCtx({ t_gui: "running" }));
+    expect(await tracker.compute()).toEqual([{ terminalId: "t_gui", workspaceId: "w" }]);
+  });
+
+  it("does not report a GUI session that is idle, starting, stopped or waiting on the user", async () => {
+    // "waiting" is blocked-on-you, which is attention's amber dot — it must not read as busy-blue.
+    const tracker = createWorkingTracker(guiCtx({
+      a: "idle", b: "starting", c: "stopped", d: "waiting", e: "error",
+    }));
+    expect(await tracker.compute()).toEqual([]);
+  });
+
+  it("does not report a GUI terminal nobody has opened yet", async () => {
+    // No socket has ever connected, so ctx.gui has no session for it.
+    const tracker = createWorkingTracker(guiCtx({ t_gui: undefined }));
+    expect(await tracker.compute()).toEqual([]);
+  });
+
+  it("never scrapes a GUI terminal's pane", async () => {
+    const captured: string[] = [];
+    const base = guiCtx({ t_gui: "running" });
+    const ctx = {
+      ...base,
+      tmux: {
+        listSessions: base.tmux.listSessions,
+        capturePane: async (name: string) => { captured.push(name); return ""; },
+      },
+    } as unknown as AppContext;
+    await createWorkingTracker(ctx).compute();
+    expect(captured).toEqual(["s_pane"]);
+  });
+
+  it("reports GUI and pane terminals together", async () => {
+    const ctx = guiCtx(
+      { t_gui: "running" },
+      { s_pane: "✻ Stewing… (4m 40s · ↓ 8.0k tokens · still thinking)\n❯ " },
+    );
+    expect(await createWorkingTracker(ctx).compute()).toEqual([
+      { terminalId: "t_gui", workspaceId: "w" },
+      { terminalId: "t_pane", workspaceId: "w" },
+    ]);
+  });
+});
+
 describe("createWorkingTracker", () => {
   function fakeCtx(opts: {
     terminals: Terminal[]; workspaces: Workspace[]; live: string[];

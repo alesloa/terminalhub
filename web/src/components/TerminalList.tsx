@@ -10,6 +10,7 @@ import { useRoom } from "../store/room";
 import { useUi } from "../store/ui";
 import { useAttention } from "../hooks/useAttention";
 import { useWorking } from "../hooks/useWorking";
+import { useSetTerminalMode } from "../hooks/useTerminalMode";
 import { useToasts } from "../store/toasts";
 import { TerminalContextMenu } from "./TerminalContextMenu";
 import { IconPicker } from "./IconPicker";
@@ -54,6 +55,10 @@ export function TerminalList({ workspaceId, terminals, width }: { workspaceId: s
     },
     onError: (e: unknown) => push(e instanceof Error ? e.message : "fork failed"),
   });
+
+  // Pane ⇄ GUI chat. Same mutation the pane's own segmented switch uses (a 409 mid-turn surfaces the
+  // server's reason as a toast), so both entry points behave identically.
+  const setMode = useSetTerminalMode();
 
   const needsAttention = new Set(useAttention().map(a => a.terminalId));
   // Agents actively thinking/streaming right now — same poll that drives the card working dots.
@@ -194,8 +199,10 @@ export function TerminalList({ workspaceId, terminals, width }: { workspaceId: s
             // workspace default. Drives the default ICON color + the working-animation color (NOT the
             // label text, which keeps the user's own color / default). `??` not `||`: a plain terminal
             // is stored with an EMPTY override ("") and must stay a plain shell (terminal glyph) — only
-            // a null override (none set) inherits the workspace's launch command.
-            const agentId = agentIdForCommand(t.launchCommandOverride ?? wsLaunch);
+            // a null override (none set) inherits the workspace's launch command. A GUI terminal has
+            // no launch command at all (the agent runs as an SDK child, not in the pane) — it's always
+            // Claude, so it wears the Claude brand directly instead of the plain-shell fallback.
+            const agentId = t.mode === "gui" ? "claude" : agentIdForCommand(t.launchCommandOverride ?? wsLaunch);
             // Label tint: live preview (dragging the picker) wins, then the user's explicit color.
             // undefined = theme default. The agent color is intentionally NOT applied here.
             const tint = (previewColors[t.id] !== undefined ? previewColors[t.id] : t.color) ?? undefined;
@@ -225,7 +232,9 @@ export function TerminalList({ workspaceId, terminals, width }: { workspaceId: s
         <TerminalContextMenu
           anchor={menu.anchor} term={menu.term} index={menu.index} terminals={terminals}
           onRename={startEdit} onChangeIcon={(t) => setIconFor(t)} onColor={onColor} onClose={onClose}
-          onForkSession={(t) => forkSession.mutate(t.id)} dismiss={() => setMenu(null)} />
+          onForkSession={(t) => forkSession.mutate(t.id)}
+          onSetMode={(t, mode) => setMode.mutate({ id: t.id, mode })}
+          dismiss={() => setMenu(null)} />
       )}
       {iconFor && (
         <IconPicker current={iconFor.icon}
@@ -340,6 +349,14 @@ function TerminalRow({
       ) : (
         <>
           <span className="flex-1 truncate" style={{ color: tint }}>{t.title}</span>
+          {/* GUI-mode marker: this row is an in-app chat, not a pane. Sized like the row's other
+              chrome (the icon/close buttons) so it reads as a quiet tag, not a button. */}
+          {t.mode === "gui" && (
+            <span title="In-app Claude chat — right-click for “Back to Terminal”"
+              className="shrink-0 px-1 rounded border border-edge-strong text-[9px] leading-[13px] tracking-wide text-dim">
+              GUI
+            </span>
+          )}
           <button onClick={(e) => { e.stopPropagation(); onDelete(); }} title="Close terminal"
             className="shrink-0 w-4 h-4 flex items-center justify-center rounded text-dim text-xs leading-none opacity-0 group-hover:opacity-100 hover:text-bright hover:bg-edge-strong">
             ✕

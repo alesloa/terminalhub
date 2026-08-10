@@ -72,6 +72,16 @@ export function ClaudeSessionsPanel({ rootPath }: { rootPath: string }) {
       api.createTerminal(workspaceId, { launchCommandOverride: headroomResumeCommand(s.agentType, s.id), title: (s.title || s.id.slice(0, 8)).slice(0, 40) }),
     onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["workspaces"] }); requestTerminalFocus(workspaceId, r.terminal.id); },
   });
+  // Same conversation, in-app surface: a GUI terminal bound to this session id instead of a pane
+  // running `claude --resume`. No launch command — the agent runs as an SDK child (see the create
+  // route's gui branch). Claude-only; the menu row is disabled for a Codex session.
+  const resumeGui = useMutation({
+    mutationFn: (s: ClaudeSession) =>
+      api.createTerminal(workspaceId, {
+        title: (s.title || s.id.slice(0, 8)).slice(0, 40), agentId: "claude", mode: "gui", agentSessionId: s.id,
+      }),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["workspaces"] }); requestTerminalFocus(workspaceId, r.terminal.id); },
+  });
   const setPref = useMutation({
     mutationFn: (v: { id: string; patch: { pinned?: boolean; color?: string | null } }) => api.claude.setPref(v.id, v.patch),
     onSuccess: refresh,
@@ -119,6 +129,9 @@ export function ClaudeSessionsPanel({ rootPath }: { rootPath: string }) {
       { label: "Resume with Headroom", disabled: !hr?.installed,
         hint: hr?.installed ? undefined : "headroom CLI not installed",
         onClick: () => { if (hr?.installed) resumeHeadroom.mutate(s); } },
+      { label: "Open in GUI", disabled: s.agentType !== "claude",
+        hint: s.agentType === "claude" ? undefined : "GUI chat is Claude-only",
+        onClick: () => { if (s.agentType === "claude") resumeGui.mutate(s); } },
       { label: "View transcript", onClick: () => setDetail(s) },
       "sep",
       { label: pinned ? "Unpin" : "Pin", onClick: () => setPref.mutate({ id: s.id, patch: { pinned: !pinned } }) },

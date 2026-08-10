@@ -98,3 +98,34 @@ describe("attentionFire", () => {
     expect(fire).not.toHaveBeenCalled();
   });
 });
+
+describe("attentionFire — GUI-mode terminals", () => {
+  it("fires for a GUI terminal even when the workspace launch command isn't an agent", () => {
+    // A GUI terminal's pane holds a bare shell and it inherits the workspace's launch command, so
+    // the agent-binary test would reject it in a workspace launching anything else. It IS a Claude
+    // session by definition.
+    const { firer, fire } = setup(() => 1000, {
+      term: term({ mode: "gui" }),
+      ws: ws({ launchCommand: "npm run dev" }),
+    });
+    expect(firer.fire("tm_1")).toBe(true);
+    expect(fire).toHaveBeenCalledWith(expect.objectContaining({ terminalId: "tm_1", source: "attention" }));
+  });
+
+  it("still rejects a non-agent tmux terminal in the same workspace", () => {
+    const { firer, fire } = setup(() => 1000, { ws: ws({ launchCommand: "npm run dev" }) });
+    expect(firer.fire("tm_1")).toBe(false);
+    expect(fire).not.toHaveBeenCalled();
+  });
+
+  it("applies the same per-terminal cooldown to a GUI terminal", () => {
+    let t = 1000;
+    const { firer, fire } = setup(() => t, { term: term({ mode: "gui" }) });
+    expect(firer.fire("tm_1")).toBe(true);
+    t = 2000;
+    expect(firer.fire("tm_1")).toBe(false); // an approval prompt right after a turn end must not double-toast
+    t = 6000;
+    expect(firer.fire("tm_1")).toBe(true);
+    expect(fire).toHaveBeenCalledTimes(2);
+  });
+});

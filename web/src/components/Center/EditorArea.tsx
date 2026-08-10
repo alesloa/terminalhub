@@ -24,7 +24,10 @@ const isMarkdownFile = (name: string) => /\.(md|markdown|mdx)$/i.test(name);
 const isCsvFile = (name: string) => /\.(csv|tsv)$/i.test(name);
 const isDocxFile = (name: string) => /\.docx$/i.test(name);
 
-export function EditorArea({ rootPath }: { rootPath: string }) {
+/** `covered` = the terminal dock has been dragged over the whole centre column. The editor stays
+ *  mounted (tabs, scroll positions and unsaved edits all survive) at zero height, so dragging the
+ *  dock back down returns to exactly the file and place it was left at. */
+export function EditorArea({ rootPath, covered }: { rootPath: string; covered: boolean }) {
   const openFiles = useRoom(s => s.openFiles);
   const activeFile = useRoom(s => s.activeFile);
   const pinned = useRoom(s => s.pinnedFiles);
@@ -120,7 +123,7 @@ export function EditorArea({ rootPath }: { rootPath: string }) {
   };
 
   return (
-    <div className="flex-1 min-h-[120px] flex flex-col bg-canvas">
+    <div className={`flex flex-col bg-canvas ${covered ? "h-0 overflow-hidden" : "flex-1 min-h-[120px]"}`}>
       <div className="flex items-stretch h-9 border-b border-edge text-sm">
         {/* Back / Forward sit to the LEFT of the tabs (where you reach for them), and walk the room's
             file + caret navigation history — clicking through files, jumping to definitions, and

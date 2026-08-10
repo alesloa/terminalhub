@@ -56,6 +56,9 @@ export interface TmuxController {
   typeText(name: string, text: string): Promise<void>;
   /** Send a lone Enter (CR) keypress — the submit key for shells and Claude Code's TUI. */
   sendEnter(name: string): Promise<void>;
+  /** Send one tmux key name (`C-c`, `C-d`, `Escape`, …) with NO trailing Enter. sendKeys would
+   *  append a CR, which turns a bare Ctrl-C into Ctrl-C-then-submit. */
+  sendKey(name: string, key: string): Promise<void>;
   killSession(name: string): Promise<void>;
   listSessions(): Promise<string[]>;
   hasSession(name: string): Promise<boolean>;
@@ -144,6 +147,9 @@ export function createTmuxController(run: TmuxRunner = realRunner): TmuxControll
     },
     async sendEnter(name) {
       await run(["send-keys","-t",name,"Enter"]);
+    },
+    async sendKey(name, key) {
+      await run(["send-keys","-t",name,key]);
     },
     async killSession(name) {
       await run(["kill-session","-t",name]);

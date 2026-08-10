@@ -55,6 +55,7 @@ export interface RoomViewState {
   sidebarWidth: number;        // sidebar width (px)
   terminalListWidth: number;   // terminal-list width (px)
   dockHeight: number;          // terminal dock height (px)
+  dockFull: boolean;           // dock covering the whole centre column (editor hidden)
 }
 
 /** A selectable thing on the canvas. Selection is keyed `${kind}:${id}` so cards, sticky notes, and
@@ -842,7 +843,8 @@ export const useUi = create<UiState>((set) => ({
     const c = s.roomViewByWorkspace[workspaceId];
     if (c && c.activeView === view.activeView && c.scmTab === view.scmTab && c.leftOpen === view.leftOpen
       && c.rightOpen === view.rightOpen && c.sidebarWidth === view.sidebarWidth
-      && c.terminalListWidth === view.terminalListWidth && c.dockHeight === view.dockHeight) return s;
+      && c.terminalListWidth === view.terminalListWidth && c.dockHeight === view.dockHeight
+      && c.dockFull === view.dockFull) return s;
     return { roomViewByWorkspace: { ...s.roomViewByWorkspace, [workspaceId]: view } };
   }),
   setMirrorRoomViews: (mirrorViewByWorkspace) => set({ mirrorViewByWorkspace }),

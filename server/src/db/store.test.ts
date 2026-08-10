@@ -5,6 +5,7 @@ import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { createStore, type Store } from "./store.js";
 import type { SkillInstall } from "../skills/types.js";
+import { DEFAULT_GUI_CONFIG, type GuiConfig } from "../gui/config.js";
 
 const skillRow = (over: Partial<SkillInstall> = {}): SkillInstall => ({
   installPath: "/ws/.claude/skills/foo",
@@ -859,5 +860,186 @@ describe("store: youtube hidden / banned (persistent deletions)", () => {
     const s2 = createStore(dbPath);
     expect(s2.ytHiddenForPlaylist("PL1").map((h) => h.videoId)).toEqual(["v1"]);
     expect(s2.ytBans().map((b) => b.videoId)).toEqual(["v2"]);
+  });
+});
+
+describe("store: terminal GUI mode", () => {
+  const SESSION_ID = "aaaabbbb-1111-2222-3333-444455556666";
+  type TerminalOver = Partial<{ launchCommandOverride: string | null; mode: "tmux" | "gui"; agentSessionId: string | null }>;
+  const mkTerminal = (over: TerminalOver = {}) => {
+    const ws = store.createWorkspace({ name: "A", folder: "/tmp", launchCommand: "", color: null });
+    return store.createTerminal({ workspaceId: ws.id, title: "T1", color: null, tmuxSession: "tr_a_b", launchCommandOverride: null, ...over });
+  };
+
+  it("defaults a new terminal to tmux mode with no agent session", () => {
+    const t = mkTerminal();
+    expect(t.mode).toBe("tmux");
+    expect(t.agentSessionId).toBeNull();
+    expect(store.getTerminal(t.id)).toMatchObject({ mode: "tmux", agentSessionId: null });
+  });
+
+  it("round-trips a terminal created straight into gui mode with a session id", () => {
+    const t = mkTerminal({ mode: "gui", agentSessionId: SESSION_ID });
+    expect(t).toMatchObject({ mode: "gui", agentSessionId: SESSION_ID });
+    expect(store.getTerminal(t.id)).toMatchObject({ mode: "gui", agentSessionId: SESSION_ID });
+    // and it comes back the same way through the list queries the UI actually reads
+    expect(store.listTerminals(t.workspaceId)[0]).toMatchObject({ mode: "gui", agentSessionId: SESSION_ID });
+    expect(store.listAllTerminals().find((x) => x.id === t.id)).toMatchObject({ mode: "gui", agentSessionId: SESSION_ID });
+  });
+
+  it("setTerminalMode flips the surface both ways", () => {
+    const t = mkTerminal();
+    store.setTerminalMode(t.id, "gui");
+    expect(store.getTerminal(t.id)?.mode).toBe("gui");
+    store.setTerminalMode(t.id, "tmux");
+    expect(store.getTerminal(t.id)?.mode).toBe("tmux");
+  });
+
+  it("setTerminalAgentSession sets and clears the session id", () => {
+    const t = mkTerminal();
+    store.setTerminalAgentSession(t.id, SESSION_ID);
+    expect(store.getTerminal(t.id)?.agentSessionId).toBe(SESSION_ID);
+    store.setTerminalAgentSession(t.id, null);
+    expect(store.getTerminal(t.id)?.agentSessionId).toBeNull();
+  });
+
+  it("neither setter disturbs the terminal's other fields", () => {
+    const t = mkTerminal({ launchCommandOverride: "claude" });
+    store.updateTerminal(t.id, { title: "pinned name" });
+    store.setTerminalMode(t.id, "gui");
+    store.setTerminalAgentSession(t.id, SESSION_ID);
+    expect(store.getTerminal(t.id)).toMatchObject({
+      title: "pinned name", titleAuto: false, launchCommandOverride: "claude", position: 0,
+    });
+  });
+
+  it("a row written before the mode columns existed reads as a tmux terminal", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tr-guimode-"));
+    const dbPath = join(dir, "t.db");
+    const s1 = createStore(dbPath);
+    const ws = s1.createWorkspace({ name: "A", folder: "/tmp", launchCommand: "", color: null });
+
+    // Pre-GUI-mode writers didn't know about these columns; the migration's defaults have to cover them.
+    const raw = new Database(dbPath);
+    raw.prepare(`INSERT INTO terminals (id,workspaceId,title,color,icon,tmuxSession,launchCommandOverride,position,createdAt,titleAuto,systemPrompt)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      .run("tm_legacy01", ws.id, "Old tab", null, null, "tr_old_tab", null, 0, 1, 1, null);
+    raw.close();
+
+    const s2 = createStore(dbPath);
+    expect(s2.getTerminal("tm_legacy01")).toMatchObject({ mode: "tmux", agentSessionId: null });
+  });
+
+  it("a mode column holding junk still reads as tmux, never as gui", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tr-guimode-junk-"));
+    const dbPath = join(dir, "t.db");
+    const s1 = createStore(dbPath);
+    const ws = s1.createWorkspace({ name: "A", folder: "/tmp", launchCommand: "", color: null });
+    const t = s1.createTerminal({ workspaceId: ws.id, title: "T1", color: null, tmuxSession: "tr_a_b", launchCommandOverride: null });
+
+    const raw = new Database(dbPath);
+    raw.prepare(`UPDATE terminals SET mode='GUI' WHERE id=?`).run(t.id); // hand-edited / wrong case
+    raw.close();
+
+    expect(createStore(dbPath).getTerminal(t.id)?.mode).toBe("tmux");
+  });
+});
+
+describe("store: terminal GUI composer config", () => {
+  const PICKED: GuiConfig = { model: "claude-fable-5[1m]", effort: "ultracode", permissionMode: "auto", fastMode: true };
+  const mkTerminal = (over: Partial<{ guiConfig: GuiConfig }> = {}) => {
+    const ws = store.createWorkspace({ name: "A", folder: "/tmp", launchCommand: "", color: null });
+    return store.createTerminal({ workspaceId: ws.id, title: "T1", color: null, tmuxSession: "tr_a_b", launchCommandOverride: null, ...over });
+  };
+
+  it("gives a new terminal the default config", () => {
+    const t = mkTerminal();
+    expect(t.guiConfig).toEqual(DEFAULT_GUI_CONFIG);
+    expect(store.getTerminal(t.id)!.guiConfig).toEqual(DEFAULT_GUI_CONFIG);
+  });
+
+  it("round-trips a config supplied at create time through every read path", () => {
+    const t = mkTerminal({ guiConfig: PICKED });
+    expect(t.guiConfig).toEqual(PICKED);
+    expect(store.getTerminal(t.id)!.guiConfig).toEqual(PICKED);
+    expect(store.listTerminals(t.workspaceId)[0].guiConfig).toEqual(PICKED);
+    expect(store.listAllTerminals().find((x) => x.id === t.id)!.guiConfig).toEqual(PICKED);
+  });
+
+  it("setTerminalGuiConfig replaces it without disturbing the other fields", () => {
+    const t = mkTerminal();
+    store.updateTerminal(t.id, { title: "pinned name" });
+    store.setTerminalMode(t.id, "gui");
+    store.setTerminalGuiConfig(t.id, PICKED);
+    expect(store.getTerminal(t.id)).toMatchObject({
+      title: "pinned name", titleAuto: false, mode: "gui", position: 0, guiConfig: PICKED,
+    });
+  });
+
+  it("a row written before the column existed reads as the default config", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tr-guicfg-legacy-"));
+    const dbPath = join(dir, "t.db");
+    const s1 = createStore(dbPath);
+    const ws = s1.createWorkspace({ name: "A", folder: "/tmp", launchCommand: "", color: null });
+
+    const raw = new Database(dbPath);
+    raw.prepare(`INSERT INTO terminals (id,workspaceId,title,color,icon,tmuxSession,launchCommandOverride,position,createdAt,titleAuto,systemPrompt,mode,agentSessionId)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run("tm_legacy02", ws.id, "Old tab", null, null, "tr_old_tab", null, 0, 1, 1, null, "gui", null);
+    raw.close();
+
+    expect(createStore(dbPath).getTerminal("tm_legacy02")!.guiConfig).toEqual(DEFAULT_GUI_CONFIG);
+  });
+
+  it("a junk or partial guiConfig column still yields a usable config", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tr-guicfg-junk-"));
+    const dbPath = join(dir, "t.db");
+    const s1 = createStore(dbPath);
+    const ws = s1.createWorkspace({ name: "A", folder: "/tmp", launchCommand: "", color: null });
+    const t = s1.createTerminal({ workspaceId: ws.id, title: "T1", color: null, tmuxSession: "tr_a_b", launchCommandOverride: null });
+
+    const raw = new Database(dbPath);
+    const set = raw.prepare(`UPDATE terminals SET guiConfig=? WHERE id=?`);
+
+    set.run("not json at all", t.id);
+    expect(createStore(dbPath).getTerminal(t.id)!.guiConfig).toEqual(DEFAULT_GUI_CONFIG);
+
+    set.run(JSON.stringify({ effort: "banana", permissionMode: "yolo" }), t.id);
+    expect(createStore(dbPath).getTerminal(t.id)!.guiConfig).toEqual(DEFAULT_GUI_CONFIG);
+
+    // a partial blob keeps what it can and defaults the rest
+    set.run(JSON.stringify({ model: "opus" }), t.id);
+    expect(createStore(dbPath).getTerminal(t.id)!.guiConfig).toEqual({ ...DEFAULT_GUI_CONFIG, model: "opus" });
+    raw.close();
+  });
+});
+
+describe("store: sticky GUI defaults", () => {
+  const PICKED: GuiConfig = { model: "opus", effort: "xhigh", permissionMode: "full-access", fastMode: false };
+
+  it("returns the defaults until something is stored", () => {
+    expect(store.getGuiDefaults()).toEqual(DEFAULT_GUI_CONFIG);
+  });
+
+  it("round-trips the last choice", () => {
+    store.setGuiDefaults(PICKED);
+    expect(store.getGuiDefaults()).toEqual(PICKED);
+  });
+
+  it("survives a reopen and shrugs off a corrupt blob", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tr-guidefaults-"));
+    const dbPath = join(dir, "t.db");
+    createStore(dbPath).setGuiDefaults(PICKED);
+    expect(createStore(dbPath).getGuiDefaults()).toEqual(PICKED);
+
+    const raw = new Database(dbPath);
+    raw.prepare(`UPDATE settings SET value='{nope' WHERE key='guiDefaults'`).run();
+    raw.close();
+    expect(createStore(dbPath).getGuiDefaults()).toEqual(DEFAULT_GUI_CONFIG);
+  });
+
+  it("stays out of the flat settings object", () => {
+    store.setGuiDefaults(PICKED);
+    expect(store.getSettings()).not.toHaveProperty("guiDefaults");
   });
 });

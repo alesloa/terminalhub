@@ -42,9 +42,16 @@ export async function terminalRoutes(app: FastifyInstance, ctx: AppContext) {
       // A line to type into the agent once it's up (e.g. `/loop …` / `/goal …` to start a Claude
       // loop). Sent via send-keys after the CLI is detected running — see runKickoff.
       kickoff: z.string().max(2000).nullable().optional(),
+      // "gui" opens the in-app Claude chat instead of an agent in the pane. The tmux session is
+      // still created either way — it's what the terminal switches back to.
+      mode: z.enum(["tmux", "gui"]).optional(),
+      // Bind the new terminal to an existing Claude conversation (used by "Open in GUI" on a past
+      // session). Left unset, a GUI terminal starts a fresh one.
+      agentSessionId: z.string().min(1).max(200).nullable().optional(),
     }).safeParse(req.body ?? {});
     if (!b.success) return reply.code(400).send({ error: "invalid body" });
 
+    const mode = b.data.mode ?? "tmux";
     const count = ctx.store.listTerminals(wsId).length;
     // create the row first (generates the terminal id), then derive + persist the session name
     const term = ctx.store.createTerminal({
@@ -54,6 +61,11 @@ export async function terminalRoutes(app: FastifyInstance, ctx: AppContext) {
       tmuxSession: "pending",
       launchCommandOverride: b.data.launchCommandOverride ?? null,
       systemPrompt: b.data.systemPrompt ?? null,
+      mode,
+      agentSessionId: b.data.agentSessionId ?? null,
+      // Sticky composer picks: a new chat opens on the last model/effort/permission the user chose.
+      // Seeded on every terminal, not just GUI ones, so a later tmux → GUI switch inherits them too.
+      guiConfig: ctx.store.getGuiDefaults(),
     });
     const session = sessionName(wsId, term.id);
     ctx.store.setTerminalSession(term.id, session);
@@ -79,13 +91,16 @@ export async function terminalRoutes(app: FastifyInstance, ctx: AppContext) {
       if (inj.kind === "flag") promptArgs = " " + inj.args.map(shQuote).join(" ");
     } catch { /* best-effort: never block terminal creation on a prompt-injection failure */ }
 
-    const base = (b.data.launchCommandOverride ?? ws.launchCommand).trim();
+    // A GUI terminal leaves its pane at a bare shell: the agent runs as an SDK child instead, and
+    // launching a second one here would fight it for the same conversation. The pane stays ready for
+    // the switch back, which types the resume command into it (gui/switch.ts).
+    const base = mode === "gui" ? "" : (b.data.launchCommandOverride ?? ws.launchCommand).trim();
     const launch = base ? base + promptArgs : "";
     if (launch) await ctx.tmux.sendKeys(session, launch);
 
     // Loop kickoff: once the agent is actually running, type the loop/goal command into it. Fire and
     // forget — runKickoff polls + waits in the background so the create response returns immediately.
-    const kickoff = b.data.kickoff?.trim();
+    const kickoff = mode === "gui" ? "" : b.data.kickoff?.trim();
     if (kickoff) void runKickoff(ctx.tmux, session, kickoff);
 
     return { terminal: { ...ctx.store.getTerminal(term.id)! } };

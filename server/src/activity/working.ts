@@ -164,9 +164,19 @@ export function createWorkingTracker(ctx: AppContext) {
       const wsById = new Map(workspaces.map((w) => [w.id, w]));
       const bins = agentBinaries(ctx.store.listCustomAgents());
 
+      const all = ctx.store.listAllTerminals();
+
+      // A GUI-mode terminal's pane sits at a bare shell — the agent runs as an SDK child, so there is
+      // nothing to scrape. Its session knows exactly when a turn is in flight, which is a better
+      // signal than the regexes below, not a worse one. ("waiting" means it's blocked on the user,
+      // which is attention's job and outranks working in the row.)
+      const guiWorking = all
+        .filter((t) => t.mode === "gui" && ctx.gui.get(t.id)?.state() === "running")
+        .map((t) => ({ terminalId: t.id, workspaceId: t.workspaceId }));
+
       const live = new Set(await ctx.tmux.listSessions());
-      const agentTerms = ctx.store
-        .listAllTerminals()
+      const agentTerms = all
+        .filter((t) => t.mode !== "gui")
         .map((t) => ({ t, bin: agentBinary(effectiveLaunch(t, wsById.get(t.workspaceId))) }))
         .filter(({ t, bin }) => live.has(t.tmuxSession) && bin !== "" && bins.has(bin));
 
@@ -176,7 +186,7 @@ export function createWorkingTracker(ctx: AppContext) {
           return isAgentWorkingNow(text, bin) ? { terminalId: t.id, workspaceId: t.workspaceId } : null;
         }),
       );
-      return results.filter((r): r is WorkingItem => r !== null);
+      return [...guiWorking, ...results.filter((r): r is WorkingItem => r !== null)];
     },
   };
 }

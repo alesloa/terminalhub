@@ -13,7 +13,9 @@ import type {
   CopilotSettings, CopilotConversation, CopilotMessage, CopilotSkillCard, CopilotSkillAccount, CopilotJob, CopilotReportMode,
   CopilotMcpServer, CopilotMcpImportable, CopilotMcpTransport,
   TvCatalog, TvStream, RadioStation, RadioFacets, YouTubeSearchResult, YouTubePlaylistResult, YouTubePlaylistInfo, YouTubeItem, TvFavorite, TvRecent, TvSettings, TvSource, YtHidden, YtHideInput,
+  TerminalMode,
 } from "./types";
+import type { GuiConfig, GuiCommand, GuiModel, GuiStatus } from "./guiTypes";
 
 const TOKEN_KEY = "terminalhub_token";
 export function getToken() { return localStorage.getItem(TOKEN_KEY); }
@@ -137,7 +139,10 @@ export const api = {
       req<{ preset: SpacePreset }>("PATCH", `/api/space-presets/${id}`, b),
     remove: (id: string) => req<{ ok: true }>("DELETE", `/api/space-presets/${id}`),
   },
-  createTerminal: (wsId: string, b: { title?: string; color?: string | null; launchCommandOverride?: string | null; agentId?: string | null; systemPrompt?: { text: string; includeParent: boolean } | null; kickoff?: string | null }) =>
+  // `mode: "gui"` opens the in-app Claude chat instead of an agent in the pane (the tmux session is
+  // still created — it's what the terminal switches back to); `agentSessionId` binds the new GUI
+  // terminal to an existing Claude conversation instead of starting a fresh one.
+  createTerminal: (wsId: string, b: { title?: string; color?: string | null; launchCommandOverride?: string | null; agentId?: string | null; systemPrompt?: { text: string; includeParent: boolean } | null; kickoff?: string | null; mode?: TerminalMode; agentSessionId?: string | null }) =>
     req<{ terminal: Terminal }>("POST", `/api/workspaces/${wsId}/terminals`, b),
   // `auto: true` flags an auto-titler update (leaves the tab unlocked); omit it for a user rename,
   // which pins the name so the auto-titler won't overwrite it.
@@ -147,6 +152,24 @@ export const api = {
   moveTerminal: (id: string, index: number) =>
     req<{ terminal: Terminal }>("POST", `/api/terminals/${id}/move`, { index }),
   deleteTerminal: (id: string) => req<{ ok: true }>("DELETE", `/api/terminals/${id}`),
+  // Move a terminal between surfaces: the xterm pane ("tmux") and the in-app Claude chat ("gui").
+  // Rejects with 409 while the pane is mid-turn — the thrown Error carries the server's reason, which
+  // is actionable ("interrupt the agent first"), so callers surface `err.message` verbatim.
+  setTerminalMode: (id: string, mode: TerminalMode) =>
+    req<{ terminal: Terminal }>("POST", `/api/terminals/${id}/mode`, { mode }),
+  // Which surface a terminal is on right now + its GUI session's liveness. The chat itself streams
+  // over /ws/gui/:id (see guiSocketUrl); this is the point-in-time REST view.
+  guiStatus: (id: string) => req<GuiStatus>("GET", `/api/terminals/${id}/gui`),
+  // The composer's model picker. Read from the installed CLI at runtime — there is no baked-in model
+  // catalog anywhere in this app, so a model Claude Code ships tomorrow shows up without a release.
+  guiModels: (id: string) => req<{ models: GuiModel[] }>("GET", `/api/terminals/${id}/gui/models`),
+  // The composer's slash-command menu — skills, built-ins and plugins the installed CLI reports.
+  guiCommands: (id: string) => req<{ commands: GuiCommand[] }>("GET", `/api/terminals/${id}/gui/commands`),
+  // Change a GUI terminal's model / reasoning / permission knobs. Partial: only the sent keys move.
+  // A permissionMode change restarts the agent behind the chat (the conversation resumes), so the
+  // socket reports a non-idle state for a moment afterwards. Returns what the server actually stored.
+  setGuiConfig: (id: string, patch: Partial<GuiConfig>) =>
+    req<{ config: GuiConfig }>("PATCH", `/api/terminals/${id}/gui/config`, patch),
   // Full scrollback of a terminal's tmux pane as plain text (history + live screen), for the buffer
   // viewer + copy-all. `lines` optionally caps to the last N history lines; omitted = the whole buffer.
   terminalScrollback: (id: string, lines?: number) =>
@@ -772,6 +795,15 @@ export function copilotSocketUrl(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const t = getToken();
   return `${proto}//${location.host}/ws/copilot${t ? `?token=${encodeURIComponent(t)}` : ""}`;
+}
+
+/** WebSocket URL for one terminal's GUI chat stream, carrying the auth token as ?token= (the WS
+ *  upgrade can't send an Authorization header). Same shape as copilotSocketUrl, parameterised by
+ *  terminal id. */
+export function guiSocketUrl(terminalId: string): string {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const t = getToken();
+  return `${proto}//${location.host}/ws/gui/${encodeURIComponent(terminalId)}${t ? `?token=${encodeURIComponent(t)}` : ""}`;
 }
 
 /** Body accepted by POST /api/reminders (and, all-optional, by PATCH). The browser sends `fireAt` as

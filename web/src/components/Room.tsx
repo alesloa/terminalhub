@@ -27,6 +27,18 @@ const DURATION = 320; // ms — expand/collapse animation. Tune to taste.
 // strip. (A fullscreen room is now flush to the very top, covering the top + spaces bars.)
 const MAXIMIZED_GAP = 8; // px
 
+// ── The centre column's split ──────────────────────────────────────────────────────────────
+// The editor sits on top, the terminal dock underneath, and a handle between them the user drags.
+/** The drag handle's own height (`h-1.5`). It stays on screen even when the dock covers the editor
+ *  — that strip is the only thing left to grab to pull the file back down. */
+const DOCK_HANDLE_HEIGHT = 6;
+/** Floor for the dock (matches its `min-h-[120px]`). */
+const MIN_DOCK_HEIGHT = 120;
+/** The least room worth leaving the editor. Drag past it and the dock covers the column entirely,
+ *  tab strip and all, so pulling up ends in a clean full-height terminal instead of a sliver of
+ *  editor nobody can read. */
+const MIN_EDITOR_HEIGHT = 120;
+
 /** Owns a per-room store and provides it to the room's subtree. One per open workspace. */
 export function Room({ room }: { room: OpenRoom }) {
   const qc = useQueryClient();
@@ -103,7 +115,9 @@ function RoomBody({ room }: { room: OpenRoom }) {
 
   const regionRef = useRef<HTMLDivElement>(null);
   const dockHeight = useRoom(s => s.dockHeight);
+  const dockFull = useRoom(s => s.dockFull);
   const setDockHeight = useRoom(s => s.setDockHeight);
+  const setDockFull = useRoom(s => s.setDockFull);
 
   // Expand-from-card animation. Mount collapsed onto the card's rect, then flip to
   // full-screen next frame so the CSS transition fires. "Back to map" reverses it;
@@ -223,8 +237,8 @@ function RoomBody({ room }: { room: OpenRoom }) {
   const setViewMirror = useRoom(s => s.setViewMirror);
   const reportRoomView = useUi(s => s.reportRoomView);
   useEffect(() => {
-    reportRoomView(workspaceId, { activeView, scmTab, leftOpen, rightOpen, sidebarWidth, terminalListWidth, dockHeight });
-  }, [activeView, scmTab, leftOpen, rightOpen, sidebarWidth, terminalListWidth, dockHeight, workspaceId, reportRoomView]);
+    reportRoomView(workspaceId, { activeView, scmTab, leftOpen, rightOpen, sidebarWidth, terminalListWidth, dockHeight, dockFull });
+  }, [activeView, scmTab, leftOpen, rightOpen, sidebarWidth, terminalListWidth, dockHeight, dockFull, workspaceId, reportRoomView]);
   // Presentation mirroring (viewer side): converge this room's chrome to the host's, so switching the
   // activity-bar view, collapsing a panel, or resizing one on the host follows here too. Absent = not
   // mirrored (keep our own); otherwise adopt the host's when it differs (a no-op once matched, so no loop).
@@ -233,10 +247,11 @@ function RoomBody({ room }: { room: OpenRoom }) {
     const m = mirrorView;
     if (!m) return;
     if (m.activeView !== activeView || m.scmTab !== scmTab || m.leftOpen !== leftOpen || m.rightOpen !== rightOpen
-      || m.sidebarWidth !== sidebarWidth || m.terminalListWidth !== terminalListWidth || m.dockHeight !== dockHeight) {
+      || m.sidebarWidth !== sidebarWidth || m.terminalListWidth !== terminalListWidth || m.dockHeight !== dockHeight
+      || m.dockFull !== dockFull) {
       setViewMirror(m);
     }
-  }, [mirrorView, activeView, scmTab, leftOpen, rightOpen, sidebarWidth, terminalListWidth, dockHeight, setViewMirror]);
+  }, [mirrorView, activeView, scmTab, leftOpen, rightOpen, sidebarWidth, terminalListWidth, dockHeight, dockFull, setViewMirror]);
   // Re-render on viewport resize so a maximized room keeps filling the screen.
   const [, force] = useReducer((c: number) => c + 1, 0);
   useEffect(() => {
@@ -280,7 +295,12 @@ function RoomBody({ room }: { room: OpenRoom }) {
     const onMove = (ev: PointerEvent) => {
       const rect = regionRef.current?.getBoundingClientRect();
       if (!rect) return;
-      setDockHeight(Math.max(120, Math.min(rect.height - 120, rect.bottom - ev.clientY)));
+      const want = rect.bottom - ev.clientY;              // the dock height the pointer is asking for
+      const ceiling = rect.height - DOCK_HANDLE_HEIGHT;   // the dock with the whole column to itself
+      // Dragged past the editor's floor: cover it completely rather than leave an unreadable sliver
+      // (and a gap where the tab strip refuses to shrink any further).
+      if (want >= ceiling - MIN_EDITOR_HEIGHT) { setDockFull(true); return; }
+      setDockHeight(Math.max(MIN_DOCK_HEIGHT, Math.min(ceiling - MIN_EDITOR_HEIGHT, want)));
     };
     const onUp = () => { release(); window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
     window.addEventListener("pointermove", onMove);
@@ -411,12 +431,17 @@ function RoomBody({ room }: { room: OpenRoom }) {
           <Sidebar rootPath={ws.folder} />
 
           <div ref={regionRef} className="flex-1 min-w-0 flex flex-col">
-            <EditorArea rootPath={ws.folder} />
+            <EditorArea rootPath={ws.folder} covered={dockFull} />
+            {/* The handle keeps its place in the column when the dock covers the editor — it lands
+                right under the title bar, still there to pull the file back down. */}
             <div onPointerDown={startDrag}
+              title={dockFull ? "Drag down to bring the editor back" : "Drag to resize — pull up to cover the editor"}
               className="h-1.5 shrink-0 cursor-row-resize bg-panel hover:bg-accent/40" />
-            <div className="shrink min-h-[120px]" style={{ height: dockHeight }}>
+            <div className={dockFull ? "flex-1 min-h-0" : "shrink min-h-[120px]"}
+              style={dockFull ? undefined : { height: dockHeight }}>
               <TerminalDock
                 workspaceId={ws.id}
+                folder={ws.folder}
                 terminals={terminals}
                 activeTerminal={activeTerminal}
                 onStartTerminal={openAgentPicker}

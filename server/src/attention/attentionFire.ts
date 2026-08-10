@@ -40,9 +40,11 @@ export function createAttentionFirer(deps: {
       if (!term) return false;
 
       // Only built-in coding-agent sessions notify — a plain shell, dev server, or registered custom
-      // launcher (npm run dev, codegraph) ringing the bell or going quiet must never fire.
+      // launcher (npm run dev, codegraph) ringing the bell or going quiet must never fire. A GUI
+      // terminal IS a Claude session by definition, and its pane holds a bare shell, so the
+      // launch-command test would wrongly reject it in any workspace not launching an agent.
       const ws = store.getWorkspace(term.workspaceId);
-      if (!isAgentTerminal(effectiveLaunch(term, ws), builtinAgentBinaries())) return false;
+      if (term.mode !== "gui" && !isAgentTerminal(effectiveLaunch(term, ws), builtinAgentBinaries())) return false;
 
       const t = now();
       const prev = lastFired.get(terminalId);

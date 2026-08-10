@@ -11,6 +11,7 @@ import type { NotifyLevel, NotifyCategory } from "../notify/bus.js";
 import type { AiConfig } from "../ai/types.js";
 import type { SkillInstall, CatalogSource, CatalogEntry } from "../skills/types.js";
 import { DEFAULT_CATALOG_SOURCES } from "../skills/defaults.js";
+import { DEFAULT_GUI_CONFIG, parseGuiConfig, type GuiConfig } from "../gui/config.js";
 import { computeNextOccurrence } from "../scheduler/recurrence.js";
 
 const EMPTY_AI_CONFIG: AiConfig = { providers: [], defaultProviderId: null };
@@ -170,10 +171,26 @@ function parseTerminalPrompt(raw: string | null | undefined): Terminal["systemPr
   } catch { return null; }
 }
 
+/** Parse a stored GUI-composer blob → GuiConfig. A row written before the column existed, a NULL, or
+ *  a hand-edited value all fall back to the defaults: the composer must always have a real config. */
+function parseTerminalGuiConfig(raw: string | null | undefined): GuiConfig {
+  if (!raw) return { ...DEFAULT_GUI_CONFIG };
+  try { return parseGuiConfig(JSON.parse(raw)); } catch { return { ...DEFAULT_GUI_CONFIG }; }
+}
+
 /** Map a raw terminals row to a Terminal: SQLite stores titleAuto as 1/0, the type wants a boolean,
  *  and systemPrompt is an opaque JSON column. (A pre-migration row missing a column reads as default.) */
 function rowToTerminal(row: any): Terminal {
-  return { ...row, titleAuto: row.titleAuto !== 0, systemPrompt: parseTerminalPrompt(row.systemPrompt) };
+  return {
+    ...row,
+    titleAuto: row.titleAuto !== 0,
+    systemPrompt: parseTerminalPrompt(row.systemPrompt),
+    // Anything that isn't the literal 'gui' is a tmux terminal — that keeps a row written before
+    // the column existed (or hand-edited to junk) on the safe, classic path.
+    mode: row.mode === "gui" ? "gui" : "tmux",
+    agentSessionId: row.agentSessionId ?? null,
+    guiConfig: parseTerminalGuiConfig(row.guiConfig),
+  };
 }
 
 // access_keys stores mirror/lock as 0/1 INTEGERs; expose them as real booleans to the rest of the app.
@@ -258,7 +275,7 @@ export interface Store {
   reassignTerminals(fromWorkspaceId: string, toWorkspaceId: string): void;
   getHomeSpaceId(): string | undefined;
   getDesktopWorkspaceId(): string | undefined;
-  createTerminal(t: Pick<Terminal,"workspaceId"|"title"|"color"|"tmuxSession"|"launchCommandOverride"> & Partial<Pick<Terminal,"systemPrompt">>): Terminal;
+  createTerminal(t: Pick<Terminal,"workspaceId"|"title"|"color"|"tmuxSession"|"launchCommandOverride"> & Partial<Pick<Terminal,"systemPrompt"|"mode"|"agentSessionId"|"guiConfig">>): Terminal;
   getTerminal(id: string): Terminal | undefined;
   listTerminals(workspaceId: string): Terminal[];
   listAllTerminals(): Terminal[];
@@ -267,6 +284,12 @@ export interface Store {
   // rename and locks the tab (titleAuto → false) so nothing overwrites it.
   updateTerminal(id: string, patch: Partial<Pick<Terminal,"title"|"color"|"icon">> & { auto?: boolean }): void;
   setTerminalSession(id: string, tmuxSession: string): void;
+  /** Flip a terminal between the tmux pane and the in-app GUI chat. */
+  setTerminalMode(id: string, mode: Terminal["mode"]): void;
+  /** Bind a terminal to the Claude session id its conversation lives under (null to unbind). */
+  setTerminalAgentSession(id: string, agentSessionId: string | null): void;
+  /** Persist the GUI composer's picks for one chat. */
+  setTerminalGuiConfig(id: string, config: GuiConfig): void;
   moveTerminal(id: string, index: number): void;
   deleteTerminal(id: string): void;
   getSettings(): Settings;
@@ -296,6 +319,11 @@ export interface Store {
   // `removedAgents` settings key). The picker filters these out; re-adding clears the id.
   getRemovedAgents(): string[];
   setRemovedAgents(ids: string[]): void;
+  // Sticky GUI-composer defaults (a GuiConfig JSON blob under the `guiDefaults` settings key). Every
+  // config change writes here too, so the next new chat opens on the last model/effort/permission
+  // the user picked instead of resetting. Unset = DEFAULT_GUI_CONFIG.
+  getGuiDefaults(): GuiConfig;
+  setGuiDefaults(config: GuiConfig): void;
   // Copilot singleton settings (JSON blob under the `copilot` settings key). getCopilotSettings
   // merges over defaults field-by-field; setCopilotSettings persists the validated whole object.
   getCopilotSettings(): CopilotSettings;
@@ -562,6 +590,15 @@ export function createStore(path: string): Store {
   // `systemPrompt` is the per-terminal agent system-prompt layer set at launch (opaque JSON
   // {text,includeParent}; null = none) — see agents/systemPrompt.ts. Add it to older terminals tables.
   if (!tmCols.some(c => c.name === "systemPrompt")) db.exec(`ALTER TABLE terminals ADD COLUMN systemPrompt TEXT`);
+  // `mode` picks the surface: 'tmux' (the pane) or 'gui' (the in-app Claude chat). Every existing
+  // terminal predates GUI mode, so the default keeps them exactly as they were. `agentSessionId`
+  // remembers which Claude session the terminal's conversation belongs to, so switching surfaces
+  // resumes the same thread instead of starting a new one.
+  if (!tmCols.some(c => c.name === "mode")) db.exec(`ALTER TABLE terminals ADD COLUMN mode TEXT NOT NULL DEFAULT 'tmux'`);
+  if (!tmCols.some(c => c.name === "agentSessionId")) db.exec(`ALTER TABLE terminals ADD COLUMN agentSessionId TEXT`);
+  // `guiConfig` is the GUI composer's model / reasoning / permission picks for this chat, as opaque
+  // JSON (null = the defaults). Only GUI mode reads it, so an older tmux row needs no backfill.
+  if (!tmCols.some(c => c.name === "guiConfig")) db.exec(`ALTER TABLE terminals ADD COLUMN guiConfig TEXT`);
   // `position` orders terminals within their workspace's list (drag-reorder). Older tables ordered by
   // createdAt alone; add the column, then backfill contiguous positions per workspace IN that same
   // createdAt order so the existing visible order is preserved exactly. Only on first add — never
@@ -959,10 +996,10 @@ export function createStore(path: string): Store {
       // New terminals append to the end of their workspace's list — positions stay contiguous, so the
       // current count is the next free slot. Fresh tabs start auto-titled (titleAuto=1).
       const position = (db.prepare(`SELECT COUNT(*) AS c FROM terminals WHERE workspaceId=?`).get(t.workspaceId) as { c: number }).c;
-      const term: Terminal = { id: id("tm_"), createdAt: Date.now(), icon: null, position, titleAuto: true, systemPrompt: null, ...t };
-      db.prepare(`INSERT INTO terminals (id,workspaceId,title,color,icon,tmuxSession,launchCommandOverride,position,createdAt,titleAuto,systemPrompt)
-        VALUES (@id,@workspaceId,@title,@color,@icon,@tmuxSession,@launchCommandOverride,@position,@createdAt,@titleAuto,@systemPrompt)`)
-        .run({ ...term, titleAuto: 1, systemPrompt: term.systemPrompt ? JSON.stringify(term.systemPrompt) : null }); // bind 1, not the boolean (better-sqlite3 won't bind booleans)
+      const term: Terminal = { id: id("tm_"), createdAt: Date.now(), icon: null, position, titleAuto: true, systemPrompt: null, mode: "tmux", agentSessionId: null, guiConfig: { ...DEFAULT_GUI_CONFIG }, ...t };
+      db.prepare(`INSERT INTO terminals (id,workspaceId,title,color,icon,tmuxSession,launchCommandOverride,position,createdAt,titleAuto,systemPrompt,mode,agentSessionId,guiConfig)
+        VALUES (@id,@workspaceId,@title,@color,@icon,@tmuxSession,@launchCommandOverride,@position,@createdAt,@titleAuto,@systemPrompt,@mode,@agentSessionId,@guiConfig)`)
+        .run({ ...term, titleAuto: 1, systemPrompt: term.systemPrompt ? JSON.stringify(term.systemPrompt) : null, guiConfig: JSON.stringify(term.guiConfig) }); // bind 1, not the boolean (better-sqlite3 won't bind booleans)
       return term;
     },
     getTerminal(tid) { const r = db.prepare(`SELECT * FROM terminals WHERE id=?`).get(tid); return r ? rowToTerminal(r) : undefined; },
@@ -979,6 +1016,15 @@ export function createStore(path: string): Store {
     },
     setTerminalSession(tid, tmuxSession) {
       db.prepare(`UPDATE terminals SET tmuxSession=? WHERE id=?`).run(tmuxSession, tid);
+    },
+    setTerminalMode(tid, mode) {
+      db.prepare(`UPDATE terminals SET mode=? WHERE id=?`).run(mode, tid);
+    },
+    setTerminalAgentSession(tid, agentSessionId) {
+      db.prepare(`UPDATE terminals SET agentSessionId=? WHERE id=?`).run(agentSessionId, tid);
+    },
+    setTerminalGuiConfig(tid, config) {
+      db.prepare(`UPDATE terminals SET guiConfig=? WHERE id=?`).run(JSON.stringify(config), tid);
     },
     moveTerminal(tid, index) {
       const cur = this.getTerminal(tid); if (!cur) return;
@@ -1006,7 +1052,7 @@ export function createStore(path: string): Store {
     getSettings() {
       const rows = db.prepare(`SELECT key,value FROM settings`).all() as { key: string; value: string }[];
       const s: any = { ...DEFAULT_SETTINGS };
-      for (const r of rows) { if (r.key === "aiConfig" || r.key === "betterComments" || r.key === "breaks" || r.key === "copilot" || r.key === "keptVoices" || r.key === "homeSpaceId" || r.key === "desktopWorkspaceId" || r.key === "canvasBackground" || r.key === "stageDock" || r.key === "drive.clientId" || r.key === "drive.clientSecret" || r.key === "drive.redirect") continue; s[r.key] = parseSetting(r.key, r.value); }
+      for (const r of rows) { if (r.key === "aiConfig" || r.key === "betterComments" || r.key === "breaks" || r.key === "copilot" || r.key === "keptVoices" || r.key === "homeSpaceId" || r.key === "desktopWorkspaceId" || r.key === "canvasBackground" || r.key === "stageDock" || r.key === "guiDefaults" || r.key === "drive.clientId" || r.key === "drive.clientSecret" || r.key === "drive.redirect") continue; s[r.key] = parseSetting(r.key, r.value); }
       return s as Settings;
     },
     setSettings(patch) {
@@ -1118,6 +1164,15 @@ export function createStore(path: string): Store {
     setRemovedAgents(ids) {
       db.prepare(`INSERT INTO settings (key,value) VALUES ('removedAgents',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
         .run(JSON.stringify(ids));
+    },
+    getGuiDefaults() {
+      const row = db.prepare(`SELECT value FROM settings WHERE key='guiDefaults'`).get() as { value: string } | undefined;
+      if (!row) return { ...DEFAULT_GUI_CONFIG };
+      try { return parseGuiConfig(JSON.parse(row.value)); } catch { return { ...DEFAULT_GUI_CONFIG }; }
+    },
+    setGuiDefaults(config) {
+      db.prepare(`INSERT INTO settings (key,value) VALUES ('guiDefaults',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+        .run(JSON.stringify(config));
     },
     getCopilotSettings() {
       const row = db.prepare(`SELECT value FROM settings WHERE key='copilot'`).get() as { value: string } | undefined;

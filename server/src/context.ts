@@ -20,10 +20,11 @@ import { builtinAgentBinaries } from "./activity/working.js";
 import { createDriveController, type DriveController } from "./drive/controller.js";
 import { createSessionsController, type SessionsController } from "./presence/sessions.js";
 import { createTunnelController, type TunnelController } from "./tunnel/controller.js";
+import { createGuiManager, type GuiManager } from "./gui/manager.js";
 import type { GoogleConfig } from "./config.js";
 import { dirname, join } from "node:path";
 
-export interface AppContext { store: Store; tmux: TmuxController; git: GitController; github: GithubController; ai: AiController; claude: ClaudeController; skills: SkillsController; stt: SttController; clip: ClipController; notify: NotifyBus; pending: PendingNotifier; pushover: PushoverController; scheduler: ReminderScheduler; copilotScheduler: CopilotScheduler; mcp: McpHub; attentionWatcher: AttentionWatcher; attentionFirer: AttentionFirer; drive: DriveController; sessions: SessionsController; tunnel: TunnelController; sysPromptDir: string; }
+export interface AppContext { store: Store; tmux: TmuxController; git: GitController; github: GithubController; ai: AiController; claude: ClaudeController; skills: SkillsController; stt: SttController; clip: ClipController; notify: NotifyBus; pending: PendingNotifier; pushover: PushoverController; scheduler: ReminderScheduler; copilotScheduler: CopilotScheduler; mcp: McpHub; attentionWatcher: AttentionWatcher; attentionFirer: AttentionFirer; drive: DriveController; sessions: SessionsController; tunnel: TunnelController; gui: GuiManager; sysPromptDir: string; }
 
 export function createContext(dbPath: string, google: GoogleConfig | null = null): AppContext {
   const store = createStore(dbPath);
@@ -83,6 +84,9 @@ export function createContext(dbPath: string, google: GoogleConfig | null = null
       statePath: join(dirname(dbPath), "tunnel.json"),
       logPath: join(dirname(dbPath), "cloudflared.log"),
     }),
+    // Live GUI-mode Claude sessions, one per terminal. Deliberately outlives browser sockets — closing
+    // a tab must not kill the agent, same as detaching from tmux doesn't. Reaped on app close.
+    gui: createGuiManager(),
     // Ephemeral per-terminal files for Claude's --append-system-prompt-file (next to the DB). Written
     // just before launch by the terminals route; see agents/systemPrompt.ts.
     sysPromptDir: join(dirname(dbPath), "sysprompts"),

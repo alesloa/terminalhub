@@ -1,5 +1,6 @@
 import type { NotifyLevel, NotifyCategory } from "./notify/bus.js";
 import type { SpaceConfig } from "./spaces/types.js";
+import type { GuiConfig } from "./gui/config.js";
 
 export type { SpaceConfig, SpacePreset, SpaceCatalog, SkillCard, CommandCard, McpCard } from "./spaces/types.js";
 
@@ -105,8 +106,21 @@ export interface Terminal {
   // Per-terminal system-prompt layer set at launch. `includeParent` false = ignore global+workspace
   // and use this text alone. null = no terminal prompt. See agents/systemPrompt.ts.
   systemPrompt: { text: string; includeParent: boolean } | null;
+  // Which surface this terminal is showing. "tmux" is the classic pane; "gui" swaps it for the
+  // in-app Claude chat driven by the Agent SDK. The tmux session keeps existing either way, so a
+  // terminal can be flipped back and forth — see gui/switch.ts.
+  mode: TerminalMode;
+  // The Claude session id this terminal's conversation lives under, once known. Set when a GUI
+  // terminal starts (the host generates it) or when a tmux pane is switched to GUI (detected from
+  // the running agent). It's what makes the handoff continuous in both directions.
+  agentSessionId: string | null;
+  // The GUI composer's model / reasoning / permission picks for this chat. Always a real object —
+  // a missing or corrupt column reads back as DEFAULT_GUI_CONFIG. See gui/config.ts.
+  guiConfig: GuiConfig;
   alive?: boolean; // derived from tmux, not stored
 }
+
+export type TerminalMode = "tmux" | "gui";
 
 // How a terminal earns a "needs attention" notification: `explicit` = bell / OSC-notify only,
 // `silence` = went quiet after activity only, `layered` = either (the never-miss default).

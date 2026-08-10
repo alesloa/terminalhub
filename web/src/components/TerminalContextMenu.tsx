@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Terminal } from "../api/types";
+import type { Terminal, TerminalMode } from "../api/types";
 import { useUi } from "../store/ui";
 
 // Base hues across the spectrum (lime, orange, teal, etc.). The lightness slider
@@ -56,6 +56,7 @@ interface Props {
   onColor: (id: string, color: string | null) => void;
   onClose: (ids: string[]) => void;
   onForkSession?: (t: Terminal) => void; // clone the Claude session running in this terminal
+  onSetMode?: (t: Terminal, mode: TerminalMode) => void; // flip between the xterm pane and the GUI chat
   dismiss: () => void;
 }
 
@@ -64,7 +65,7 @@ const MENU_W = 224, MENU_H = 320, FLYOUT_W = 176; // MENU_H = first-paint estima
 /** Native-replacing right-click menu for a terminal tab. Opens at the cursor (like any context
  *  menu), clamped into the viewport so it never hangs off an edge; the Text Color flyout flips to
  *  the left when a right-side one would overflow. */
-export function TerminalContextMenu({ anchor, term, index, terminals, onRename, onChangeIcon, onColor, onClose, onForkSession, dismiss }: Props) {
+export function TerminalContextMenu({ anchor, term, index, terminals, onRename, onChangeIcon, onColor, onClose, onForkSession, onSetMode, dismiss }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [menuH, setMenuH] = useState(MENU_H);
   const [colorOpen, setColorOpen] = useState(false);
@@ -128,12 +129,14 @@ export function TerminalContextMenu({ anchor, term, index, terminals, onRename, 
         )}
       </div>
 
-      {onForkSession && (
-        <>
-          <Sep />
-          <Item label="Fork Agent Session" onClick={() => run(() => onForkSession(term))} />
-        </>
+      {/* Agent-session group. "Open in GUI Chat" swaps this terminal's pane for the in-app Claude
+          chat (and back); both surfaces continue the same conversation. */}
+      {(onSetMode || onForkSession) && <Sep />}
+      {onSetMode && (
+        <Item label={term.mode === "gui" ? "Back to Terminal" : "Open in GUI Chat"}
+          onClick={() => run(() => onSetMode(term, term.mode === "gui" ? "tmux" : "gui"))} />
       )}
+      {onForkSession && <Item label="Fork Agent Session" onClick={() => run(() => onForkSession(term))} />}
 
       <Sep />
       <Item label="Close" onClick={() => run(() => onClose([term.id]))} />

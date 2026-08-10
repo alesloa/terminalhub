@@ -56,6 +56,14 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
   });
   const pick = (command: string, title: string, agentId: string | null = null) => { if (!launch.isPending) launch.mutate({ command, title, agentId }); };
 
+  // "Claude (GUI)": no launch command at all — the agent runs as an SDK child and the terminal opens
+  // straight into the in-app chat instead of a pane. Focus + close behave like a normal pick.
+  const launchGui = useMutation({
+    mutationFn: () =>
+      api.createTerminal(workspaceId, { title: "Claude (GUI)", agentId: "claude", mode: "gui", systemPrompt: termPrompt() }),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["workspaces"] }); requestTerminalFocus(workspaceId, r.terminal.id); close(); },
+  });
+
   // Which bottom panel is expanded: the add-a-CLI form, the Claude-loop wizard, or neither.
   const [panel, setPanel] = useState<"none" | "cli" | "loop">("none");
   // The detected Claude CLI command, used to launch the loop session (falls back to plain `claude`).
@@ -131,6 +139,7 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
                 onClick={() => pick(a.command, a.name, a.id)}
                 onDelete={() => removeAgent(a.id)} />
             ))}
+            <GuiCard pending={launchGui.isPending} onLaunch={() => { if (!launchGui.isPending) launchGui.mutate(); }} />
             {!headroomHidden && (
               <HeadroomCard status={hr} pending={launch.isPending || setHeadroomHidden.isPending}
                 onLaunch={() => { if (hr) pick(hr.command, "Claude (Headroom)", "claude"); }}
@@ -139,7 +148,7 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
             )}
             {shownBuiltins.length === 0 && headroomHidden && (
               <div className="col-span-full text-sm text-dim">
-                No agents here — open a plain terminal, or add one from “+ Add a CLI” below.
+                No agent CLIs detected — use Claude (GUI) above, open a plain terminal, or add one from “+ Add a CLI” below.
               </div>
             )}
           </div>
@@ -264,6 +273,29 @@ function HeadroomCard({ status, pending, onLaunch, onInstall, onHide }: {
       </button>
       <button onClick={onHide} title="Hide this launcher"
         className="absolute top-1 right-1 hidden group-hover:block text-dim hover:text-red-400 text-xs leading-none">✕</button>
+    </div>
+  );
+}
+
+/** The "Claude (GUI)" launcher card. Same Claude, different surface: no CLI in the pane — the
+ *  terminal opens straight into the in-app chat. Carries the accent border + a GUI chip so it can't
+ *  be mistaken for the plain Claude card sitting next to it. */
+function GuiCard({ pending, onLaunch }: { pending: boolean; onLaunch: () => void }) {
+  return (
+    <div className="group relative">
+      <button disabled={pending} onClick={onLaunch}
+        title="Chat with Claude inside Terminalhub — no terminal pane"
+        className="w-full flex items-center gap-3 p-3 rounded-lg border border-accent/40 bg-accent/5 text-left
+          transition-colors hover:border-accent/70 hover:bg-accent/10 disabled:opacity-50">
+        <img src="/agents/claude.svg" alt="" className="w-7 h-7 shrink-0 object-contain" />
+        <span className="min-w-0">
+          <span className="flex items-center gap-1.5 text-sm text-bright">
+            <span className="truncate">Claude (GUI)</span>
+            <span className="shrink-0 px-1 rounded border border-accent/50 text-[9px] leading-[13px] tracking-wide text-accent">GUI</span>
+          </span>
+          <span className="block truncate text-xs text-dim">In-app chat, no terminal</span>
+        </span>
+      </button>
     </div>
   );
 }
