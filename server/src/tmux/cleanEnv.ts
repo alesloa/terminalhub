@@ -17,6 +17,8 @@
 // them lowercase, so dropping them can't collide with conventional UPPER_CASE shell variables.
 const DROP_EXACT = new Set<string>([
   "PORT",             // the hub's own listener port (scripts/start.mjs) — the headline collision
+  "HOST",             // the hub's own listener host. Leaked as HOST=0.0.0.0, which prompt themes
+                      // render as the machine name — every pane read `alesloas@0`.
   "NODE_ENV",         // PM2 sets "production"; meaningless / harmful for an arbitrary pane
   "NODE_APP_INSTANCE",
   // PM2 process descriptor (all injected lowercase):
@@ -25,11 +27,26 @@ const DROP_EXACT = new Set<string>([
   "treekill", "windowsHide", "kill_retry_time", "created_at", "unique_id", "restart_time",
   "unstable_restarts", "prev_restart_delay", "status", "merge_logs", "km_link",
   "max_memory_restart", "instance_var", "filter_env", "wait_ready", "shutdown_with_message",
+  // …and the ones observed live that the list above missed:
+  "autostart", "cwd", "exit_code", "node_version", "script", "username",
+  // Editor injection. Whatever launched PM2 may have been a VS Code integrated terminal; those
+  // vars outlive the window that set them. GIT_ASKPASS / VSCODE_GIT_IPC_HANDLE then point at a
+  // dead socket (git credential prompts hang), GIT_EDITOR tries to open a window that isn't
+  // there, and VSCODE_INJECTION makes every pane shell source VS Code's integration script.
+  "GIT_ASKPASS", "GIT_EDITOR", "TERM_PROGRAM", "TERM_PROGRAM_VERSION",
+  // An agent's own session identity. Inherited, these make a BRAND-NEW pane look like it is
+  // already running inside a Claude/Codex session — the CLI launched there treats itself as a
+  // nested child and dials CLAUDE_CODE_SSE_PORT, an IDE server that is long gone.
+  "CLAUDECODE", "AI_AGENT",
 ]);
 
 // Drop any var whose name starts with one of these. Covers TERMINALHUB_* (server config + the
-// secret token) and every PM2 namespace (PM2_*, pm_*, pm2_*, axm_*, pmx*).
-const DROP_PREFIX = ["TERMINALHUB_", "PM2_", "pm_", "pm2_", "axm_", "pmx"];
+// secret token), every PM2 namespace (PM2_*, pm_*, pm2_*, axm_*, pmx*), the editor-injection
+// block (VSCODE_*), and the agent-session block (CLAUDE_*, CODEX_*). Dropping a whole agent
+// namespace is safe: a pane's shell re-sources the user's rc files, so anything they set there
+// for themselves comes straight back — only the INHERITED session identity is removed.
+const DROP_PREFIX = ["TERMINALHUB_", "PM2_", "pm_", "pm2_", "axm_", "pmx",
+                     "VSCODE_", "CLAUDE_", "CODEX_"];
 
 /** True when an env var is hub/PM2 injected noise that must not leak into a pane's shell. */
 export function shouldDropEnvKey(key: string): boolean {

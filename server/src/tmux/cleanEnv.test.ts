@@ -21,6 +21,31 @@ describe("shouldDropEnvKey", () => {
     }
   });
 
+  it("drops the hub's own listener host (HOST leaked as `alesloas@0` in every pane's prompt)", () => {
+    expect(shouldDropEnvKey("HOST")).toBe(true);
+  });
+
+  it("drops the PM2 descriptor keys that the original lowercase list missed", () => {
+    for (const k of ["autostart", "cwd", "exit_code", "node_version", "script", "username"]) {
+      expect(shouldDropEnvKey(k)).toBe(true);
+    }
+  });
+
+  it("drops agent-session vars so a fresh pane isn't seen as a nested Claude/Codex session", () => {
+    for (const k of ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_SSE_PORT",
+                     "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_PLUGIN_DATA", "CLAUDE_EFFORT",
+                     "CODEX_COMPANION_SESSION_ID", "AI_AGENT"]) {
+      expect(shouldDropEnvKey(k)).toBe(true);
+    }
+  });
+
+  it("drops the editor-injection vars that point at a possibly-closed VS Code", () => {
+    for (const k of ["VSCODE_INJECTION", "VSCODE_GIT_IPC_HANDLE", "VSCODE_GIT_ASKPASS_MAIN",
+                     "GIT_ASKPASS", "GIT_EDITOR", "TERM_PROGRAM", "TERM_PROGRAM_VERSION"]) {
+      expect(shouldDropEnvKey(k)).toBe(true);
+    }
+  });
+
   it("keeps a normal login shell's real environment untouched", () => {
     for (const k of ["PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL", "TERM",
                      "SSH_AUTH_SOCK", "SSH_CONNECTION", "TMPDIR", "EDITOR", "PWD"]) {
