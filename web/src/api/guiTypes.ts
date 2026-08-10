@@ -4,7 +4,9 @@
 
 export type GuiSessionState = "idle" | "starting" | "running" | "waiting" | "stopped" | "error";
 
-export type GuiToolStatus = "running" | "ok" | "error";
+/** `aborted` = the run ended before the call reported back (interrupt, crash, hub restart). It is
+ *  not a failure — nothing came back either way — so it must not read as one. */
+export type GuiToolStatus = "running" | "ok" | "error" | "aborted";
 
 export type GuiBlock =
   | { kind: "text"; id: string; text: string }
@@ -120,7 +122,25 @@ export type GuiEvent =
   | { type: "config"; config: GuiConfig }
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
-  | { type: "context"; usage: GuiContextUsage };
+  | { type: "context"; usage: GuiContextUsage }
+  /** Answer to a `rewind.preview` request. */
+  | { type: "rewind.preview"; preview: GuiRewindPreview };
+
+/** What "undo file changes" on a rewind would do to the working tree, asked for before the user
+ *  commits to it — the undo deletes files created since that message, so the count goes in front of
+ *  them first. `available: false` means no workspace snapshot covers that message, so the numbers
+ *  are unknown (the agent's own per-file backups may still revert something). */
+export interface GuiRewindPreview {
+  /** Echoed back so the chat can match the answer to the message that asked. */
+  userTurnsAfter: number;
+  available: boolean;
+  files: number;
+  insertions: number;
+  deletions: number;
+  /** Files that would be deleted outright — the destructive half. */
+  removed: number;
+  reason?: string;
+}
 
 /** How full the context window is, straight from the CLI's own accounting. */
 export interface GuiContextUsage {
@@ -151,6 +171,8 @@ export type GuiClientFrame =
   /** Cut back to a user turn, addressed by how many user turns follow it. With `newText` the turn is
    *  re-sent reworded (edit); without it the turn and everything after it is dropped (delete). */
   | { type: "rewind"; userTurnsAfter: number; text: string; newText?: string; restoreFiles?: boolean }
+  /** Ask what undoing the file changes at that turn would cost, without doing anything. */
+  | { type: "rewind.preview"; userTurnsAfter: number; text: string }
   | { type: "ping" };
 
 export type GuiServerFrame =

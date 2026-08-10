@@ -182,14 +182,14 @@ describe("loadHistory — tools", () => {
     expect(tool.result).toBe("line one\nline two");
   });
 
-  it("leaves a tool_use with no result running", async () => {
+  it("settles a tool_use with no result rather than replaying it as still running", async () => {
     const sid = writeTranscript([
       user("start"),
       assistant([{ type: "tool_use", id: "toolu_pending", name: "Bash", input: {} }]),
     ]);
 
     const tool = toolBlockOf((await loadHistory(sid, PROJECT))[1].blocks);
-    expect(tool.status).toBe("running");
+    expect(tool.status).toBe("aborted");
     expect(tool.result).toBeUndefined();
   });
 
@@ -320,5 +320,36 @@ describe("loadHistory — limit and failure modes", () => {
 
     const messages = await loadHistory(sid, PROJECT);
     expect(messages.map((m) => (m.blocks[0] as { text: string }).text)).toEqual(["good one", "still here"]);
+  });
+});
+
+describe("loadHistory — tool calls with no recorded result", () => {
+  it("marks a trailing unresolved tool call aborted instead of leaving it running", async () => {
+    // What a hub restart mid-turn writes: the tool_use is on disk, the result never was.
+    const sid = writeTranscript([
+      user("check the ports"),
+      assistant([{ type: "tool_use", id: "toolu_hung", name: "Bash", input: { command: "lsof -nP" } }]),
+    ]);
+
+    const messages = await loadHistory(sid, PROJECT);
+    const block = messages.at(-1)!.blocks[0] as Extract<GuiBlock, { kind: "tool" }>;
+    expect(block.status).toBe("aborted");
+    expect(block.result).toBeUndefined();
+  });
+
+  it("still resolves calls whose result was written", async () => {
+    const sid = writeTranscript([
+      user("list files"),
+      assistant([{ type: "tool_use", id: "toolu_ok", name: "Bash", input: { command: "ls" } }]),
+      user([{ type: "tool_result", tool_use_id: "toolu_ok", content: "a.ts" }]),
+      assistant([{ type: "tool_use", id: "toolu_open", name: "Read", input: { file_path: "/a.ts" } }]),
+    ]);
+
+    const messages = await loadHistory(sid, PROJECT);
+    const done = messages[1].blocks[0] as Extract<GuiBlock, { kind: "tool" }>;
+    const hung = messages.at(-1)!.blocks[0] as Extract<GuiBlock, { kind: "tool" }>;
+    expect(done.status).toBe("ok");
+    expect(done.result).toBe("a.ts");
+    expect(hung.status).toBe("aborted");
   });
 });

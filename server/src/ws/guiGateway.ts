@@ -100,6 +100,14 @@ export async function guiGateway(app: FastifyInstance, ctx: AppContext, config: 
             })
             .then((result) => { if (!result.ok) send({ type: "event", event: { type: "error", message: result.error } }); });
           break;
+        case "rewind.preview":
+          // Read-only: the chat asks this the moment "undo file changes" is ticked, so the number of
+          // files about to be reverted — and deleted — is on screen before anything is pressed.
+          void session
+            .previewRewind({ userTurnsAfter: Number(frame.userTurnsAfter), text: String(frame.text ?? "") })
+            .then((preview) => { send({ type: "event", event: { type: "rewind.preview", preview } }); })
+            .catch(() => {});
+          break;
         default: break;
       }
     });

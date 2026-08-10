@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionEntry } from "../claude/types.js";
-import { findForkPoint, truncateMessages } from "./rewind.js";
+import { countHumanTurns, findForkPoint, truncateMessages } from "./rewind.js";
 
 function entry(lineIndex: number, parsed: Record<string, unknown>, entryType: SessionEntry["entryType"]): SessionEntry {
   return {
@@ -42,24 +42,24 @@ describe("findForkPoint", () => {
     // Dropping "second" keeps everything through a2 — the last chain entry of the kept turn. The SDK
     // refuses a looser fork point, so "the previous assistant uuid" is the wrong answer here.
     expect(findForkPoint(transcript(), { userTurnsAfter: 1, text: "second" }))
-      .toEqual({ ok: true, point: { uuid: "a2", targetUuid: "u2", lineIndex: 4 } });
+      .toEqual({ ok: true, point: { uuid: "a2", targetUuid: "u2", lineIndex: 4, turnIndex: 1 } });
   });
 
   it("addresses the most recent turn as 0 turns after", () => {
     expect(findForkPoint(transcript(), { userTurnsAfter: 0, text: "third" }))
-      .toEqual({ ok: true, point: { uuid: "a3", targetUuid: "u3", lineIndex: 6 } });
+      .toEqual({ ok: true, point: { uuid: "a3", targetUuid: "u3", lineIndex: 6, turnIndex: 2 } });
   });
 
   it("returns a null fork point when nothing survives the cut", () => {
     expect(findForkPoint(transcript(), { userTurnsAfter: 2, text: "first" }))
-      .toEqual({ ok: true, point: { uuid: null, targetUuid: "u1", lineIndex: 0 } });
+      .toEqual({ ok: true, point: { uuid: null, targetUuid: "u1", lineIndex: 0, turnIndex: 0 } });
   });
 
   it("never counts a tool_result carrier as a user turn", () => {
     // r1 is a `type: "user"` line. Counting it would shift every target by one and cut the
     // conversation in the wrong place.
     const found = findForkPoint(transcript(), { userTurnsAfter: 1, text: "second" });
-    expect(found).toEqual({ ok: true, point: { uuid: "a2", targetUuid: "u2", lineIndex: 4 } });
+    expect(found).toEqual({ ok: true, point: { uuid: "a2", targetUuid: "u2", lineIndex: 4, turnIndex: 1 } });
   });
 
   it("never counts a subagent turn", () => {
@@ -71,7 +71,7 @@ describe("findForkPoint", () => {
       }, "User"),
     ];
     expect(findForkPoint(withSidechain, { userTurnsAfter: 0, text: "third" }))
-      .toEqual({ ok: true, point: { uuid: "a3", targetUuid: "u3", lineIndex: 6 } });
+      .toEqual({ ok: true, point: { uuid: "a3", targetUuid: "u3", lineIndex: 6, turnIndex: 2 } });
   });
 
   it("refuses when the text does not match what the browser is showing", () => {
@@ -86,6 +86,23 @@ describe("findForkPoint", () => {
 
   it("ignores leading and trailing whitespace when matching", () => {
     expect(findForkPoint(transcript(), { userTurnsAfter: 0, text: "  third\n" }).ok).toBe(true);
+  });
+});
+
+describe("countHumanTurns", () => {
+  it("counts only the turns a rewind can target", () => {
+    // Three human turns among eight entries: the tool_result carrier and every assistant reply are
+    // not turns, and counting them would file every workspace checkpoint under the wrong index.
+    expect(countHumanTurns(transcript())).toBe(3);
+  });
+
+  it("is zero for a conversation with nothing in it", () => {
+    expect(countHumanTurns([])).toBe(0);
+  });
+
+  it("agrees with the index findForkPoint reports, so capture and rewind address the same slot", () => {
+    const found = findForkPoint(transcript(), { userTurnsAfter: 0, text: "third" });
+    expect(found.ok && found.point.turnIndex).toBe(countHumanTurns(transcript()) - 1);
   });
 });
 

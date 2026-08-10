@@ -27,6 +27,12 @@ export interface Normalizer {
   push(message: SDKMessage): GuiEvent[];
   /** The assistant message currently open, if any. */
   currentMessageId(): string | null;
+  /**
+   * Close out every tool call still waiting on a result, giving each the outcome the run itself
+   * ended with. The `result` frame does this on its own; this is the entry point for a run that
+   * never gets one — the CLI died, the hub restarted, the session was torn down mid-turn.
+   */
+  settleOpenTools(status: Exclude<GuiToolStatus, "running">): GuiEvent[];
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -81,6 +87,8 @@ export function createNormalizer(): Normalizer {
   const seenApiMessages = new Set<string>();
   /** Every tool_use id we've already drawn a card for — one call can never become two cards. */
   const seenToolUseIds = new Set<string>();
+  /** Cards still spinning: added when the call is drawn, removed when its result lands. */
+  const openToolUseIds = new Set<string>();
 
   /** Deterministic within one normalizer, which keeps tests readable. */
   const nextMessageId = () => `gm_${++counter}`;
@@ -150,7 +158,7 @@ export function createNormalizer(): Normalizer {
       openMessage(out, Date.now(), pendingApiId);
       const block = blockFor(index, raw);
       if (!block) return;
-      if (block.kind === "tool") seenToolUseIds.add(block.toolUseId);
+      if (block.kind === "tool") { seenToolUseIds.add(block.toolUseId); openToolUseIds.add(block.toolUseId); }
       blocks.set(index, { id: block.id, kind: block.kind, jsonBuffer: "", lastInput: null, streamed: false });
       out.push({ type: "block.start", messageId: messageId as string, block });
       return;
@@ -220,7 +228,7 @@ export function createNormalizer(): Normalizer {
       const block = blockFor(index, rec);
       if (!block) return;
       if (!open) {
-        if (block.kind === "tool") seenToolUseIds.add(block.toolUseId);
+        if (block.kind === "tool") { seenToolUseIds.add(block.toolUseId); openToolUseIds.add(block.toolUseId); }
         blocks.set(index, { id: block.id, kind: block.kind, jsonBuffer: "", lastInput: null, streamed: true });
         out.push({ type: "block.start", messageId: messageId as string, block });
       } else if (block.kind === "text" || block.kind === "thinking") {
@@ -283,6 +291,7 @@ export function createNormalizer(): Normalizer {
       if (!rec || rec.type !== "tool_result") continue;
       const toolUseId = str(rec.tool_use_id);
       if (!toolUseId) continue;
+      openToolUseIds.delete(toolUseId);
       out.push({
         type: "tool.result",
         toolUseId,
@@ -290,6 +299,17 @@ export function createNormalizer(): Normalizer {
         result: flattenResult(rec.content),
       });
     }
+  };
+
+  /** Turn every still-spinning card into a settled one. Emitted as ordinary `tool.result` events so
+   *  the server transcript and the browser both fold it through the path they already have. */
+  const settleOpenTools = (status: Exclude<GuiToolStatus, "running">): GuiEvent[] => {
+    const out: GuiEvent[] = [];
+    for (const toolUseId of openToolUseIds) {
+      out.push({ type: "tool.result", toolUseId, status, result: "" });
+    }
+    openToolUseIds.clear();
+    return out;
   };
 
   const handleResult = (message: SDKMessage, out: GuiEvent[]): void => {
@@ -301,6 +321,10 @@ export function createNormalizer(): Normalizer {
       // An interrupt still lands as a "success" result; only stop_reason distinguishes it.
       ? (stopReason === "interrupted" || stopReason === "abort" ? "interrupted" : "completed")
       : "failed";
+    // A turn is over: anything that hasn't reported back never will. Each open call inherits the
+    // turn's own outcome, and settles BEFORE turn.end so the cards stop spinning in the same frame
+    // the composer goes idle.
+    out.push(...settleOpenTools(status === "completed" ? "ok" : "aborted"));
     out.push({
       type: "turn.end",
       // The SDK's own uuid identifies the turn — the UI only needs it to be stable and unique.
@@ -313,6 +337,7 @@ export function createNormalizer(): Normalizer {
 
   return {
     currentMessageId: () => messageId,
+    settleOpenTools,
 
     push(message) {
       const out: GuiEvent[] = [];

@@ -10,6 +10,7 @@ import type {
   GuiImageAttachment,
   GuiMessage,
   GuiQuestionRequest,
+  GuiRewindPreview,
   GuiServerFrame,
   GuiSessionState,
 } from "../../api/guiTypes";
@@ -121,6 +122,10 @@ export interface GuiSocket {
   /** Cut the chat back to a user turn — `newText` re-sends it reworded, omitting it deletes it and
    *  everything after. `userTurnsAfter` is how many user turns come after the target (0 = latest). */
   rewind: (userTurnsAfter: number, text: string, newText?: string, restoreFiles?: boolean) => void;
+  /** Ask what "undo file changes" would cost at that turn. Answers land in `rewindPreview`. */
+  previewRewind: (userTurnsAfter: number, text: string) => void;
+  /** The most recent answer to `previewRewind`, tagged with the turn that asked. */
+  rewindPreview: GuiRewindPreview | null;
   setConfig: (patch: Partial<GuiConfig>) => void;
 }
 
@@ -143,6 +148,7 @@ export function useGuiSocket(terminalId: string): GuiSocket {
   const [contextUsage, setContextUsage] = useState<GuiContextUsage | null>(null);
   const [costUsd, setCostUsd] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [rewindPreview, setRewindPreview] = useState<GuiRewindPreview | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const workRef = useRef<GuiMessage[]>([]);
@@ -207,6 +213,7 @@ export function useGuiSocket(terminalId: string): GuiSocket {
           setPendingQuestion(null);
           setError(null);
           setPlan(null);
+          setRewindPreview(null);
           commit();
           break;
         case "config": applyConfig(ev.config); break;
@@ -217,6 +224,7 @@ export function useGuiSocket(terminalId: string): GuiSocket {
         case "error": setError(ev.message); break;
         case "notice": setNotice(ev.message); break;
         case "context": setContextUsage(ev.usage); break;
+        case "rewind.preview": setRewindPreview(ev.preview); break;
         case "plan.proposed": setPlan(ev.text); break;
         default:
           // block.delta is the hot path — everything else is rare enough to land immediately.
@@ -339,6 +347,10 @@ export function useGuiSocket(terminalId: string): GuiSocket {
     });
   }, [sendFrame]);
 
+  const previewRewind = useCallback((userTurnsAfter: number, text: string) => {
+    sendFrame({ type: "rewind.preview", userTurnsAfter, text });
+  }, [sendFrame]);
+
   // Config travels over REST, not the socket — the server may have to restart the agent to apply it,
   // and it answers with the config it actually stored (which can differ from the patch). Paint the
   // change immediately so a pill never lags a click, and put the old value back if the PATCH fails.
@@ -359,7 +371,7 @@ export function useGuiSocket(terminalId: string): GuiSocket {
 
   return {
     messages, busy, state, connected, sessionId, error, pendingApproval, pendingQuestion, config,
-    plan, contextUsage, costUsd, notice, dismissPlan,
-    send, interrupt, approve, answer, rewind, setConfig,
+    plan, contextUsage, costUsd, notice, dismissPlan, rewindPreview,
+    send, interrupt, approve, answer, rewind, previewRewind, setConfig,
   };
 }

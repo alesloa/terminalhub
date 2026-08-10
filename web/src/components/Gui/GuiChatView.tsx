@@ -58,7 +58,15 @@ export function GuiChatView({ terminalId, folder }: { terminalId: string; folder
       <div className={`flex min-h-0 flex-1 flex-col ${empty ? "justify-center" : ""}`}>
         {empty
           ? <EmptyHero folder={folder} />
-          : <MessageList messages={gui.messages} busy={gui.busy} onRewind={gui.rewind} />}
+          : (
+            <MessageList
+              messages={gui.messages}
+              busy={gui.busy}
+              onRewind={gui.rewind}
+              onPreviewRewind={gui.previewRewind}
+              rewindPreview={gui.rewindPreview}
+            />
+          )}
 
         {gui.error && (
           <div className="shrink-0 border-t border-error/30 bg-error/10 px-4 py-2 text-xs text-error">{gui.error}</div>

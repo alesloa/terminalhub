@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { GuiMessage } from "../../api/guiTypes";
+import type { GuiMessage, GuiRewindPreview } from "../../api/guiTypes";
 import { ImageBlock } from "./MessageRow";
 
 /**
@@ -10,12 +10,14 @@ import { ImageBlock } from "./MessageRow";
  * it. The chat says so before it does it — this is the one control here that throws work away.
  */
 export function UserTurn({
-  message, userTurnsAfter, busy, onRewind,
+  message, userTurnsAfter, busy, onRewind, onPreviewRewind, preview,
 }: {
   message: GuiMessage;
   userTurnsAfter: number;
   busy: boolean;
   onRewind: (userTurnsAfter: number, text: string, newText?: string, restoreFiles?: boolean) => void;
+  onPreviewRewind: (userTurnsAfter: number, text: string) => void;
+  preview: GuiRewindPreview | null;
 }) {
   const text = message.blocks.map((b) => (b.kind === "text" ? b.text : "")).join("").trim();
   const images = message.blocks.filter((b) => b.kind === "image");
@@ -29,6 +31,15 @@ export function UserTurn({
   // a message that may no longer be the same turn.
   useEffect(() => { setMode("idle"); setDraft(text); }, [text]);
 
+  // Undoing the files deletes anything created since this message, so the count goes on screen while
+  // the user is still deciding — not in the notice afterwards. Asked for the moment the box is
+  // ticked, and again if they switch between editing and deleting.
+  useEffect(() => {
+    if (mode !== "idle" && restoreFiles) onPreviewRewind(userTurnsAfter, text);
+  }, [mode, restoreFiles, userTurnsAfter, text, onPreviewRewind]);
+
+  const cost = restoreFiles && preview?.userTurnsAfter === userTurnsAfter ? preview : null;
+
   if (!text && !images.length) return null;
 
   if (mode === "edit") {
@@ -38,6 +49,8 @@ export function UserTurn({
         onDraft={setDraft}
         restoreFiles={restoreFiles}
         onRestoreFiles={setRestoreFiles}
+        cost={cost}
+        pending={restoreFiles && !cost}
         onCancel={() => { setDraft(text); setMode("idle"); }}
         onSave={() => {
           const next = draft.trim();
@@ -67,6 +80,7 @@ export function UserTurn({
           <div className="flex items-center gap-2 text-[11px] text-muted">
             <span>Delete this and everything after it?</span>
             <RestoreFilesToggle checked={restoreFiles} onChange={setRestoreFiles} />
+            <RestoreFilesCost cost={cost} pending={restoreFiles && !cost} />
             <button
               type="button"
               onClick={() => { onRewind(userTurnsAfter, text, undefined, restoreFiles); setMode("idle"); }}
@@ -123,8 +137,27 @@ function RestoreFilesToggle({ checked, onChange }: { checked: boolean; onChange:
   );
 }
 
+/** What the undo is about to cost, shown next to the toggle while the user is still deciding. The
+ *  deletions are the half worth naming: reverting an edit is recoverable, a deleted file is not. */
+function RestoreFilesCost({ cost, pending }: { cost: GuiRewindPreview | null; pending: boolean }) {
+  if (pending) return <span className="text-dim">checking…</span>;
+  if (!cost) return null;
+  if (!cost.available) {
+    return <span className="text-dim" title={cost.reason ?? ""}>extent unknown</span>;
+  }
+  if (!cost.files && !cost.removed) return <span className="text-dim">nothing to undo</span>;
+  const parts = [];
+  if (cost.files) parts.push(`${cost.files} file${cost.files === 1 ? "" : "s"} back`);
+  if (cost.removed) parts.push(`${cost.removed} new file${cost.removed === 1 ? "" : "s"} deleted`);
+  return (
+    <span className={cost.removed ? "text-error" : "text-dim"}>
+      {parts.join(", ")}
+    </span>
+  );
+}
+
 function EditBox({
-  draft, onDraft, onSave, onCancel, restoreFiles, onRestoreFiles,
+  draft, onDraft, onSave, onCancel, restoreFiles, onRestoreFiles, cost, pending,
 }: {
   draft: string;
   onDraft: (v: string) => void;
@@ -132,6 +165,8 @@ function EditBox({
   onCancel: () => void;
   restoreFiles: boolean;
   onRestoreFiles: (v: boolean) => void;
+  cost: GuiRewindPreview | null;
+  pending: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -167,6 +202,7 @@ function EditBox({
         <div className="flex items-center justify-end gap-2 px-1 pt-1 text-[11px]">
           <span className="mr-auto text-dim">Resending drops everything after this message</span>
           <RestoreFilesToggle checked={restoreFiles} onChange={onRestoreFiles} />
+          <RestoreFilesCost cost={cost} pending={pending} />
           <button type="button" onClick={onCancel} className="rounded-md border border-edge px-2 py-0.5 text-muted transition-colors hover:text-bright">
             Cancel
           </button>

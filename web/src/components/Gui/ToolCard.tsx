@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from "react";
 import type { GuiBlock } from "../../api/guiTypes";
 import { asRecord, asString, DiffBlock, diffInputOf } from "./DiffBlock";
+import { useTurnActive } from "./turnActive";
 
 export type GuiToolBlock = Extract<GuiBlock, { kind: "tool" }>;
 
@@ -65,7 +66,12 @@ export const ToolCard = memo(function ToolCard({ block }: { block: GuiToolBlock 
   const diff = useMemo(() => diffInputOf(block.name, block.input), [block.name, block.input]);
   const inputJson = useMemo(() => (open ? safeJson(block.input, 2) : ""), [open, block.input]);
 
-  const failed = block.status === "error";
+  // A card only spins while a turn is actually in flight. A block left "running" by a run that died
+  // has nothing left to settle it, so the transcript's own liveness decides instead of the block.
+  const turnActive = useTurnActive();
+  const status = block.status === "running" && !turnActive ? "aborted" : block.status;
+
+  const failed = status === "error";
   const result = block.result ?? "";
   const clipped = result.length > RESULT_CHARS;
 
@@ -76,7 +82,7 @@ export const ToolCard = memo(function ToolCard({ block }: { block: GuiToolBlock 
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-elevated/60 rounded-lg transition-colors"
       >
-        <StatusIcon status={block.status} />
+        <StatusIcon status={status} />
         <span className="shrink-0 font-mono text-bright">{block.name}</span>
         {summary && <span className="min-w-0 flex-1 truncate font-mono text-dim">{summary}</span>}
         <Chevron open={open} />
@@ -102,7 +108,10 @@ export const ToolCard = memo(function ToolCard({ block }: { block: GuiToolBlock 
               </pre>
             </Section>
           )}
-          {!result && block.status === "running" && <div className="text-[11px] text-dim">Running…</div>}
+          {!result && status === "running" && <div className="text-[11px] text-dim">Running…</div>}
+          {!result && status === "aborted" && (
+            <div className="text-[11px] text-dim">No result — the run ended before this call reported back.</div>
+          )}
         </div>
       )}
     </div>
@@ -121,6 +130,8 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 function StatusIcon({ status }: { status: GuiToolBlock["status"] }) {
   if (status === "running") return <Spinner />;
   if (status === "error") return <span className="shrink-0 text-error">✕</span>;
+  // Not a failure and not a success — the run ended before this call said either way.
+  if (status === "aborted") return <span className="shrink-0 text-dim" aria-label="no result">–</span>;
   return <span className="shrink-0 text-success">✓</span>;
 }
 

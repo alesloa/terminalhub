@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { GuiMessage } from "../../api/guiTypes";
+import type { GuiMessage, GuiRewindPreview } from "../../api/guiTypes";
 import { BlockGroup } from "./MessageRow";
 import { UserTurn } from "./UserTurn";
 import { ToolRun } from "./ToolRun";
 import { buildTranscriptRows } from "./transcriptRows";
+import { TurnActiveProvider } from "./turnActive";
 
 const NEAR_BOTTOM_PX = 48; // slack so a one-line overshoot still counts as "at the bottom"
 
@@ -11,10 +12,12 @@ const NEAR_BOTTOM_PX = 48; // slack so a one-line overshoot still counts as "at 
  * The scrolling transcript. Sticks to the bottom while the user is already there and releases the
  * moment they scroll up, so reading back through a long turn isn't yanked away by the next delta.
  */
-export function MessageList({ messages, busy, onRewind }: {
+export function MessageList({ messages, busy, onRewind, onPreviewRewind, rewindPreview }: {
   messages: GuiMessage[];
   busy: boolean;
-  onRewind: (userTurnsAfter: number, text: string, newText?: string) => void;
+  onRewind: (userTurnsAfter: number, text: string, newText?: string, restoreFiles?: boolean) => void;
+  onPreviewRewind: (userTurnsAfter: number, text: string) => void;
+  rewindPreview: GuiRewindPreview | null;
 }) {
   // Tool calls group into runs that span messages, so the transcript is flattened into rows before
   // rendering rather than drawn one message at a time.
@@ -59,6 +62,7 @@ export function MessageList({ messages, busy, onRewind }: {
   };
 
   return (
+    <TurnActiveProvider value={busy}>
     <div className="relative min-h-0 flex-1">
       <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto px-4 py-4">
         {/* No empty placeholder here: an empty transcript never reaches this component — GuiChatView
@@ -73,6 +77,8 @@ export function MessageList({ messages, busy, onRewind }: {
                   userTurnsAfter={row.userTurnsAfter}
                   busy={busy}
                   onRewind={onRewind}
+                  onPreviewRewind={onPreviewRewind}
+                  preview={rewindPreview}
                 />
               );
             }
@@ -93,6 +99,7 @@ export function MessageList({ messages, busy, onRewind }: {
         </button>
       )}
     </div>
+    </TurnActiveProvider>
   );
 }
 

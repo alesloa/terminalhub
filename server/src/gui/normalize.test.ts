@@ -575,3 +575,54 @@ describe("createNormalizer — a whole turn end to end", () => {
     expect(all.filter((e) => e.type === "message.start")).toHaveLength(1);
   });
 });
+
+describe("createNormalizer — tool calls that never report back", () => {
+  it("settles an unresolved tool call as aborted when the turn ends", () => {
+    const { n } = opened({ type: "tool_use", id: "toolu_hung", name: "Bash", input: {} });
+    const events = n.push(result({ stop_reason: "interrupted" }));
+
+    // Before turn.end, so the card stops spinning in the same frame the composer goes idle.
+    expect(types(events)).toEqual(["message.end", "tool.result", "turn.end"]);
+    expect(events[1]).toEqual({
+      type: "tool.result", toolUseId: "toolu_hung", status: "aborted", result: "",
+    });
+  });
+
+  it("leaves a tool call that did report back alone", () => {
+    const { n } = opened({ type: "tool_use", id: "toolu_ok", name: "Bash", input: {} });
+    n.push(user([{ type: "tool_result", tool_use_id: "toolu_ok", content: "done" }]));
+
+    expect(types(n.push(result()))).toEqual(["message.end", "turn.end"]);
+  });
+
+  it("settles every outstanding call, and only once", () => {
+    const n = createNormalizer();
+    n.push(blockStart(0, { type: "tool_use", id: "toolu_a", name: "Bash", input: {} }));
+    n.push(blockStart(1, { type: "tool_use", id: "toolu_b", name: "Read", input: {} }));
+    n.push(user([{ type: "tool_result", tool_use_id: "toolu_a", content: "ok" }]));
+
+    const first = n.push(result({ stop_reason: "interrupted" }));
+    expect(first.filter((e) => e.type === "tool.result")).toEqual([
+      { type: "tool.result", toolUseId: "toolu_b", status: "aborted", result: "" },
+    ]);
+    // A second turn must not re-settle what the first already closed out.
+    expect(n.push(result()).filter((e) => e.type === "tool.result")).toEqual([]);
+  });
+
+  it("gives an outstanding call the turn's own outcome when the turn completed", () => {
+    const { n } = opened({ type: "tool_use", id: "toolu_late", name: "Bash", input: {} });
+
+    expect(n.push(result()).filter((e) => e.type === "tool.result")).toEqual([
+      { type: "tool.result", toolUseId: "toolu_late", status: "ok", result: "" },
+    ]);
+  });
+
+  it("exposes the same settling for a run that dies without a result frame", () => {
+    const { n } = opened({ type: "tool_use", id: "toolu_killed", name: "Bash", input: {} });
+
+    expect(n.settleOpenTools("aborted")).toEqual([
+      { type: "tool.result", toolUseId: "toolu_killed", status: "aborted", result: "" },
+    ]);
+    expect(n.settleOpenTools("aborted")).toEqual([]);
+  });
+});

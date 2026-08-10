@@ -86,6 +86,11 @@ export async function loadHistory(
     messages.push({ id: messageId(entry), role: "assistant", blocks, ts: timestampOf(entry) });
   }
 
+  // Anything still waiting on a result at the end of the file never got one — the run was killed,
+  // interrupted, or the hub restarted mid-turn. This is replay of a finished transcript, so there is
+  // nothing left to settle these cards later; left alone they spin forever.
+  for (const block of pendingTools.values()) block.status = "aborted";
+
   // Keep the tail: a chat opens scrolled to the newest turn, and results were already attached
   // during the full walk, so trimming here can't orphan a tool block.
   return messages.length > limit ? messages.slice(-limit) : messages;

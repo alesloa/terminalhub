@@ -3,10 +3,14 @@ import { query, type ModelInfo, type Options, type PermissionResult, type Query,
 import { cleanShellEnv } from "../tmux/cleanEnv.js";
 import { createNormalizer } from "./normalize.js";
 import { createTranscript } from "./transcript.js";
-import { findForkPoint, truncateMessages, type RewindTarget } from "./rewind.js";
+import {
+  countHumanTurns, findForkPoint, truncateMessages, type ForkPoint, type RewindTarget,
+} from "./rewind.js";
+import { createGuiCheckpointer } from "./checkpointer.js";
 import { checkImages, imageContentBlock } from "./images.js";
 import { loadHistory, transcriptPathFor } from "./history.js";
 import { parseSessionEntries } from "../claude/jsonl.js";
+import type { SessionEntry } from "../claude/types.js";
 import {
   applyUltrathink, bypassesApprovals, sdkEffort, sdkPermissionMode, sdkSettings, splitContextWindow,
   type GuiConfig,
@@ -14,7 +18,7 @@ import {
 import type {
   GuiApprovalDecision, GuiApprovalRequest, GuiCommand, GuiContextUsage, GuiEvent,
   GuiImageAttachment, GuiMessage, GuiModel, GuiQuestion, GuiQuestionRequest,
-  GuiSessionState,
+  GuiRewindPreview, GuiSessionState, GuiTurnStatus,
 } from "./types.js";
 
 // One live Claude, driven headlessly by the Agent SDK, backing one GUI-mode terminal.
@@ -72,6 +76,9 @@ export interface GuiSession {
   /** Cut the conversation back to an earlier user turn, optionally re-sending it with new wording.
    *  Forks rather than truncates, so the original transcript survives on disk. */
   rewind(target: RewindTarget & { newText?: string; restoreFiles?: boolean }): Promise<{ ok: true } | { ok: false; error: string }>;
+  /** What "undo file changes" would do to the working tree if that rewind ran right now. Read-only:
+   *  the chat asks before the user commits to it, because the undo deletes files. */
+  previewRewind(target: RewindTarget): Promise<GuiRewindPreview>;
   resolveApproval(id: string, decision: GuiApprovalDecision): void;
   resolveQuestion(id: string, answers: Record<string, string[]>): void;
   /** The model catalog of the installed CLI, never a baked-in list. Empty until a runtime is up. */
@@ -307,6 +314,38 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
   // it into `sessionId`, leaving the original transcript on disk untouched.
   let forkFrom: { resume: string; at: string } | null = null;
 
+  /** The conversation as it stands on disk. A fork that hasn't written a turn of its own yet still
+   *  lives in the file it came from, cut at the fork point — reading the fork's own (missing) file
+   *  would report an empty conversation. */
+  const conversationEntries = async (): Promise<
+    { ok: true; entries: SessionEntry[] } | { ok: false; error: string }
+  > => {
+    const pending = forkFrom;
+    const file = await transcriptPathFor(pending?.resume ?? sessionId, opts.cwd);
+    if (!file) return { ok: false, error: "This conversation has no transcript to rewind." };
+    let entries: SessionEntry[];
+    try { entries = await parseSessionEntries(file, "claude"); }
+    catch { return { ok: false, error: "Could not read this conversation's transcript." }; }
+    if (pending) {
+      const cut = entries.findIndex((e) => e.uuid === pending.at);
+      if (cut >= 0) entries = entries.slice(0, cut + 1);
+    }
+    return { ok: true, entries };
+  };
+
+  // Workspace snapshots, taken before each turn so a rewind can undo everything the turn touched —
+  // not just the files the agent edited through a tool. Scoped to the terminal, which is the one id
+  // that survives the session forks a rewind creates.
+  const checkpoints = createGuiCheckpointer({
+    scopeId: opts.terminalId,
+    cwd: opts.cwd,
+    resumed: conversationStarted,
+    priorTurns: async () => {
+      const found = await conversationEntries();
+      return found.ok ? countHumanTurns(found.entries) : null;
+    },
+  });
+
   const buildOptions = (cfg: GuiConfig): Options => {
     const effort = sdkEffort(cfg.effort);
     const settings = sdkSettings(cfg);
@@ -337,6 +376,21 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
     };
   };
 
+  /**
+   * The one way a run ends without a `result` frame — the stream failed, the CLI exited, or the
+   * session was torn down under it. Every such path funnels here rather than settling its own
+   * bookkeeping, so a turn can never end in more than one shape: in-flight tool cards inherit the
+   * outcome, and the turn itself is closed out. Without the turn.end, the chat would keep a turn
+   * open forever and nothing keyed off a turn boundary would ever fire again.
+   */
+  const endRun = (status: GuiTurnStatus) => {
+    for (const event of normalizer.settleOpenTools("aborted")) emit(event);
+    if (!currentTurnId) return;
+    const turnId = currentTurnId;
+    currentTurnId = null;
+    emit({ type: "turn.end", turnId, status });
+  };
+
   const pump = async (gen: number, queue: PromptQueue, options: Options) => {
     try {
       const q = query({ prompt: queue.iterable, options });
@@ -362,9 +416,10 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
           emit(event);
         }
       }
-      if (!stopped && gen === generation) setState("stopped");
+      if (!stopped && gen === generation) { endRun("interrupted"); setState("stopped"); }
     } catch (err) {
       if (stopped || gen !== generation) return;
+      endRun("failed");
       setState("error");
       fail(err, "agent session failed");
     }
@@ -381,6 +436,7 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
     approvals.clear();
     for (const [, p] of questions) p.resolve({});
     questions.clear();
+    endRun("interrupted");
     queue.close();
     const old = runtime;
     runtime = null;
@@ -449,8 +505,45 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
     emit({ type: "message.end", id: messageId });
     emit({ type: "turn.start", turnId });
     setState("running");
-    promptQueue.push(userMessage(sent, images));
+    // Snapshot the workspace BEFORE the agent is handed the turn — a baseline taken afterwards would
+    // already contain the turn's own edits. The echo above has already landed, so the composer feels
+    // instant either way; only the agent waits, and only for as long as one `git add -A` takes.
+    // `promptQueue` is read after the await on purpose: a restart in between swaps the queue, and the
+    // turn belongs in the run that exists now, not the one that was closed.
+    void checkpoints.beforeTurn(sent)
+      .catch(() => {})
+      .then(() => { if (!stopped) promptQueue.push(userMessage(sent, images)); });
   }
+
+  /**
+   * Put the working tree back to how the dropped turn found it.
+   *
+   * The workspace snapshot goes first because it is the only one that covers everything: a turn can
+   * change files through a shell command, an install, a formatter or a migration, and none of those
+   * are files the agent "edited". The agent's own per-file backups are the fallback for a workspace
+   * git isn't watching — narrower, but better than refusing.
+   */
+  const undoFiles = async (point: ForkPoint, text: string): Promise<string> => {
+    const snapshot = await checkpoints.restore(point.turnIndex, text);
+    if (snapshot.ok) {
+      const { files, insertions, deletions, removed } = snapshot.stat;
+      const deleted = removed ? `, ${removed} new file${removed === 1 ? "" : "s"} deleted` : "";
+      return `Reverted ${files} file${files === 1 ? "" : "s"} (+${insertions}/-${deletions})${deleted}.`;
+    }
+    const failed = (why: string) =>
+      `Could not undo file changes: ${why}. Workspace snapshot: ${snapshot.reason}.`;
+    if (!point.targetUuid) return failed("that turn has no checkpoint");
+    try {
+      const result = await runtime?.rewindFiles(point.targetUuid);
+      if (!result) return failed("the agent is not running");
+      if (!result.canRewind) return failed(result.error ?? "no checkpoint for that message");
+      const count = result.filesChanged?.length ?? 0;
+      const skipped = result.skippedLinks ? ` ${result.skippedLinks} skipped (symlink or moved).` : "";
+      return `Reverted ${count} file${count === 1 ? "" : "s"} (+${result.insertions ?? 0}/-${result.deletions ?? 0}).${skipped}`;
+    } catch (err) {
+      return failed(err instanceof Error ? err.message : "the CLI refused");
+    }
+  };
 
   return {
     terminalId: opts.terminalId,
@@ -494,18 +587,10 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
       // A fork that hasn't completed a turn yet has written nothing of its own: the conversation it
       // represents is still the original file, cut at the pending fork point. Read that instead, or
       // a second rewind before the first reply would find no transcript at all.
-      const pending = forkFrom;
-      const file = await transcriptPathFor(pending?.resume ?? sessionId, opts.cwd);
-      if (!file) return { ok: false as const, error: "This conversation has no transcript to rewind." };
-      let entries;
-      try { entries = await parseSessionEntries(file, "claude"); }
-      catch { return { ok: false as const, error: "Could not read this conversation's transcript." }; }
-      if (pending) {
-        const cut = entries.findIndex((e) => e.uuid === pending.at);
-        if (cut >= 0) entries = entries.slice(0, cut + 1);
-      }
+      const loaded = await conversationEntries();
+      if (!loaded.ok) return { ok: false as const, error: loaded.error };
 
-      const found = findForkPoint(entries, target);
+      const found = findForkPoint(loaded.entries, target);
       if (!found.ok) return { ok: false as const, error: found.error };
 
       // What the chat should show afterwards. The live transcript is the truth while a session is
@@ -515,35 +600,17 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
       const kept = truncateMessages(source, target.userTurnsAfter);
       if (!kept) return { ok: false as const, error: "That message is no longer in this conversation." };
 
-      // Files first, while the runtime that took the checkpoints is still alive — a restart drops
-      // them. Reverting the working tree is opt-in per rewind: dropping a message is not the same
-      // request as throwing away the code it produced.
-      if (target.restoreFiles) {
-        if (!found.point.targetUuid) {
-          emit({ type: "notice", message: "Could not undo file changes: that turn has no checkpoint." });
-        } else {
-          try {
-            const result = await runtime?.rewindFiles(found.point.targetUuid);
-            if (!result) emit({ type: "notice", message: "Could not undo file changes: the agent is not running." });
-            else if (!result.canRewind) {
-              emit({ type: "notice", message: `Could not undo file changes: ${result.error ?? "no checkpoint for that message"}.` });
-            } else {
-              const count = result.filesChanged?.length ?? 0;
-              const skipped = result.skippedLinks
-                ? ` ${result.skippedLinks} skipped (symlink or moved).`
-                : "";
-              emit({
-                type: "notice",
-                message: `Reverted ${count} file${count === 1 ? "" : "s"} (+${result.insertions ?? 0}/-${result.deletions ?? 0}).${skipped}`,
-              });
-            }
-          } catch (err) {
-            emit({ type: "notice", message: `Could not undo file changes: ${err instanceof Error ? err.message : "the CLI refused"}.` });
-          }
-        }
-      }
+      // Files first, while the runtime that took the agent's own backups is still alive — a restart
+      // drops those. Reverting the working tree is opt-in per rewind: dropping a message is not the
+      // same request as throwing away the code it produced.
+      if (target.restoreFiles) emit({ type: "notice", message: await undoFiles(found.point, target.text) });
+      // The turns past the cut no longer exist, so neither should the snapshots taken in front of
+      // them. The target's own snapshot stays: it is what "undo back to this message" still means.
+      await checkpoints.cutTo(found.point.turnIndex);
 
-      const from = pending?.resume ?? sessionId;
+      // Read before `forkFrom` is reassigned below: a fork of a fork resumes the file the FIRST one
+      // came from, because the intermediate session never wrote a transcript of its own.
+      const from = forkFrom?.resume ?? sessionId;
       // A fork is a different conversation, so it gets a different id and the terminal is rebound to
       // it. The original file stays where it is — a rewind must never be the thing that loses work.
       const forked = randomUUID();
@@ -565,6 +632,21 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
       const next = target.newText?.trim();
       if (next) sendPrompt(next);
       return { ok: true as const };
+    },
+
+    async previewRewind(target) {
+      const unknown = (reason: string): GuiRewindPreview => ({
+        userTurnsAfter: target.userTurnsAfter, available: false,
+        files: 0, insertions: 0, deletions: 0, removed: 0, reason,
+      });
+      if (!conversationStarted) return unknown("nothing has run yet");
+      const loaded = await conversationEntries();
+      if (!loaded.ok) return unknown(loaded.error);
+      const found = findForkPoint(loaded.entries, target);
+      if (!found.ok) return unknown(found.error);
+      const snapshot = await checkpoints.preview(found.point.turnIndex, target.text);
+      if (!snapshot.ok) return unknown(snapshot.reason);
+      return { userTurnsAfter: target.userTurnsAfter, available: true, ...snapshot.stat };
     },
 
     resolveApproval(id, decision) {

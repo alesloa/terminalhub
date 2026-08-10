@@ -15,7 +15,9 @@ export type GuiMode = "tmux" | "gui";
 /** Lifecycle of the SDK-backed Claude process behind a GUI terminal. */
 export type GuiSessionState = "idle" | "starting" | "running" | "waiting" | "stopped" | "error";
 
-export type GuiToolStatus = "running" | "ok" | "error";
+/** `aborted` = the run ended before the call reported back (interrupt, crash, hub restart). It is
+ *  not a failure — nothing came back either way — so it must not read as one. */
+export type GuiToolStatus = "running" | "ok" | "error" | "aborted";
 
 export type GuiBlock =
   | { kind: "text"; id: string; text: string }
@@ -90,6 +92,22 @@ export interface GuiQuestionRequest {
 
 export type GuiTurnStatus = "completed" | "interrupted" | "failed";
 
+/** What "undo file changes" on a rewind would do to the working tree, asked for before the user
+ *  commits to it — the undo deletes files created since that message, so the count goes in front of
+ *  them first. `available: false` means no workspace snapshot covers that message, so the numbers
+ *  are unknown (the agent's own per-file backups may still revert something). */
+export interface GuiRewindPreview {
+  /** Echoed back so the chat can match the answer to the message that asked. */
+  userTurnsAfter: number;
+  available: boolean;
+  files: number;
+  insertions: number;
+  deletions: number;
+  /** Files that would be deleted outright — the destructive half. */
+  removed: number;
+  reason?: string;
+}
+
 /** Everything the server pushes about a live session. Ordered, never replayed — the initial
  *  transcript arrives once as a `history` frame instead. */
 export type GuiEvent =
@@ -118,7 +136,9 @@ export type GuiEvent =
    *  Liveness, not transcript: it is never replayed to a reconnecting client. */
   | { type: "notice"; message: string }
   /** Context-window occupancy, pushed after every turn and once on connect. */
-  | { type: "context"; usage: GuiContextUsage };
+  | { type: "context"; usage: GuiContextUsage }
+  /** Answer to a `rewind.preview` request. Liveness, never replayed. */
+  | { type: "rewind.preview"; preview: GuiRewindPreview };
 
 // ---------------------------------------------------------------------------
 // Composer controls — the model / reasoning / permission pills
@@ -172,6 +192,8 @@ export type GuiClientFrame =
    *  `newText` re-sends that turn with different wording (edit); omitting it just drops the turn
    *  and everything after it (delete). */
   | { type: "rewind"; userTurnsAfter: number; text: string; newText?: string; restoreFiles?: boolean }
+  /** Ask what undoing the file changes at that turn would cost, without doing anything. */
+  | { type: "rewind.preview"; userTurnsAfter: number; text: string }
   | { type: "ping" };
 
 export type GuiServerFrame =

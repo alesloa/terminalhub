@@ -344,9 +344,18 @@ hood it's the real `claude` binary driven headlessly, so everything your CLI doe
   The rewind **forks** rather than truncates — the original transcript stays on disk untouched, so a
   rewind you didn't mean is recoverable from the Claude session panel.
 - **Undo the file changes too** — the edit and delete confirmations carry an "undo file changes"
-  checkbox. The agent keeps a backup of every file it touches, so ticking it restores the working
-  tree to exactly how it was at that message and reports how many files moved. Off by default:
+  checkbox that puts the working tree back to exactly how it was at that message. Off by default:
   dropping a message is not the same request as throwing away the code it produced.
+  - In a git workspace this is a **snapshot of the whole folder**, taken just before each message
+    runs, so it undoes everything the turn caused — an `npm install`, a formatter, a migration
+    script, a `sed -i` — not only the files the agent edited through a tool.
+  - Snapshots live in git's object database under `refs/terminalhub/checkpoints/…` and are staged
+    through a throwaway index, so your branch, HEAD, staged changes and stash are never touched, and
+    `.gitignore` is obeyed — `node_modules` and `.env` are neither snapshotted nor deleted.
+  - **The cost is shown before you commit to it.** Ticking the box reports how many files come back
+    and, in red, how many newly-created files would be **deleted** — the half that isn't recoverable.
+  - A non-git workspace falls back to the agent's own per-file backups, which cover the files it
+    edited through a tool.
 - **Plans get a card, not a shrug** — when Claude proposes a plan it lands as a "Plan ready" panel
   above the composer with the plan rendered in full, a **Go ahead** button, and the option to just
   type a reply to change it. Approving sends an ordinary message; it never quietly widens permissions.

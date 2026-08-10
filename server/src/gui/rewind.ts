@@ -31,6 +31,10 @@ export interface ForkPoint {
   targetUuid: string | null;
   /** Line index of the targeted user entry, for callers that want to report what was dropped. */
   lineIndex: number;
+  /** The dropped turn's position counting human turns from the start of the conversation — which is
+   *  also how many turns survive the cut. This is the address a workspace checkpoint is filed under,
+   *  read here from the transcript itself rather than from a counter that could have drifted. */
+  turnIndex: number;
 }
 
 export type ForkPointResult =
@@ -48,11 +52,18 @@ function humanTurns(entries: SessionEntry[]): SessionEntry[] {
   });
 }
 
+/** How many human turns a conversation holds. The address space workspace checkpoints are filed
+ *  under, so the capture side can line itself up with a conversation it didn't start. */
+export function countHumanTurns(entries: SessionEntry[]): number {
+  return humanTurns(entries).length;
+}
+
 /** Resolve a rewind target to the chain entry a truncating resume should fork at. */
 export function findForkPoint(entries: SessionEntry[], target: RewindTarget): ForkPointResult {
   if (target.userTurnsAfter < 0) return { ok: false, error: "Invalid rewind target." };
   const turns = humanTurns(entries);
-  const entry = turns[turns.length - 1 - target.userTurnsAfter];
+  const turnIndex = turns.length - 1 - target.userTurnsAfter;
+  const entry = turns[turnIndex];
   if (!entry) return { ok: false, error: "That message is no longer in this conversation." };
 
   const message = entry.parsed.message as { content?: unknown } | undefined;
@@ -70,7 +81,10 @@ export function findForkPoint(entries: SessionEntry[], target: RewindTarget): Fo
     if (e.lineIndex >= entry.lineIndex) continue;
     if (typeof e.uuid === "string" && e.uuid) { uuid = e.uuid; break; }
   }
-  return { ok: true, point: { uuid, targetUuid: entry.uuid ?? null, lineIndex: entry.lineIndex } };
+  return {
+    ok: true,
+    point: { uuid, targetUuid: entry.uuid ?? null, lineIndex: entry.lineIndex, turnIndex },
+  };
 }
 
 /** The messages a rewound chat should show: everything before the targeted user turn. Same
