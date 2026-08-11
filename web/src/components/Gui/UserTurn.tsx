@@ -1,13 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { GuiMessage, GuiRewindPreview } from "../../api/guiTypes";
+import { copyText } from "../../lib/clipboard";
 import { ImageBlock } from "./MessageRow";
 
+/** How long the copy button stays ticked before going back to the clipboard icon. */
+const COPIED_MS = 1200;
+
 /**
- * One user turn, with edit and delete.
+ * One user turn, with copy, edit and delete.
  *
- * Both are rewinds: Claude's conversation is an append-only chain, so cutting at a turn necessarily
- * drops everything after it. Editing re-sends the turn reworded from that point; deleting just drops
- * it. The chat says so before it does it — this is the one control here that throws work away.
+ * Edit and delete are both rewinds: Claude's conversation is an append-only chain, so cutting at a
+ * turn necessarily drops everything after it. Editing re-sends the turn reworded from that point;
+ * deleting just drops it. The chat says so before it does it — those are the controls here that
+ * throw work away. Copy touches nothing, so it stays available even mid-turn.
  */
 export function UserTurn({
   message, userTurnsAfter, busy, onRewind, onPreviewRewind, preview,
@@ -39,6 +44,17 @@ export function UserTurn({
   }, [mode, restoreFiles, userTurnsAfter, text, onPreviewRewind]);
 
   const cost = restoreFiles && preview?.userTurnsAfter === userTurnsAfter ? preview : null;
+
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current); }, []);
+
+  const copy = useCallback(async () => {
+    if (!(await copyText(text))) return;
+    setCopied(true);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(false), COPIED_MS);
+  }, [text]);
 
   if (!text && !images.length) return null;
 
@@ -100,6 +116,24 @@ export function UserTurn({
           // Hidden until hover or keyboard focus, so a read-through of the chat isn't littered with
           // controls — but still reachable by Tab.
           <div className="flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+            {/* Copy changes nothing, so unlike its neighbours it stays live while the agent works. */}
+            {text && (
+              <RowButton
+                label={copied ? "Copied" : "Copy message"}
+                disabled={false}
+                done={copied}
+                onClick={() => { void copy(); }}
+              >
+                {copied ? (
+                  <path d="M20 6 9 17l-5-5" />
+                ) : (
+                  <>
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </>
+                )}
+              </RowButton>
+            )}
             <RowButton
               label="Edit and resend"
               disabled={busy}
@@ -216,12 +250,14 @@ function EditBox({
 }
 
 function RowButton({
-  label, disabled, onClick, children,
+  label, disabled, onClick, children, done = false,
 }: {
   label: string;
   disabled: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  /** Held briefly after the action succeeded — the only feedback a copy can give. */
+  done?: boolean;
 }) {
   return (
     <button
@@ -230,7 +266,7 @@ function RowButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="rounded-md p-1 text-dim transition-colors hover:bg-elevated/60 hover:text-bright disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-dim"
+      className={`rounded-md p-1 transition-colors hover:bg-elevated/60 hover:text-bright disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-dim ${done ? "text-success" : "text-dim"}`}
     >
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
         strokeLinecap="round" strokeLinejoin="round">

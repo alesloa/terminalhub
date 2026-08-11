@@ -337,6 +337,14 @@ hood it's the real `claude` binary driven headlessly, so everything your CLI doe
   as a proposed plan rather than dropping you into a TUI picker.
 - **Streaming with tool cards** — assistant text and thinking stream token-by-token; each tool call gets a
   collapsible card with its input, status, and result, and file edits render as syntax-aware diffs.
+- **Zoom the whole chat** — a floating `−  100%  +` cluster in the chat's top-right corner scales
+  everything at once: transcript, tool cards, diffs, the approval bar and the box you type into.
+  Lines re-wrap at the new size rather than being stretched. Five percent a press, 75% to 250%; the
+  percentage is a button that snaps back to 100%, and the setting is remembered per device across
+  every chat.
+- **Copy a message you sent** — hovering one of your own turns reveals a clipboard button that puts
+  its full text on the clipboard, ticking green to confirm. Unlike edit and delete it stays live
+  while the agent is working, since copying changes nothing.
 - **Edit or delete a message you sent** — hover one of your own turns for a pencil and a bin. Editing
   reopens it in place; sending the edit rewinds the conversation to that point and re-runs it with the
   new wording. Deleting drops that turn and everything after it. Both say so before they do it, because

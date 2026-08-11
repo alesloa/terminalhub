@@ -6,6 +6,7 @@ import { PlanCard } from "./PlanCard";
 import { ApprovalBar } from "./ApprovalBar";
 import { Composer } from "./Composer";
 import { MessageList } from "./MessageList";
+import { ZoomControl, useGuiZoom } from "./ZoomControl";
 import { useGuiSocket } from "./useGuiSocket";
 
 // Which token paints the state dot. Every value of GuiSessionState is listed so adding one to the
@@ -27,6 +28,7 @@ export function GuiChatView({ terminalId, folder }: { terminalId: string; folder
   const gui = useGuiSocket(terminalId);
   const empty = gui.messages.length === 0 && !gui.busy;
   const rootRef = useRef<HTMLDivElement>(null);
+  const zoom = useGuiZoom();
 
   // Report focus the same way a pane does. This is the flag the notification layer reads to decide
   // "you're already looking at this one, don't toast" — without it a GUI chat would alert you for a
@@ -50,74 +52,81 @@ export function GuiChatView({ terminalId, folder }: { terminalId: string; folder
   }, [terminalId]);
 
   return (
-    <div ref={rootRef} className="flex h-full min-h-0 flex-col bg-canvas text-fg">
-      {/* Transcript and composer share one flex column so the empty state can centre them as a pair.
-          With a transcript, MessageList takes the slack and the composer pins to the bottom; without
-          one there's no flex-1 child, so `justify-center` floats the hero + composer group. A single
-          Composer instance across both layouts — remounting it would drop whatever was half-typed. */}
-      <div className={`flex min-h-0 flex-1 flex-col ${empty ? "justify-center" : ""}`}>
-        {empty
-          ? <EmptyHero folder={folder} />
-          : (
-            <MessageList
-              messages={gui.messages}
+    <div ref={rootRef} className="relative flex h-full min-h-0 flex-col bg-canvas text-fg">
+      <ZoomControl {...zoom} />
+
+      {/* Everything the zoom applies to — transcript, notices, plan, approvals and the composer you
+          type into — sits under one `zoom`, so one number resizes the whole chat and lines re-wrap
+          at the new size. The control above is deliberately outside it and stays put. */}
+      <div className="flex min-h-0 flex-1 flex-col" style={{ zoom: zoom.zoom }}>
+        {/* Transcript and composer share one flex column so the empty state can centre them as a pair.
+            With a transcript, MessageList takes the slack and the composer pins to the bottom; without
+            one there's no flex-1 child, so `justify-center` floats the hero + composer group. A single
+            Composer instance across both layouts — remounting it would drop whatever was half-typed. */}
+        <div className={`flex min-h-0 flex-1 flex-col ${empty ? "justify-center" : ""}`}>
+          {empty
+            ? <EmptyHero folder={folder} />
+            : (
+              <MessageList
+                messages={gui.messages}
+                busy={gui.busy}
+                onRewind={gui.rewind}
+                onPreviewRewind={gui.previewRewind}
+                rewindPreview={gui.rewindPreview}
+              />
+            )}
+
+          {gui.error && (
+            <div className="shrink-0 border-t border-error/30 bg-error/10 px-4 py-2 text-xs text-error">{gui.error}</div>
+          )}
+          {/* Not a failure — the outcome of something that already happened, e.g. how many files a
+              rewind put back. Kept out of the transcript because it isn't part of the conversation. */}
+          {gui.notice && (
+            <div className="shrink-0 border-t border-edge bg-elevated/60 px-4 py-2 text-xs text-muted">{gui.notice}</div>
+          )}
+
+          {gui.plan && (
+            <PlanCard
+              text={gui.plan}
               busy={gui.busy}
-              onRewind={gui.rewind}
-              onPreviewRewind={gui.previewRewind}
-              rewindPreview={gui.rewindPreview}
+              onApprove={() => gui.send("Approved — go ahead and implement the plan.")}
+              onDismiss={gui.dismissPlan}
             />
           )}
 
-        {gui.error && (
-          <div className="shrink-0 border-t border-error/30 bg-error/10 px-4 py-2 text-xs text-error">{gui.error}</div>
-        )}
-        {/* Not a failure — the outcome of something that already happened, e.g. how many files a
-            rewind put back. Kept out of the transcript because it isn't part of the conversation. */}
-        {gui.notice && (
-          <div className="shrink-0 border-t border-edge bg-elevated/60 px-4 py-2 text-xs text-muted">{gui.notice}</div>
-        )}
-
-        {gui.plan && (
-          <PlanCard
-            text={gui.plan}
-            busy={gui.busy}
-            onApprove={() => gui.send("Approved — go ahead and implement the plan.")}
-            onDismiss={gui.dismissPlan}
+          <ApprovalBar
+            approval={gui.pendingApproval}
+            question={gui.pendingQuestion}
+            onApprove={gui.approve}
+            onAnswer={gui.answer}
           />
-        )}
 
-        <ApprovalBar
-          approval={gui.pendingApproval}
-          question={gui.pendingQuestion}
-          onApprove={gui.approve}
-          onAnswer={gui.answer}
-        />
+          <Composer
+            terminalId={terminalId}
+            folder={folder}
+            busy={gui.busy}
+            connected={gui.connected}
+            config={gui.config}
+            hero={empty}
+            contextUsage={gui.contextUsage}
+            costUsd={gui.costUsd}
+            onSend={gui.send}
+            onInterrupt={gui.interrupt}
+            onConfig={gui.setConfig}
+          />
+        </div>
 
-        <Composer
-          terminalId={terminalId}
-          folder={folder}
-          busy={gui.busy}
-          connected={gui.connected}
-          config={gui.config}
-          hero={empty}
-          contextUsage={gui.contextUsage}
-          costUsd={gui.costUsd}
-          onSend={gui.send}
-          onInterrupt={gui.interrupt}
-          onConfig={gui.setConfig}
-        />
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2 border-t border-edge bg-panel px-3 py-1 text-[11px] text-dim">
-        <span className="min-w-0 truncate font-mono" title={folder}>{basename(folder) || folder}</span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          <span className={`h-1.5 w-1.5 rounded-full ${STATE_TONE[gui.state]}`} />
-          <span>{gui.busy ? "working" : gui.state}</span>
-        </span>
-        {gui.sessionId && (
-          <span className="shrink-0 font-mono" title={gui.sessionId}>· {gui.sessionId.slice(0, 8)}</span>
-        )}
-        {!gui.connected && <span className="shrink-0 text-warn">· disconnected</span>}
+        <div className="flex shrink-0 items-center gap-2 border-t border-edge bg-panel px-3 py-1 text-[11px] text-dim">
+          <span className="min-w-0 truncate font-mono" title={folder}>{basename(folder) || folder}</span>
+          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+            <span className={`h-1.5 w-1.5 rounded-full ${STATE_TONE[gui.state]}`} />
+            <span>{gui.busy ? "working" : gui.state}</span>
+          </span>
+          {gui.sessionId && (
+            <span className="shrink-0 font-mono" title={gui.sessionId}>· {gui.sessionId.slice(0, 8)}</span>
+          )}
+          {!gui.connected && <span className="shrink-0 text-warn">· disconnected</span>}
+        </div>
       </div>
     </div>
   );
