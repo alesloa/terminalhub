@@ -340,6 +340,9 @@ export interface GithubIdentity { login: string; name: string; email: string; }
 /** Detected stacks + whether a `.gitignore` already exists, for the Initialize-repo dialog's preview. */
 export interface GitignorePreview { ecosystems: { key: string; label: string }[]; exists: boolean }
 export interface PullRequest { number: number; title: string; author: string; branch: string; state: string; url: string; draft: boolean; }
+/** One PR with the fields an edit form needs. `body` is off the list shape on purpose — that list is
+ *  polled every 30s and thirty descriptions is a lot of payload for a chip. */
+export interface PullRequestDetail extends PullRequest { body: string; base: string; }
 export interface ActionRun { id: number; name: string; title: string; status: string; conclusion: string | null; branch: string; event: string; createdAt: string; url: string; }
 
 // --- claude/codex sessions (mirrors server/src/claude/types.ts; keep in sync by hand) ---

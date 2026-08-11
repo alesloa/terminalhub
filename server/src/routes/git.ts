@@ -483,6 +483,21 @@ export async function gitRoutes(app: FastifyInstance, ctx: AppContext) {
     return runValue(reply, () => github.createPr(b.data.path, { title: b.data.title, body: b.data.body, base: b.data.base, draft: b.data.draft }));
   });
 
+  app.get("/api/git/github/pr", async (req, reply) => {
+    const q = pathQuery.extend({ number: z.coerce.number().int().positive() }).safeParse(req.query);
+    if (!q.success) return reply.code(400).send({ error: "path and number required" });
+    return runValue(reply, () => github.getPr(q.data.path, q.data.number));
+  });
+
+  app.post("/api/git/github/pr/edit", async (req, reply) => {
+    const b = z.object({
+      path: z.string().min(1), number: z.number().int().positive(),
+      title: z.string().min(1).optional(), body: z.string().optional(),
+    }).safeParse(req.body);
+    if (!b.success) return reply.code(400).send({ error: "path and number required" });
+    return run(reply, () => github.editPr(b.data.path, b.data.number, { title: b.data.title, body: b.data.body }));
+  });
+
   app.post("/api/git/github/pr/comment", async (req, reply) => {
     const b = z.object({ path: z.string().min(1), number: z.number().int().positive(), body: z.string().min(1) })
       .safeParse(req.body);

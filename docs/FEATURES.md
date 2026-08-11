@@ -345,7 +345,8 @@ hood it's the real `claude` binary driven headlessly, so everything your CLI doe
 - **Copy a message you sent** — hovering one of your own turns reveals a clipboard button that puts
   its full text on the clipboard, ticking green to confirm. Unlike edit and delete it stays live
   while the agent is working, since copying changes nothing.
-- **Edit or delete a message you sent** — hover one of your own turns for a pencil and a bin. Editing
+- **Edit or rewind to a message you sent** — hover one of your own turns for a pencil and a
+  back-arrow. Editing
   reopens it in place; sending the edit rewinds the conversation to that point and re-runs it with the
   new wording. Deleting drops that turn and everything after it. Both say so before they do it, because
   Claude's conversation is an append-only chain: cutting at a turn necessarily drops what followed.
@@ -537,7 +538,14 @@ hood it's the real `claude` binary driven headlessly, so everything your CLI doe
   picker (the **same** provider list the commit-message generator uses — switch the active one, or
   **Add Models…** to open AI settings), a Title field, a Description with a **✦ Generate** button, an
   **Edit Prompt…** shortcut into the prompt settings, and a Draft toggle. gh's own errors (e.g. "must
-  first push the branch") surface as a toast.
+  first push the branch") surface as a toast. Clicking outside the dialog does **not** close it — a
+  typed or generated description is not something a stray click should throw away.
+- **Edit an existing pull request** — once the current branch has an open PR, the git header menu
+  offers **Edit Pull Request #n** in place of Create (a second PR for the same branch is a dead end).
+  It reuses the same form, preloaded with the PR's current title and description, and saves through
+  `gh pr edit` — ✦ Generate included, so a stale description can be rewritten from the branch as it
+  stands now. **View Pull Requests** appears only alongside it — on a branch with no PR of its own,
+  the menu offers Create and nothing else.
 - **Open-PR indicator** — when the current branch has an open pull request, the git header shows a
   green **PR #n** chip next to the branch; click it to open the PR in the browser. It's read from
   `gh pr list` (open PRs only), so once the PR is merged or closed the chip disappears on its own.
@@ -1173,6 +1181,10 @@ The minor stuff — not headline features, but the polish that makes the rest fe
   instead of animating.
 - **Click-safe dragging** — cards use an 8px drag threshold so a plain click still hits the buttons
   on the card.
+- **Menus flip instead of getting cut off** — a dropdown that doesn't fit below its button opens
+  *upward* out of it instead, picking whichever side has more room; if neither side fits (a very
+  short window), it scrolls inside itself. It re-places on window resize, so a menu never ends up
+  clipped by the bottom of the app.
 
 ---
 

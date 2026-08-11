@@ -45,20 +45,34 @@ export function Counts({ ahead, behind }: { ahead: number; behind: number }) {
 export function Popover({ open, onClose, className, children }:
   { open: boolean; onClose: () => void; className: string; children: ReactNode }) {
   const measureRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
   // Measure the menu at its natural (`className`-anchored) spot via an invisible in-flow copy, then
   // render the real menu in a body portal at those FIXED viewport coords. The portal escapes any
   // `overflow:hidden`/`transform` ancestor (e.g. the room window) that would otherwise clip a menu
   // opening near the panel's bottom edge, and the coords are clamped/flipped to stay fully on screen.
   useLayoutEffect(() => {
     if (!open) { setPos(null); return; }
-    const r = measureRef.current?.getBoundingClientRect();
-    if (!r) return;
-    const m = 8;
-    const left = Math.max(m, Math.min(r.left, window.innerWidth - r.width - m));
-    let top = r.top;
-    if (top + r.height > window.innerHeight - m) top = Math.max(m, window.innerHeight - m - r.height);
-    setPos({ top, left, width: r.width });
+    const place = () => {
+      const el = measureRef.current;
+      const r = el?.getBoundingClientRect();
+      if (!el || !r) return;
+      const m = 8; // viewport margin
+      // The invisible copy is `absolute`, so its offsetParent IS the anchor wrapper — use it to mirror
+      // the menu above the trigger (a real flip) instead of merely sliding it up over the trigger.
+      const anchor = (el.offsetParent as HTMLElement | null)?.getBoundingClientRect() ?? null;
+      const gap = anchor ? Math.max(0, r.top - anchor.bottom) : 0;
+      const below = window.innerHeight - m - r.top;             // room at the natural spot
+      const above = anchor ? anchor.top - gap - m : 0;          // room if flipped above the trigger
+      let top: number, maxHeight: number;
+      if (r.height <= below) { top = r.top; maxHeight = below; }
+      else if (anchor && above > below) { top = Math.max(m, anchor.top - gap - r.height); maxHeight = above; }
+      else { top = Math.max(m, window.innerHeight - m - r.height); maxHeight = window.innerHeight - m * 2; }
+      const left = Math.max(m, Math.min(r.left, window.innerWidth - r.width - m));
+      setPos({ top, left, width: r.width, maxHeight });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
   }, [open]);
   if (!open) return null;
   return (
@@ -69,7 +83,7 @@ export function Popover({ open, onClose, className, children }:
       {pos && createPortal(
         <>
           <div className="fixed inset-0 z-[70]" onClick={onClose} />
-          <div style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width, zIndex: 71 }}
+          <div style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width, maxHeight: pos.maxHeight, overflowY: "auto", zIndex: 71 }}
             className="bg-panel border border-edge rounded shadow-lg py-1 text-sm">{children}</div>
         </>,
         document.body)}

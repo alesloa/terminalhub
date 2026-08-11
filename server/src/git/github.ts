@@ -68,6 +68,13 @@ export interface PullRequest {
   draft: boolean;
 }
 
+/** One pull request with the fields an edit form needs. `body` is deliberately NOT on the list
+ *  shape: the list is polled every 30s, and thirty descriptions is a lot of payload for a chip. */
+export interface PullRequestDetail extends PullRequest {
+  body: string;
+  base: string;
+}
+
 export interface ActionRun {
   id: number;
   name: string;
@@ -146,6 +153,12 @@ export interface GithubController {
   // Returns the new PR's URL gh prints. gh's own errors ("must first push", "no commits between …")
   // surface as a GhError the route maps to a 400 toast.
   createPr(cwd: string, opts: { title: string; body?: string; base?: string; draft?: boolean }): Promise<{ url: string }>;
+  // One PR in full, including its description — what the edit form loads. Throws GhError when the
+  // number doesn't resolve, so a stale chip fails loudly instead of opening a blank form.
+  getPr(cwd: string, number: number): Promise<PullRequestDetail>;
+  // `gh pr edit` on an OPEN pull request's title/body. Only the fields given are sent, so an edit
+  // that changes just the description can't blank the title.
+  editPr(cwd: string, number: number, opts: { title?: string; body?: string }): Promise<void>;
   commentPr(cwd: string, number: number, body: string): Promise<void>;
   mergePr(cwd: string, number: number, method: PrMergeMethod): Promise<void>;
   closePr(cwd: string, number: number): Promise<void>;
@@ -313,6 +326,38 @@ export function createGithubController(run: GhRunner = realGhRunner): GithubCont
         url: p.url ?? "",
         draft: Boolean(p.isDraft),
       }));
+    },
+
+    async getPr(cwd, number) {
+      const r = await run(
+        ["pr", "view", String(number), "--json",
+          "number,title,body,author,headRefName,baseRefName,state,url,isDraft"],
+        cwd,
+      );
+      if (r.code !== 0) throw new GhError(r.stderr || r.stdout, r.code);
+      const p = safeJson<any>(r.stdout);
+      if (!p) throw new GhError(`Could not read pull request #${number}.`, 1);
+      return {
+        number: p.number,
+        title: p.title ?? "",
+        body: p.body ?? "",
+        author: p.author?.login ?? "",
+        branch: p.headRefName ?? "",
+        base: p.baseRefName ?? "",
+        state: p.state ?? "",
+        url: p.url ?? "",
+        draft: Boolean(p.isDraft),
+      };
+    },
+
+    async editPr(cwd, number, opts) {
+      const args = ["pr", "edit", String(number)];
+      if (opts.title !== undefined) args.push("--title", opts.title);
+      if (opts.body !== undefined) args.push("--body", opts.body);
+      // Nothing to change — don't shell out just to have gh complain about no flags.
+      if (args.length === 3) return;
+      const r = await run(args, cwd);
+      if (r.code !== 0) throw new GhError(r.stderr || r.stdout, r.code);
     },
 
     async listRuns(cwd) {

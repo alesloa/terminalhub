@@ -17,8 +17,19 @@ import { Popover, MenuItem, MenuSep } from "./parts";
  * menu's "Create Pull Request". Self-contained: does its own queries + create mutation so both
  * triggers share one flow. `gh`'s own errors ("must first push", "no commits between …") surface as
  * a toast via useGit.
+ *
+ * Pass `editNumber` and the same form edits an EXISTING pull request instead: it loads that PR's
+ * current title and description, drops the choices that only make sense once (the base branch, the
+ * draft flag), and saves with `gh pr edit`. Same component because the interesting half — the ✦
+ * Generate button and its provider picker — is worth exactly as much when rewriting a description
+ * as when writing one.
  */
-export function PrCreateModal({ rootPath, onClose }: { rootPath: string; onClose: () => void }) {
+export function PrCreateModal({ rootPath, onClose, editNumber }: {
+  rootPath: string;
+  onClose: () => void;
+  /** Edit this pull request rather than opening a new one. */
+  editNumber?: number;
+}) {
   const qc = useQueryClient();
   const push = useToasts(s => s.push);
   const { run, pending } = useGit();
@@ -40,10 +51,31 @@ export function PrCreateModal({ rootPath, onClose }: { rootPath: string; onClose
   const { data: aiCfg } = useQuery({ queryKey: ["ai", "providers"], queryFn: () => api.ai.providers() });
   const { data: def } = useQuery({ queryKey: ["git", "default-branch", rootPath], queryFn: () => api.git.defaultBranch(rootPath), staleTime: 60_000 });
 
+  const editing = editNumber !== undefined;
+  // The PR being edited, fetched once. Never polled: while this form is open the authority on the
+  // title and body is what the user is typing, and a refetch would overwrite it mid-sentence.
+  const { data: existing, isPending: loadingPr, error: prError } = useQuery({
+    queryKey: ["git", "github", "pr", rootPath, editNumber],
+    queryFn: () => api.git.github.prGet(rootPath, editNumber as number),
+    enabled: editing,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+  // Prefill once, on arrival. Keyed off a ref rather than the data so re-renders can't clobber edits.
+  const filled = useRef(false);
+  useEffect(() => {
+    if (!existing || filled.current) return;
+    filled.current = true;
+    setTitle(existing.title);
+    setBody(existing.body);
+    setBase(existing.base || null);
+  }, [existing]);
+
   const head = status?.branch ?? (status?.detached ? "detached HEAD" : "—");
   const branches = branchData?.branches ?? [];
   // Preselect the repo's default branch as the base once it loads (the user can still change it).
-  useEffect(() => { if (base === null && def?.branch) setBase(def.branch); }, [def, base]);
+  // An edit takes its base from the PR itself — retargeting an open PR is not what this form is for.
+  useEffect(() => { if (!editing && base === null && def?.branch) setBase(def.branch); }, [editing, def, base]);
 
   // The active provider: the chosen default if enabled, else the first enabled one — same logic the
   // commit-message generator uses, so the picker stays in sync with it.
@@ -74,17 +106,28 @@ export function PrCreateModal({ rootPath, onClose }: { rootPath: string; onClose
   const create = () => {
     const t = title.trim();
     if (!t) { titleRef.current?.focus(); return; }
+    if (editing) {
+      // Send the body even when empty — clearing a description is a legitimate edit.
+      run(() => api.git.github.prEdit(rootPath, editNumber as number, { title: t, body }), {
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ["git", "github"] }); push(`Updated pull request #${editNumber}`); onClose(); },
+      });
+      return;
+    }
     run(() => api.git.github.prCreate(rootPath, { title: t, body: body.trim() || undefined, base: base ?? undefined, draft }), {
       onSuccess: (d) => { qc.invalidateQueries({ queryKey: ["git", "github"] }); push(`Opened ${(d as { url: string }).url || "pull request"}`); onClose(); },
     });
   };
 
   return (
-    <div className="fixed inset-0 z-[55] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+    // No click-to-dismiss on the backdrop: this form holds a title and a description someone either
+    // typed or waited on a model to generate, and a stray click outside it must not throw that away.
+    // Cancel, ✕, Escape, or a created PR are the only ways out.
+    <div className="fixed inset-0 z-[55] bg-black/50 flex items-center justify-center p-4">
+      {/* stopPropagation stays: clicks inside the form still must not reach the git panel behind it. */}
       <div onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}
         className="w-[560px] max-w-full max-h-[88vh] flex flex-col bg-canvas border border-edge rounded-lg shadow-xl">
         <div className="flex items-center justify-between px-4 h-11 shrink-0 border-b border-edge">
-          <span className="text-sm text-fg">Create Pull Request</span>
+          <span className="text-sm text-fg">{editing ? `Edit Pull Request #${editNumber}` : "Create Pull Request"}</span>
           <button onClick={onClose} className="text-dim hover:text-fg">✕</button>
         </div>
 
@@ -94,6 +137,10 @@ export function PrCreateModal({ rootPath, onClose }: { rootPath: string; onClose
             <div className="flex items-center gap-2 min-w-0 text-sm">
               <span className="px-1.5 py-0.5 rounded bg-elevated border border-edge text-fg truncate max-w-[12rem]" title={head}>⎇ {head}</span>
               <span className="text-dim">→</span>
+              {editing ? (
+                <span className="px-1.5 py-0.5 rounded bg-elevated border border-edge text-fg truncate max-w-[12rem]"
+                  title="Base branch — fixed for an open pull request">{base ?? "default branch"}</span>
+              ) : (
               <div className="relative">
                 <button onClick={() => setBaseOpen(v => !v)} title="Base branch to merge into"
                   className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-elevated border border-edge hover:bg-edge text-fg">
@@ -111,6 +158,7 @@ export function PrCreateModal({ rootPath, onClose }: { rootPath: string; onClose
                   </>
                 )}
               </div>
+              )}
             </div>
             <div className="relative shrink-0">
               <button onClick={() => setProviderMenu(v => !v)} title={activeLabel ? `AI: ${activeLabel} — switch model or add one` : "Choose an AI provider"}
@@ -156,6 +204,12 @@ export function PrCreateModal({ rootPath, onClose }: { rootPath: string; onClose
             <textarea value={body} onChange={e => setBody(e.target.value)} rows={9} spellCheck={false}
               placeholder="Describe your changes, or press Generate"
               className="w-full px-2 py-1.5 text-sm bg-panel border border-edge rounded outline-none focus:border-blue-500 resize-y min-h-[6rem]" />
+            {editing && prError && (
+              <div className="flex items-start gap-1.5 text-[11px] text-red-400" role="alert">
+                <span className="leading-none">⚠</span>
+                <span className="min-w-0 break-words">Could not load pull request #{editNumber}: {(prError as Error).message}</span>
+              </div>
+            )}
             {genError && (
               <div className="flex items-start gap-1.5 text-[11px] text-red-400" role="alert">
                 <span className="leading-none">⚠</span><span className="min-w-0 break-words">{genError}</span>
@@ -166,19 +220,21 @@ export function PrCreateModal({ rootPath, onClose }: { rootPath: string; onClose
 
         {/* footer */}
         <div className="shrink-0 border-t border-edge px-4 py-3 flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-fg cursor-pointer select-none" title="Open as a draft pull request">
-            <input type="checkbox" checked={draft} onChange={e => setDraft(e.target.checked)} className="accent-blue-500" /> Draft
-          </label>
+          {!editing && (
+            <label className="flex items-center gap-1.5 text-xs text-fg cursor-pointer select-none" title="Open as a draft pull request">
+              <input type="checkbox" checked={draft} onChange={e => setDraft(e.target.checked)} className="accent-blue-500" /> Draft
+            </label>
+          )}
           <button onClick={() => setAiSettings(true)} className="ml-auto px-2 py-1.5 text-xs text-dim hover:text-fg">Edit Prompt…</button>
           <button onClick={onClose} className="px-3 py-1.5 text-sm rounded bg-elevated hover:bg-edge text-fg">Cancel</button>
-          <button onClick={create} disabled={!title.trim() || pending}
-            className={`px-3 py-1.5 text-sm rounded ${title.trim() && !pending ? "bg-blue-600 hover:bg-blue-500 text-white" : "bg-elevated text-dim cursor-not-allowed"}`}>
-            Create PR
+          <button onClick={create} disabled={!title.trim() || pending || (editing && loadingPr)}
+            className={`px-3 py-1.5 text-sm rounded ${title.trim() && !pending && !(editing && loadingPr) ? "bg-blue-600 hover:bg-blue-500 text-white" : "bg-elevated text-dim cursor-not-allowed"}`}>
+            {editing ? "Save changes" : "Create PR"}
           </button>
         </div>
 
-        {/* Mounted INSIDE the stop-propagation card so the settings backdrop click closes settings
-            only — it never bubbles up to this modal's own backdrop onClose. */}
+        {/* Mounted INSIDE the card so its own Escape handling stops here rather than closing the
+            form behind it. */}
         {aiSettings && <AiProviderSettings onClose={() => setAiSettings(false)} />}
       </div>
     </div>

@@ -86,6 +86,10 @@ const fakeGh: GhRunner = async (args) => {
         { number: 7, title: "Add X", author: { login: "ale" }, headRefName: "feat/x", state: "OPEN", url: "http://pr/7", isDraft: false },
       ]));
       if (args[1] === "create") return ok("https://github.com/ale/proj/pull/8\n");
+      if (args[1] === "view") return ok(JSON.stringify({
+        number: 7, title: "Add X", body: "the description", author: { login: "ale" },
+        headRefName: "feat/x", baseRefName: "main", state: "OPEN", url: "http://pr/7", isDraft: false,
+      }));
       return ok("");
     case "run": return ok(JSON.stringify([
       { databaseId: 99, name: "CI", displayTitle: "build", status: "completed", conclusion: "success", headBranch: "main", event: "push", createdAt: "2026-06-07", url: "http://run/99" },
@@ -325,6 +329,29 @@ describe("git routes", () => {
 
   it("POST /api/git/github/pr/create 400s without a title", async () => {
     expect((await post("/api/git/github/pr/create", { path: "/repo" })).statusCode).toBe(400);
+  });
+
+  it("GET /api/git/github/pr returns one PR with its description", async () => {
+    const res = await get("/api/git/github/pr?path=/repo&number=7");
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      number: 7, title: "Add X", body: "the description", author: "ale",
+      branch: "feat/x", base: "main", state: "OPEN", url: "http://pr/7", draft: false,
+    });
+  });
+
+  it("GET /api/git/github/pr 400s without a number", async () => {
+    expect((await get("/api/git/github/pr?path=/repo")).statusCode).toBe(400);
+  });
+
+  it("POST /api/git/github/pr/edit updates the PR", async () => {
+    const res = await post("/api/git/github/pr/edit", { path: "/repo", number: 7, title: "Add X, better", body: "why" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+  });
+
+  it("POST /api/git/github/pr/edit refuses to blank the title", async () => {
+    expect((await post("/api/git/github/pr/edit", { path: "/repo", number: 7, title: "" })).statusCode).toBe(400);
   });
 
   it("GET /api/git/github/runs lists Actions runs", async () => {

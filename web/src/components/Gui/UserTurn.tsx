@@ -142,10 +142,11 @@ export function UserTurn({
               <path d="M12 20h9" />
               <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
             </RowButton>
-            <RowButton label="Delete from here" disabled={busy} onClick={() => setMode("confirm-delete")}>
-              <path d="M3 6h18" />
-              <path d="M8 6V4h8v2" />
-              <path d="M19 6l-1 14H6L5 6" />
+            {/* A back-arrow, not a bin: what this does is wind the conversation back to this message.
+                The confirmation below still spells out that everything after it goes. */}
+            <RowButton label="Rewind to this message" disabled={busy} onClick={() => setMode("confirm-delete")}>
+              <path d="M9 14 4 9l5-5" />
+              <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
             </RowButton>
           </div>
         )}

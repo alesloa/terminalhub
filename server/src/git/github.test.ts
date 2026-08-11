@@ -182,6 +182,50 @@ describe("createGithubController PR actions", () => {
     await expect(createGithubController(run).createPr("/x", { title: "X" })).rejects.toThrow(GhError);
     await expect(createGithubController(run).createPr("/x", { title: "X" })).rejects.toThrow("must first push");
   });
+
+  it("getPr reads one PR including the description the edit form needs", async () => {
+    const { run, calls } = fakeRunner(() => ({
+      stdout: JSON.stringify({
+        number: 12, title: "Add X", body: "why it matters", author: { login: "ale" },
+        headRefName: "feat/x", baseRefName: "main", state: "OPEN", url: "http://pr/12", isDraft: true,
+      }),
+    }));
+    const pr = await createGithubController(run).getPr("/x", 12);
+    expect(calls[0].slice(0, 3)).toEqual(["pr", "view", "12"]);
+    expect(calls[0].join(" ")).toContain("body");
+    expect(pr).toEqual({
+      number: 12, title: "Add X", body: "why it matters", author: "ale",
+      branch: "feat/x", base: "main", state: "OPEN", url: "http://pr/12", draft: true,
+    });
+  });
+
+  it("getPr throws GhError rather than returning a blank PR when gh fails", async () => {
+    const { run } = fakeRunner(() => ({ code: 1, stderr: "no pull requests found for branch\n" }));
+    await expect(createGithubController(run).getPr("/x", 12)).rejects.toThrow("no pull requests found");
+  });
+
+  it("editPr sends only the fields given, so a body-only edit can't blank the title", async () => {
+    const { run, calls } = fakeRunner(() => ({}));
+    await createGithubController(run).editPr("/x", 7, { body: "new description" });
+    expect(calls[0]).toEqual(["pr", "edit", "7", "--body", "new description"]);
+  });
+
+  it("editPr sends an empty body, because clearing a description is a real edit", async () => {
+    const { run, calls } = fakeRunner(() => ({}));
+    await createGithubController(run).editPr("/x", 7, { title: "T", body: "" });
+    expect(calls[0]).toEqual(["pr", "edit", "7", "--title", "T", "--body", ""]);
+  });
+
+  it("editPr does not shell out at all when nothing was changed", async () => {
+    const { run, calls } = fakeRunner(() => ({}));
+    await createGithubController(run).editPr("/x", 7, {});
+    expect(calls).toEqual([]);
+  });
+
+  it("editPr throws GhError carrying gh's stderr when the edit fails", async () => {
+    const { run } = fakeRunner(() => ({ code: 1, stderr: "Pull request is closed\n" }));
+    await expect(createGithubController(run).editPr("/x", 7, { title: "T" })).rejects.toThrow("Pull request is closed");
+  });
 });
 
 describe("parseRemoteOwner", () => {

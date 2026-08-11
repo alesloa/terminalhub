@@ -25,6 +25,8 @@ export function GitHeader({ rootPath, onResizeStart }:
   const [branchOpen, setBranchOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [prCreateOpen, setPrCreateOpen] = useState(false);
+  // The PR the edit form is open on. Separate from prCreateOpen: one form, two jobs.
+  const [prEditNumber, setPrEditNumber] = useState<number | null>(null);
 
   const { data: status } = useQuery({
     queryKey: ["git", "status", rootPath],
@@ -198,8 +200,14 @@ export function GitHeader({ rootPath, onResizeStart }:
             <MenuItem onClick={close(() => notWired("Push To"))}>Push To…</MenuItem>
             <MenuItem onClick={close(forcePushCur)} disabled={pending}>Force Push</MenuItem>
             <MenuSep />
-            <MenuItem onClick={close(() => setPrCreateOpen(true))}>Create Pull Request</MenuItem>
-            <MenuItem onClick={close(() => setScmTab("prs"))}>View Pull Requests</MenuItem>
+            {/* This branch already has an open PR, so offering to create a second one is a dead end —
+                edit the one that exists instead. */}
+            {branchPr
+              ? <MenuItem onClick={close(() => setPrEditNumber(branchPr.number))}>Edit Pull Request #{branchPr.number}</MenuItem>
+              : <MenuItem onClick={close(() => setPrCreateOpen(true))}>Create Pull Request</MenuItem>}
+            {/* Tied to THIS branch, not the repo: a menu opened on a branch with no PR shouldn't
+                offer to go look at other people's. */}
+            {branchPr && <MenuItem onClick={close(() => setScmTab("prs"))}>View Pull Requests</MenuItem>}
           </Popover>
         </div>
       </div>
@@ -208,6 +216,9 @@ export function GitHeader({ rootPath, onResizeStart }:
         <PublishModal rootPath={rootPath} folder={folder} branch={status?.branch ?? null} onClose={() => setPublishOpen(false)} />
       )}
       {prCreateOpen && <PrCreateModal rootPath={rootPath} onClose={() => setPrCreateOpen(false)} />}
+      {prEditNumber !== null && (
+        <PrCreateModal rootPath={rootPath} editNumber={prEditNumber} onClose={() => setPrEditNumber(null)} />
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import type {
   Workspace, Folder, Space, SpaceConfig, SpaceCatalog, SpacePreset, SpaceSeedReport, SeedResult, InstalledSet, InstallKind, CanvasBackground, Wallpaper, WallpaperData, Terminal, FsListing, FsFile, FsFileBytes, DriveAccountPublic, DriveEntry, AgentsResponse, HeadroomStatus, HeadroomSavings, CustomAgent, ProcessInfo, PortInfo, AttentionResponse, WorkingResponse, ClaudeUsageResult, CodexUsageResult,
-  GitInfo, GitStatus, GitCommit, GitBranch, GitWorktree, StashEntry, CommitFile, MergePreview, PrMergeMethod, GithubInfo, GithubOwners, GithubRepo, GithubAccount, GithubIdentity, GitignorePreview, PullRequest, ActionRun, CloneJob,
+  GitInfo, GitStatus, GitCommit, GitBranch, GitWorktree, StashEntry, CommitFile, MergePreview, PrMergeMethod, GithubInfo, GithubOwners, GithubRepo, GithubAccount, GithubIdentity, GitignorePreview, PullRequest, PullRequestDetail, ActionRun, CloneJob,
   SystemStats,
   AiProvider, AiProviderKind, AiProvidersResponse, PromptBuilderInputs, AiBuilderResponse, AiChatMessage, AiChatResponse, SettingsResponse, KeptVoice, Bookmark, FavoriteGroup, Favorite, Note, NoteGroup, Link, LinkFolder, StickyNote, SpaceWidget, SpaceWidgetKind, BoardCard, BoardColumn, TimeEntry, TimeClient, TimeProject, TimeTask, SttStatus, TranscribeResult,
   Blueprint, BlueprintSummary, BlueprintGraph,
@@ -445,6 +445,11 @@ export const api = {
       prs: (p: string) => req<{ prs: PullRequest[] }>("GET", `/api/git/github/prs?path=${encodeURIComponent(p)}`),
       prCreate: (p: string, b: { title: string; body?: string; base?: string; draft?: boolean }) =>
         req<{ url: string }>("POST", "/api/git/github/pr/create", { path: p, ...b }),
+      // One PR in full (description included) — only fetched when the edit form opens, never polled.
+      prGet: (p: string, number: number) =>
+        req<PullRequestDetail>("GET", `/api/git/github/pr?path=${encodeURIComponent(p)}&number=${number}`),
+      prEdit: (p: string, number: number, b: { title?: string; body?: string }) =>
+        req<{ ok: true }>("POST", "/api/git/github/pr/edit", { path: p, number, ...b }),
       runs: (p: string) => req<{ runs: ActionRun[] }>("GET", `/api/git/github/runs?path=${encodeURIComponent(p)}`),
       prComment: (p: string, number: number, body: string) => req<{ ok: true }>("POST", "/api/git/github/pr/comment", { path: p, number, body }),
       prMerge: (p: string, number: number, method: PrMergeMethod) => req<{ ok: true }>("POST", "/api/git/github/pr/merge", { path: p, number, method }),
