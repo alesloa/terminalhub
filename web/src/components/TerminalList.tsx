@@ -199,10 +199,12 @@ export function TerminalList({ workspaceId, terminals, width }: { workspaceId: s
             // workspace default. Drives the default ICON color + the working-animation color (NOT the
             // label text, which keeps the user's own color / default). `??` not `||`: a plain terminal
             // is stored with an EMPTY override ("") and must stay a plain shell (terminal glyph) — only
-            // a null override (none set) inherits the workspace's launch command. A GUI terminal has
-            // no launch command at all (the agent runs as an SDK child, not in the pane) — it's always
-            // Claude, so it wears the Claude brand directly instead of the plain-shell fallback.
-            const agentId = t.mode === "gui" ? "claude" : agentIdForCommand(t.launchCommandOverride ?? wsLaunch);
+            // a null override (none set) inherits the workspace's launch command. A GUI terminal runs
+            // nothing in its pane (the agent is a child of the hub), but that same command still picks
+            // WHICH agent the chat drives — and server/src/gui/agent.ts maps everything that isn't
+            // Codex onto Claude, so a GUI row always wears one of those two brands.
+            const paneAgent = agentIdForCommand(t.launchCommandOverride ?? wsLaunch);
+            const agentId = t.mode === "gui" ? (paneAgent === "codex" ? "codex" : "claude") : paneAgent;
             // Label tint: live preview (dragging the picker) wins, then the user's explicit color.
             // undefined = theme default. The agent color is intentionally NOT applied here.
             const tint = (previewColors[t.id] !== undefined ? previewColors[t.id] : t.color) ?? undefined;
@@ -352,7 +354,7 @@ function TerminalRow({
           {/* GUI-mode marker: this row is an in-app chat, not a pane. Sized like the row's other
               chrome (the icon/close buttons) so it reads as a quiet tag, not a button. */}
           {t.mode === "gui" && (
-            <span title="In-app Claude chat — right-click for “Back to Terminal”"
+            <span title="In-app agent chat — right-click for “Back to Terminal”"
               className="shrink-0 px-1 rounded border border-edge-strong text-[9px] leading-[13px] tracking-wide text-dim">
               GUI
             </span>

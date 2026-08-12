@@ -107,10 +107,11 @@ export interface Terminal {
   // and use this text alone. null = no terminal prompt. See agents/systemPrompt.ts.
   systemPrompt: { text: string; includeParent: boolean } | null;
   // Which surface this terminal is showing. "tmux" is the classic pane; "gui" swaps it for the
-  // in-app Claude chat driven by the Agent SDK. The tmux session keeps existing either way, so a
-  // terminal can be flipped back and forth — see gui/switch.ts.
+  // in-app chat, driven by the Agent SDK for Claude or `codex app-server` for Codex — the launch
+  // command decides which (gui/agent.ts). The tmux session keeps existing either way, so a terminal
+  // can be flipped back and forth — see gui/switch.ts.
   mode: TerminalMode;
-  // The Claude session id this terminal's conversation lives under, once known. Set when a GUI
+  // The agent session id this terminal's conversation lives under, once known. Set when a GUI
   // terminal starts (the host generates it) or when a tmux pane is switched to GUI (detected from
   // the running agent). It's what makes the handoff continuous in both directions.
   agentSessionId: string | null;

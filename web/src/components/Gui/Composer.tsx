@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import type { GuiCommand, GuiConfig, GuiContextUsage, GuiImageAttachment, GuiModel } from "../../api/guiTypes";
-import { findModel, hasReasoningOptions } from "./composerOptions";
+import type { GuiAgent, GuiCommand, GuiConfig, GuiContextUsage, GuiImageAttachment, GuiModel } from "../../api/guiTypes";
+import { AGENT_NAMES, findModel, hasReasoningOptions } from "./composerOptions";
 import { ModelPill } from "./ModelPill";
 import { PermissionPill } from "./PermissionPill";
 import { ReasoningPill } from "./ReasoningPill";
@@ -21,6 +21,9 @@ interface Props {
   terminalId: string;
   /** Workspace folder — the root the @file menu lists from. */
   folder: string;
+  /** Which CLI this chat drives, or null while the socket is still telling us. Only the wording
+   *  depends on it — every control below works the same either way. */
+  agent: GuiAgent | null;
   busy: boolean;
   connected: boolean;
   /** null until the socket has told us what the session is actually configured with. */
@@ -41,7 +44,7 @@ interface Props {
  *  Typing `@` opens a file picker for the workspace, `/` at the start opens the CLI's own slash
  *  commands, and images can be pasted or dropped straight in. */
 export function Composer({
-  terminalId, folder, busy, connected, config, hero, contextUsage, costUsd, onSend, onInterrupt, onConfig,
+  terminalId, folder, agent, busy, connected, config, hero, contextUsage, costUsd, onSend, onInterrupt, onConfig,
 }: Props) {
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
@@ -177,6 +180,14 @@ export function Composer({
   const selectedModel = findModel(models, config?.model ?? null);
   const canSend = Boolean(text.trim() || attachments.images.length);
 
+  // A stored model this CLI doesn't offer — a Claude id left on a chat that now drives Codex — would
+  // be rejected on the next turn and leaves every model-shaped control with no row to read. Once the
+  // catalog is in and disagrees, drop the pick and let the CLI's own default take over.
+  const staleModel = Boolean(config?.model) && models.length > 0 && !selectedModel;
+  useEffect(() => {
+    if (staleModel) onConfig({ model: null });
+  }, [staleModel, onConfig]);
+
   return (
     <div className={`shrink-0 p-3 ${hero ? "" : "border-t border-edge"}`}>
       <div className={hero ? "mx-auto w-full max-w-2xl" : ""}>
@@ -235,7 +246,11 @@ export function Composer({
             onPaste={onPaste}
             onBlur={() => setMenuOpen(false)}
             onFocus={() => setMenuOpen(true)}
-            placeholder={connected ? "Message Claude…  (@ for files, / for commands, paste an image)" : "Not connected"}
+            placeholder={
+              connected
+                ? `Message ${agent ? AGENT_NAMES[agent] : "the agent"}…  (@ for files, / for commands, paste an image)`
+                : "Not connected"
+            }
             className="block max-h-40 w-full resize-none bg-transparent py-1 text-sm leading-6 outline-none placeholder:text-dim"
           />
 
@@ -243,12 +258,15 @@ export function Composer({
               the send button rides the last one. */}
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             {config && models.length > 0 && (
-              <ModelPill models={models} model={config.model} onPick={pickModel} />
+              <ModelPill agent={agent} models={models} model={config.model} onPick={pickModel} />
             )}
-            {config && selectedModel && hasReasoningOptions(selectedModel) && (
-              <ReasoningPill model={selectedModel} config={config} onPatch={onConfig} />
+            {config && agent && selectedModel && hasReasoningOptions(selectedModel) && (
+              <ReasoningPill agent={agent} model={selectedModel} config={config} onPatch={onConfig} />
             )}
-            {config && <PermissionPill config={config} onPatch={onConfig} />}
+            {/* Waits on the agent as well as the config: the four modes mean different things to
+                Codex, so the menu can't be drawn until we know whose menu it is. Both arrive in the
+                same frame, so this is never a lasting gap. */}
+            {config && agent && <PermissionPill agent={agent} config={config} onPatch={onConfig} />}
 
             <span className="ml-auto flex items-center gap-2">
               <ContextMeter usage={contextUsage} costUsd={costUsd} />

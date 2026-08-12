@@ -47,6 +47,31 @@ describe("terminal routes", () => {
     expect(sendKeys).toContain("claude");
   });
 
+  // A new terminal opens on the last composer picks — but only the ones made on the CLI it is about
+  // to run. Seeding a Codex chat with Claude's model names a model Codex has never heard of: the
+  // picker matches nothing, the reasoning menu has no levels to show, and turns are refused.
+  it("seeds the composer from the picks made on the agent it launches", async () => {
+    h.ctx.store.setGuiDefaults("claude", { model: "opus", effort: "xhigh", permissionMode: "auto", fastMode: true });
+    h.ctx.store.setGuiDefaults("codex", { model: "gpt-5.6-sol", effort: "ultra", permissionMode: "auto", fastMode: false });
+    const ws = h.ctx.store.createWorkspace({ name: "A", folder: "/work", launchCommand: "claude", color: null });
+
+    const claude = (await h.app.inject({ method: "POST", url: `/api/workspaces/${ws.id}/terminals`, payload: { mode: "gui" } })).json().terminal;
+    const codex = (await h.app.inject({
+      method: "POST", url: `/api/workspaces/${ws.id}/terminals`,
+      payload: { mode: "gui", launchCommandOverride: "codex" },
+    })).json().terminal;
+
+    expect(claude.guiConfig.model).toBe("opus");
+    expect(codex.guiConfig).toEqual({ model: "gpt-5.6-sol", effort: "ultra", permissionMode: "auto", fastMode: false });
+  });
+
+  it("seeds from the workspace's agent when the terminal names no command of its own", async () => {
+    h.ctx.store.setGuiDefaults("codex", { model: "gpt-5.6-sol", effort: null, permissionMode: "auto", fastMode: false });
+    const ws = h.ctx.store.createWorkspace({ name: "A", folder: "/work", launchCommand: "codex", color: null });
+    const term = (await h.app.inject({ method: "POST", url: `/api/workspaces/${ws.id}/terminals`, payload: {} })).json().terminal;
+    expect(term.guiConfig.model).toBe("gpt-5.6-sol");
+  });
+
   it("empty launch command does NOT send keys", async () => {
     const ws = h.ctx.store.createWorkspace({ name: "A", folder: "/work", launchCommand: "", color: null });
     await h.app.inject({ method: "POST", url: `/api/workspaces/${ws.id}/terminals`, payload: {} });

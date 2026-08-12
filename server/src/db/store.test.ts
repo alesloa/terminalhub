@@ -1018,28 +1018,53 @@ describe("store: sticky GUI defaults", () => {
   const PICKED: GuiConfig = { model: "opus", effort: "xhigh", permissionMode: "full-access", fastMode: false };
 
   it("returns the defaults until something is stored", () => {
-    expect(store.getGuiDefaults()).toEqual(DEFAULT_GUI_CONFIG);
+    expect(store.getGuiDefaults("claude")).toEqual(DEFAULT_GUI_CONFIG);
+    expect(store.getGuiDefaults("codex")).toEqual(DEFAULT_GUI_CONFIG);
   });
 
   it("round-trips the last choice", () => {
-    store.setGuiDefaults(PICKED);
-    expect(store.getGuiDefaults()).toEqual(PICKED);
+    store.setGuiDefaults("claude", PICKED);
+    expect(store.getGuiDefaults("claude")).toEqual(PICKED);
+  });
+
+  it("keeps each agent's picks to itself", () => {
+    // The whole point: "opus" is not a model Codex has ever heard of, so choosing it in a Claude
+    // chat must not become what the next Codex chat opens on.
+    const codexPick: GuiConfig = { model: "gpt-5.6-sol", effort: "ultra", permissionMode: "auto", fastMode: false };
+    store.setGuiDefaults("claude", PICKED);
+    store.setGuiDefaults("codex", codexPick);
+    expect(store.getGuiDefaults("claude")).toEqual(PICKED);
+    expect(store.getGuiDefaults("codex")).toEqual(codexPick);
   });
 
   it("survives a reopen and shrugs off a corrupt blob", () => {
     const dir = mkdtempSync(join(tmpdir(), "tr-guidefaults-"));
     const dbPath = join(dir, "t.db");
-    createStore(dbPath).setGuiDefaults(PICKED);
-    expect(createStore(dbPath).getGuiDefaults()).toEqual(PICKED);
+    createStore(dbPath).setGuiDefaults("claude", PICKED);
+    expect(createStore(dbPath).getGuiDefaults("claude")).toEqual(PICKED);
 
     const raw = new Database(dbPath);
     raw.prepare(`UPDATE settings SET value='{nope' WHERE key='guiDefaults'`).run();
     raw.close();
-    expect(createStore(dbPath).getGuiDefaults()).toEqual(DEFAULT_GUI_CONFIG);
+    expect(createStore(dbPath).getGuiDefaults("claude")).toEqual(DEFAULT_GUI_CONFIG);
+  });
+
+  it("reads picks made before GUI mode had a second agent as Claude's", () => {
+    // Claude keeps the original unsuffixed key, so an existing install doesn't lose its choices.
+    const dir = mkdtempSync(join(tmpdir(), "tr-guidefaults-legacy-"));
+    const dbPath = join(dir, "t.db");
+    createStore(dbPath); // create the schema
+    const raw = new Database(dbPath);
+    raw.prepare(`INSERT INTO settings (key,value) VALUES ('guiDefaults',?)`).run(JSON.stringify(PICKED));
+    raw.close();
+    expect(createStore(dbPath).getGuiDefaults("claude")).toEqual(PICKED);
+    expect(createStore(dbPath).getGuiDefaults("codex")).toEqual(DEFAULT_GUI_CONFIG);
   });
 
   it("stays out of the flat settings object", () => {
-    store.setGuiDefaults(PICKED);
+    store.setGuiDefaults("claude", PICKED);
+    store.setGuiDefaults("codex", PICKED);
     expect(store.getSettings()).not.toHaveProperty("guiDefaults");
+    expect(store.getSettings()).not.toHaveProperty("guiDefaults.codex");
   });
 });

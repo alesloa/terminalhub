@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { GuiModel } from "../../api/guiTypes";
+import type { GuiAgent, GuiModel } from "../../api/guiTypes";
+import { agentIconPath } from "../../lib/agents";
 import { IS_MAC } from "../../lib/hotkey";
 import { Pill, PillPopover, PopoverBody, PopoverRow } from "./ComposerPopover";
 import { findModel } from "./composerOptions";
@@ -11,7 +12,10 @@ const CHORDS = 9; // ⌘1…⌘9 — one per digit, so only the first nine visib
  * Which model the turn runs on. Every row comes from the server's catalog (read off the installed
  * CLI), so this component has no idea what models exist and never needs updating when new ones ship.
  */
-export function ModelPill({ models, model, onPick }: {
+export function ModelPill({ agent, models, model, onPick }: {
+  /** Whose catalog this is — the pill wears that CLI's mark so a Codex chat never looks like a
+   *  Claude one. null only while the socket is still saying. */
+  agent: GuiAgent | null;
   models: GuiModel[];
   model: string | null;
   onPick: (value: string) => void;
@@ -56,7 +60,7 @@ export function ModelPill({ models, model, onPick }: {
         label={label}
         title={selected?.description || "Model"}
         open={open}
-        icon={<img src="/agents/claude.svg" alt="" className="h-3.5 w-3.5 shrink-0 object-contain" />}
+        icon={agent ? <img src={agentIconPath(agent)} alt="" className="h-3.5 w-3.5 shrink-0 object-contain" /> : undefined}
         onClick={() => (open ? close() : setOpen(true))}
       />
       {open && (

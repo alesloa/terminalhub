@@ -12,6 +12,9 @@ import type { GuiConfig } from "./config.js";
 /** Which surface a terminal is currently running: the tmux pane, or the in-app chat. */
 export type GuiMode = "tmux" | "gui";
 
+/** Which CLI a GUI chat drives. Decided from the terminal's launch command — see gui/agent.ts. */
+export type GuiAgent = "claude" | "codex";
+
 /** Lifecycle of the SDK-backed Claude process behind a GUI terminal. */
 export type GuiSessionState = "idle" | "starting" | "running" | "waiting" | "stopped" | "error";
 
@@ -157,16 +160,24 @@ export interface GuiModel {
   supportsEffort: boolean;
   /** Exactly the levels this model accepts — the picker greys out everything else. */
   effortLevels: GuiEffortLevel[];
+  /** The level this model lands on when no effort is chosen, so the menu can say which row you
+   *  already have. Per-model — Codex reports its own, and they differ between models. */
+  defaultEffort: GuiEffortLevel | null;
   supportsFastMode: boolean;
   /** True when the CLI lists this model in its 1M-context form, which is the only evidence that a
    *  200k/1M toggle is real for it. Derived from `value`, never assumed. */
   supportsContext1m: boolean;
   /** `value` with any `[1m]` suffix removed — the 200k form, and the identity shared by both. */
   base: string;
+  /** The row the CLI runs when no model is named. Claude publishes it as a catalog row literally
+   *  called "default"; Codex flags one of its real models instead. Either way the picker needs to
+   *  know which row an unset model actually lands on, or it can't show its options. */
+  isDefault: boolean;
 }
 
-/** The subset of GuiEffort the SDK accepts as a real `effort` value. */
-export type GuiEffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+/** The subset of GuiEffort that is a real, model-advertised effort level. `ultra` is Codex-only —
+ *  which levels a given model offers comes from that model's own catalog row, not from this union. */
+export type GuiEffortLevel = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 
 // ---------------------------------------------------------------------------
 // WebSocket frames — /ws/gui/:terminalId
@@ -200,6 +211,8 @@ export type GuiClientFrame =
   | { type: "ping" };
 
 export type GuiServerFrame =
-  | { type: "history"; messages: GuiMessage[]; sessionId: string | null; config: GuiConfig }
+  /** `agent` rides along so the composer can label itself and drop the pills that mean nothing for
+   *  the CLI behind this chat. It cannot change without the socket reconnecting. */
+  | { type: "history"; messages: GuiMessage[]; sessionId: string | null; config: GuiConfig; agent: GuiAgent }
   | { type: "event"; event: GuiEvent }
   | { type: "pong" };

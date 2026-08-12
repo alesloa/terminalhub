@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from "react";
 import type { GuiBlock } from "../../api/guiTypes";
-import { asRecord, asString, DiffBlock, diffInputOf } from "./DiffBlock";
+import { asRecord, asString, DiffBlock, diffInputOf, fileDiffsOf, PatchDiff } from "./DiffBlock";
 import { useTurnActive } from "./turnActive";
 
 export type GuiToolBlock = Extract<GuiBlock, { kind: "tool" }>;
@@ -22,8 +22,10 @@ export function summarizeToolInput(name: string, input: unknown): string {
   };
   let picked: string | null;
   switch (name) {
-    case "Read": case "Edit": case "MultiEdit": case "Write": case "NotebookEdit":
+    case "Read": case "Edit": case "MultiEdit": case "Write": case "NotebookEdit": case "ApplyPatch":
       picked = pick("file_path", "notebook_path", "path"); break;
+    case "UpdatePlan":
+      picked = pick("plan"); break;
     case "Bash": case "BashOutput": case "KillShell":
       picked = pick("command", "description", "shell_id"); break;
     case "Grep": case "Glob":
@@ -64,7 +66,10 @@ export const ToolCard = memo(function ToolCard({ block }: { block: GuiToolBlock 
   const [open, setOpen] = useState(false);
   const summary = useMemo(() => summarizeToolInput(block.name, block.input), [block.name, block.input]);
   const diff = useMemo(() => diffInputOf(block.name, block.input), [block.name, block.input]);
-  const inputJson = useMemo(() => (open ? safeJson(block.input, 2) : ""), [open, block.input]);
+  const patch = useMemo(() => (diff ? null : fileDiffsOf(block.input)), [diff, block.input]);
+  // A patch already IS its input, printed line by line — repeating it as JSON underneath would double
+  // the longest card in the transcript for nothing.
+  const inputJson = useMemo(() => (open && !patch ? safeJson(block.input, 2) : ""), [open, patch, block.input]);
 
   // A card only spins while a turn is actually in flight. A block left "running" by a run that died
   // has nothing left to settle it, so the transcript's own liveness decides instead of the block.
@@ -96,6 +101,7 @@ export const ToolCard = memo(function ToolCard({ block }: { block: GuiToolBlock 
       {open && (
         <div className="space-y-2 border-t border-edge px-2.5 py-2">
           {diff && <DiffBlock oldText={diff.oldText} newText={diff.newText} />}
+          {patch && <PatchDiff files={patch} />}
           {inputJson && (
             <Section label="Input">
               <pre className="max-h-64 overflow-auto rounded-md border border-edge bg-code px-2.5 py-1.5 font-mono text-[11px] leading-5 whitespace-pre-wrap break-all">{inputJson}</pre>

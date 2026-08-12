@@ -3,6 +3,7 @@ import type { TmuxController } from "../tmux/controller.js";
 import { resolveTerminalSession } from "../claude/terminalLink.js";
 import { computeSessionState } from "../claude/activity.js";
 import { transcriptPathFor } from "./history.js";
+import { guiAgentForCommand, type GuiAgent } from "./agent.js";
 
 // Moving one terminal between the tmux pane and the GUI chat.
 //
@@ -15,8 +16,15 @@ import { transcriptPathFor } from "./history.js";
 // pane at a shell, so switching back is a `send-keys` away and everything else in the app that
 // reads the pane (cwd, previews, process tree) keeps working.
 
-/** Keys that quit an interactive Claude Code TUI: cancel anything in flight, then EOF the prompt. */
-const QUIT_KEYS = ["C-c", "C-c", "C-d"] as const;
+/** Keys that quit each agent's interactive TUI: cancel anything in flight, then leave.
+ *
+ *  Claude needs the trailing EOF — two interrupts only clear its prompt. Codex exits on the second
+ *  interrupt, so a C-d after it would land in the pane's SHELL and close the pane, which is the one
+ *  thing this handoff must never do. */
+const QUIT_KEYS: Record<GuiAgent, readonly string[]> = {
+  claude: ["C-c", "C-c", "C-d"],
+  codex: ["C-c", "C-c"],
+};
 
 export interface SwitchDeps {
   tmux: TmuxController;
@@ -35,38 +43,43 @@ export interface SwitchResult {
 
 export class SwitchBlocked extends Error {}
 
-/** The launch line used to put a Claude session back into a tmux pane. Must stay parseable by
+/** The launch line used to put a session back into a tmux pane. Must stay parseable by
  *  `sessionLinkFromLaunch` in claude/terminalLink.ts, which is what re-binds the pane to the
  *  session afterwards — change the shape here and the link silently stops matching. */
-export function resumeCommand(sessionId: string): string {
-  return `claude --model "opus[1m]" --resume ${sessionId}`;
+export function resumeCommand(sessionId: string, agent: GuiAgent = "claude"): string {
+  return agent === "codex"
+    ? `codex resume ${sessionId}`
+    : `claude --model "opus[1m]" --resume ${sessionId}`;
 }
 
 /**
- * tmux → gui. Detects which Claude session the pane is running, refuses while a turn is in flight
+ * tmux → gui. Detects which session the pane is running, refuses while a turn is in flight
  * (quitting mid-turn would strand the work), quits the agent in the pane, and flips the mode.
  * Returns the session id the GUI should resume, or null for a pane that had no agent running —
  * in which case the GUI simply starts a fresh conversation in the same folder.
  */
 export async function switchToGui(
-  term: Terminal, folder: string, deps: SwitchDeps,
+  term: Terminal, folder: string, deps: SwitchDeps, agent: GuiAgent = "claude",
 ): Promise<SwitchResult> {
   const link = await resolveTerminalSession(term, folder, (name) => deps.tmux.panePid(name));
-  const sessionId = link?.agent === "claude" ? link.sessionId : null;
+  // Only a session belonging to the agent the GUI is about to run can be carried across — resuming
+  // a Codex thread id as a Claude session (or the reverse) would fail on the far side.
+  const sessionId = link?.agent === agent ? link.sessionId : null;
 
-  if (sessionId) {
+  if (sessionId && agent === "claude") {
     const transcript = await transcriptPathFor(sessionId, folder);
     // Mid-turn means the agent is actively working. Killing it now loses that work with no way to
-    // recover it, so make the user interrupt or wait rather than deciding for them.
+    // recover it, so make the user interrupt or wait rather than deciding for them. Codex writes no
+    // equivalent liveness signal we can read from outside its process, so this check is Claude-only.
     if (transcript && (await computeSessionState(transcript)) === "active") {
       throw new SwitchBlocked("Claude is still working in this terminal. Interrupt it or wait, then switch.");
     }
   }
 
-  // Only send quit keys when something is actually running — otherwise C-d would close the pane's
+  // Only send quit keys when something is actually running — otherwise they would reach the pane's
   // shell, which is the one thing this handoff must never do.
   if (link) {
-    for (const key of QUIT_KEYS) await deps.tmux.sendKey(term.tmuxSession, key);
+    for (const key of QUIT_KEYS[agent]) await deps.tmux.sendKey(term.tmuxSession, key);
   }
 
   deps.setAgentSession(term.id, sessionId);
@@ -87,7 +100,9 @@ export async function switchToTmux(
   await deps.stopGui(term.id);
 
   const sessionId = term.agentSessionId;
-  const command = sessionId ? resumeCommand(sessionId) : launchCommand.trim();
+  const command = sessionId
+    ? resumeCommand(sessionId, guiAgentForCommand(launchCommand))
+    : launchCommand.trim();
   if (command) await deps.tmux.sendKeys(term.tmuxSession, command);
 
   deps.setMode(term.id, "tmux");

@@ -1,23 +1,28 @@
-import { useRef, useState } from "react";
-import type { GuiConfig, GuiPermissionMode } from "../../api/guiTypes";
+import { useMemo, useRef, useState } from "react";
+import type { GuiAgent, GuiConfig, GuiPermissionMode } from "../../api/guiTypes";
 import { LockIcon, Pill, PillPopover, PopoverBody, PopoverRow } from "./ComposerPopover";
-import { PERMISSION_OPTIONS } from "./composerOptions";
+import { permissionOptions } from "./composerOptions";
 
 const MENU_W = 300;
 
 /**
- * How much the agent may do before it has to ask. Changing this restarts the agent behind the chat
+ * How much the agent may do before it has to ask. Changing this can restart the agent behind the chat
  * (the conversation is preserved by resuming it), so the session state flickers for a moment after a
  * pick — expected, not a fault.
+ *
+ * The four modes are the same everywhere, but they land on different machinery per agent — Codex
+ * splits them across its approval policy and its sandbox — so the descriptions come from the agent.
  */
-export function PermissionPill({ config, onPatch }: {
+export function PermissionPill({ agent, config, onPatch }: {
+  agent: GuiAgent;
   config: GuiConfig;
   onPatch: (patch: Partial<GuiConfig>) => void;
 }) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
 
-  const active = PERMISSION_OPTIONS.find((o) => o.id === config.permissionMode) ?? null;
+  const options = useMemo(() => permissionOptions(agent), [agent]);
+  const active = options.find((o) => o.id === config.permissionMode) ?? null;
   const close = () => setOpen(false);
   const pick = (id: GuiPermissionMode) => { close(); onPatch({ permissionMode: id }); };
 
@@ -36,7 +41,7 @@ export function PermissionPill({ config, onPatch }: {
       {open && (
         <PillPopover anchor={btnRef} width={MENU_W} onClose={close}>
           <PopoverBody>
-            {PERMISSION_OPTIONS.map((o) => (
+            {options.map((o) => (
               <PopoverRow
                 key={o.id}
                 title={o.label}

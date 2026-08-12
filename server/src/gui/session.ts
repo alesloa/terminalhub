@@ -12,8 +12,8 @@ import { loadHistory, transcriptPathFor, DEFAULT_HISTORY_LIMIT } from "./history
 import { parseSessionEntries } from "../claude/jsonl.js";
 import type { SessionEntry } from "../claude/types.js";
 import {
-  applyUltrathink, bypassesApprovals, sdkEffort, sdkPermissionMode, sdkSettings, splitContextWindow,
-  type GuiConfig,
+  applyUltrathink, bypassesApprovals, CLAUDE_DEFAULT_EFFORT, sdkEffort, sdkPermissionMode, sdkSettings,
+  splitContextWindow, type GuiConfig,
 } from "./config.js";
 import type {
   GuiApprovalDecision, GuiApprovalRequest, GuiCommand, GuiContextUsage, GuiEvent,
@@ -216,9 +216,11 @@ function toGuiModel(info: ModelInfo): GuiModel {
     description: info.description,
     supportsEffort: info.supportsEffort === true,
     effortLevels: info.supportedEffortLevels ?? [],
+    defaultEffort: info.supportsEffort === true ? CLAUDE_DEFAULT_EFFORT : null,
     supportsFastMode: info.supportsFastMode === true,
     supportsContext1m: oneM,
     base,
+    isDefault: info.value === "default",
   };
 }
 

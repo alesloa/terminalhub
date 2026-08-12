@@ -2,6 +2,8 @@ import { useEffect, useState, type ChangeEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { HeadroomStatus } from "../api/types";
+import type { GuiAgent } from "../api/guiTypes";
+import { agentIconPath } from "../lib/agents";
 import { useRoom } from "../store/room";
 import { useUi } from "../store/ui";
 import { ClaudeLoopWizard } from "./ClaudeLoopWizard";
@@ -58,11 +60,16 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
   });
   const pick = (command: string, title: string, agentId: string | null = null) => { if (!launch.isPending) launch.mutate({ command, title, agentId }); };
 
-  // "Claude (GUI)": no launch command at all — the agent runs as an SDK child and the terminal opens
-  // straight into the in-app chat instead of a pane. Focus + close behave like a normal pick.
+  // GUI mode: nothing runs in the pane — the agent runs as a child of the hub and the terminal opens
+  // straight into the in-app chat. The launch command is still recorded, because it is what decides
+  // WHICH agent the chat drives (server/src/gui/agent.ts) and what gets typed back into the pane on a
+  // switch to tmux. Focus + close behave like a normal pick.
   const launchGui = useMutation({
-    mutationFn: () =>
-      api.createTerminal(workspaceId, { title: "Claude (GUI)", agentId: "claude", mode: "gui", systemPrompt: termPrompt() }),
+    mutationFn: (agent: { id: GuiAgent; label: string; command: string }) =>
+      api.createTerminal(workspaceId, {
+        title: `${agent.label} (GUI)`, agentId: agent.id, launchCommandOverride: agent.command,
+        mode: "gui", systemPrompt: termPrompt(),
+      }),
     onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["workspaces"] }); requestTerminalFocus(workspaceId, r.terminal.id); close(); },
   });
 
@@ -89,6 +96,18 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
   const installedBuiltins = (data?.builtin ?? []).filter(a => a.installed); // only installed; missing ones are hidden
   const shownBuiltins = installedBuiltins.filter(a => !removedAgents.includes(a.id)); // minus user-removed
   const customs = data?.custom ?? [];
+
+  // The agents the in-app chat can drive. Claude's card always shows (GUI mode has always been the
+  // fallback for a machine with no CLI detected at all); Codex's needs its binary, since the chat
+  // drives the real `codex app-server`.
+  const guiAgents = ([
+    { id: "claude", label: "Claude" },
+    { id: "codex", label: "Codex" },
+  ] as const).flatMap(({ id, label }) => {
+    const builtin = installedBuiltins.find(a => a.id === id);
+    if (id === "codex" && !builtin) return [];
+    return [{ id, label, command: builtin?.command ?? id }];
+  });
 
   // Installed agents the user can re-add from the Add panel: detected built-ins + Headroom (if its CLI
   // is present). `removed` reflects current visibility; `toggle` flips it.
@@ -144,7 +163,10 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
                 onClick={() => pick(a.command, a.name, a.id)}
                 onDelete={() => removeAgent(a.id)} />
             ))}
-            <GuiCard pending={launchGui.isPending} onLaunch={() => { if (!launchGui.isPending) launchGui.mutate(); }} />
+            {guiAgents.map(agent => (
+              <GuiCard key={agent.id} agentId={agent.id} label={agent.label} pending={launchGui.isPending}
+                onLaunch={() => { if (!launchGui.isPending) launchGui.mutate(agent); }} />
+            ))}
             {!headroomHidden && (
               <HeadroomCard status={hr} pending={launch.isPending || setHeadroomHidden.isPending}
                 onLaunch={() => { if (hr) pick(hr.command, "Claude (Headroom)", "claude"); }}
@@ -285,20 +307,22 @@ function HeadroomCard({ status, pending, onLaunch, onInstall, onHide }: {
   );
 }
 
-/** The "Claude (GUI)" launcher card. Same Claude, different surface: no CLI in the pane — the
- *  terminal opens straight into the in-app chat. Carries the accent border + a GUI chip so it can't
- *  be mistaken for the plain Claude card sitting next to it. */
-function GuiCard({ pending, onLaunch }: { pending: boolean; onLaunch: () => void }) {
+/** A "<agent> (GUI)" launcher card. Same agent, different surface: no CLI in the pane — the terminal
+ *  opens straight into the in-app chat. Carries the accent border + a GUI chip so it can't be
+ *  mistaken for the plain card of the same agent sitting next to it. */
+function GuiCard({ agentId, label, pending, onLaunch }: {
+  agentId: GuiAgent; label: string; pending: boolean; onLaunch: () => void;
+}) {
   return (
     <div className="group relative">
       <button disabled={pending} onClick={onLaunch}
-        title="Chat with Claude inside Terminalhub — no terminal pane"
+        title={`Chat with ${label} inside Terminalhub — no terminal pane`}
         className="w-full flex items-center gap-3 p-3 rounded-lg border border-accent/40 bg-accent/5 text-left
           transition-colors hover:border-accent/70 hover:bg-accent/10 disabled:opacity-50">
-        <img src="/agents/claude.svg" alt="" className="w-7 h-7 shrink-0 object-contain" />
+        <img src={agentIconPath(agentId)} alt="" className="w-7 h-7 shrink-0 object-contain" />
         <span className="min-w-0">
           <span className="flex items-center gap-1.5 text-sm text-bright">
-            <span className="truncate">Claude (GUI)</span>
+            <span className="truncate">{label} (GUI)</span>
             <span className="shrink-0 px-1 rounded border border-accent/50 text-[9px] leading-[13px] tracking-wide text-accent">GUI</span>
           </span>
           <span className="block truncate text-xs text-dim">In-app chat, no terminal</span>

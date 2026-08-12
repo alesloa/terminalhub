@@ -304,7 +304,7 @@ export function TerminalView({ terminalId }: { terminalId: string }) {
           className={segmentClass(mode === "tmux", setMode.isPending)}>
           <PaneGlyph /></button>
         <button onClick={() => setMode.mutate({ id: terminalId, mode: "gui" })} disabled={mode === "gui" || setMode.isPending}
-          title="Open in GUI chat" aria-label="Switch to the in-app Claude chat" aria-pressed={mode === "gui"}
+          title="Open in GUI chat" aria-label="Switch to the in-app agent chat" aria-pressed={mode === "gui"}
           className={segmentClass(mode === "gui", setMode.isPending)}>
           <ChatGlyph /></button>
       </div>

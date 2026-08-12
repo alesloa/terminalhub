@@ -147,6 +147,36 @@ describe("switchToGui", () => {
     expect(keysSent(calls)).toEqual([[TMUX, "C-c"], [TMUX, "C-c"], [TMUX, "C-d"]]);
     expect(calls.find((c) => c.fn === "setAgentSession")!.args).toEqual(["tm_1", null]);
   });
+
+  it("carries a codex thread across when the chat is going to run codex", async () => {
+    const { deps, calls } = makeDeps();
+    const term = terminal({ launchCommandOverride: "codex resume 01ABCDEF" });
+
+    expect(await switchToGui(term, FOLDER, deps, "codex")).toEqual({ mode: "gui", sessionId: "01ABCDEF" });
+    // Two interrupts and no EOF: codex is already gone after the second, so a C-d would reach the
+    // pane's shell and close it.
+    expect(keysSent(calls)).toEqual([[TMUX, "C-c"], [TMUX, "C-c"]]);
+    expect(calls.find((c) => c.fn === "setAgentSession")!.args).toEqual(["tm_1", "01ABCDEF"]);
+  });
+
+  it("drops a claude session when the chat is going to run codex", async () => {
+    // Resuming a Claude session id as a Codex thread would just fail on the far side.
+    const { deps, calls } = makeDeps();
+    const term = terminal({ launchCommandOverride: resumeCommand(SESSION_ID) });
+
+    expect((await switchToGui(term, FOLDER, deps, "codex")).sessionId).toBeNull();
+    expect(calls.find((c) => c.fn === "setAgentSession")!.args).toEqual(["tm_1", null]);
+  });
+
+  it("never blocks a codex switch on a claude transcript", async () => {
+    writeTranscript([
+      { type: "user", message: { role: "user", content: "keep going" }, timestamp: new Date().toISOString() },
+    ]);
+    const { deps } = makeDeps();
+    const term = terminal({ launchCommandOverride: "codex resume 01ABCDEF" });
+
+    expect(await switchToGui(term, FOLDER, deps, "codex")).toEqual({ mode: "gui", sessionId: "01ABCDEF" });
+  });
 });
 
 describe("switchToTmux", () => {
@@ -173,6 +203,16 @@ describe("switchToTmux", () => {
     expect(calls[1].args).toEqual([TMUX, "claude"]);
   });
 
+  it("resumes a codex thread with codex, not with claude", async () => {
+    // The agent comes from the launch command the pane is about to run — the session id alone can't
+    // say which CLI wrote it.
+    const { deps, calls } = makeDeps();
+    const term = terminal({ mode: "gui", agentSessionId: "01ABCDEF" });
+
+    await switchToTmux(term, "codex --search", deps);
+    expect(calls[1].args).toEqual([TMUX, "codex resume 01ABCDEF"]);
+  });
+
   it("sends no command when there is neither a session id nor a launch command", async () => {
     const { deps, calls, names } = makeDeps();
 
@@ -193,6 +233,12 @@ describe("resumeCommand", () => {
     // GUI must recover the same session id from it.
     const relaunched = terminal({ launchCommandOverride: resumeCommand(SESSION_ID) });
     expect((await switchToGui(relaunched, FOLDER, deps)).sessionId).toBe(SESSION_ID);
+  });
+
+  it("writes a codex resume line that parses back as codex", () => {
+    expect(resumeCommand("01ABCDEF", "codex")).toBe("codex resume 01ABCDEF");
+    expect(sessionLinkFromLaunch(resumeCommand("01ABCDEF", "codex")))
+      .toEqual({ agent: "codex", sessionId: "01ABCDEF" });
   });
 
   it("carries the model flag and the session id verbatim", () => {

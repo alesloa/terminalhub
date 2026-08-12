@@ -3,7 +3,16 @@
 // The only literals in this file are the contract constants and the human labels for the fixed
 // enums (effort levels, permission modes) that the shared type already spells out.
 
-import type { GuiConfig, GuiEffort, GuiEffortLevel, GuiModel, GuiPermissionMode } from "../../api/guiTypes";
+import type {
+  GuiAgent, GuiConfig, GuiEffort, GuiEffortLevel, GuiModel, GuiPermissionMode,
+} from "../../api/guiTypes";
+
+/** What the composer calls the CLI behind the chat. Only the two agents GUI mode can drive are
+ *  listed — the placeholder is the one place the name is spoken, and it should say the real one. */
+export const AGENT_NAMES: Record<GuiAgent, string> = {
+  claude: "Claude",
+  codex: "Codex",
+};
 
 /** Suffix the CLI understands on a model id to select its 1M-token context variant. Mirrors
  *  CONTEXT_1M_SUFFIX in server/src/gui/config.ts. This is the ONLY string ever appended to a model
@@ -28,13 +37,15 @@ function baseOf(model: string): string {
 /**
  * The catalog row the composer is currently sitting on.
  *
- * `null` means "pass no --model", which the CLI's own catalog normally also offers as a row with the
- * value "default" — so that row, when it exists, is what a null selection displays. A `[1m]`
- * selection falls back to the row sharing its base, since the catalog may list only the 200k form.
+ * `null` means "pass no --model", which Claude's catalog offers as a row with the value "default" —
+ * so that row, when it exists, is what a null selection displays. Codex has no such row and flags a
+ * real model as its default instead, hence the second lookup: without it an unset model would match
+ * nothing and the reasoning menu would have no levels to list. A `[1m]` selection falls back to the
+ * row sharing its base, since the catalog may list only the 200k form.
  * Returns null when nothing matches; callers show the raw id rather than invent a row.
  */
 export function findModel(models: GuiModel[], model: string | null): GuiModel | null {
-  if (model === null) return models.find((m) => m.value === "default") ?? null;
+  if (model === null) return models.find((m) => m.value === "default") ?? models.find((m) => m.isDefault) ?? null;
   return models.find((m) => m.value === model) ?? models.find((m) => m.base === baseOf(model)) ?? null;
 }
 
@@ -44,11 +55,9 @@ export const EFFORT_LABELS: Record<GuiEffortLevel, string> = {
   high: "High",
   xhigh: "Extra High",
   max: "Max",
+  // Codex-only: no Claude model lists it, so it simply never appears in their menus.
+  ultra: "Ultra",
 };
-
-/** The level the CLI lands on when no effort is chosen — flagged in the menu so the list reads as
- *  "this is the one you already have". */
-export const DEFAULT_EFFORT: GuiEffortLevel = "high";
 
 const EXTRA_EFFORT_LABELS: Record<"ultracode" | "ultrathink", string> = {
   ultracode: "Ultracode",
@@ -94,3 +103,17 @@ export const PERMISSION_OPTIONS: PermissionOption[] = [
   { id: "auto", label: "Auto", description: "Supported providers approve routine actions; others still ask." },
   { id: "full-access", label: "Full access", description: "Allow commands and edits without prompts.", unlocked: true },
 ];
+
+/** Codex splits the same four choices across its own two knobs (how often it asks × what its sandbox
+ *  allows), so the middle two mean something different there and are described in its own terms. */
+const CODEX_PERMISSION_DESCRIPTIONS: Partial<Record<GuiPermissionMode, string>> = {
+  "approval-required": "Read-only. Ask before every command and file change.",
+  "auto-accept-edits": "Work freely inside this folder; ask to go outside it.",
+  auto: "Never interrupt, but stay inside this folder.",
+};
+
+/** The permission menu for one agent. */
+export function permissionOptions(agent: GuiAgent): PermissionOption[] {
+  if (agent !== "codex") return PERMISSION_OPTIONS;
+  return PERMISSION_OPTIONS.map((o) => ({ ...o, description: CODEX_PERMISSION_DESCRIPTIONS[o.id] ?? o.description }));
+}

@@ -5,7 +5,8 @@ import { authorizeWs } from "./wsAuth.js";
 import { attachHeartbeat } from "./heartbeat.js";
 import { isLockedViewer } from "../auth/access.js";
 import { loadHistory } from "../gui/history.js";
-import type { GuiClientFrame, GuiServerFrame } from "../gui/types.js";
+import { guiAgentFor } from "../gui/agent.js";
+import type { GuiClientFrame, GuiEvent, GuiServerFrame } from "../gui/types.js";
 
 // The browser side of a GUI-mode terminal. Mirrors terminalGateway's contract — same auth, same
 // heartbeat, same locked-viewer rule — but streams normalised chat events instead of PTY bytes.
@@ -41,18 +42,10 @@ export async function guiGateway(app: FastifyInstance, ctx: AppContext, config: 
     // new config); the stored row covers a chat nobody has opened yet.
     const running = ctx.gui.get(term.id);
     const guiConfig = running?.config() ?? term.guiConfig;
-
-    // Everything said before this socket existed. A live session answers for the whole conversation
-    // — the turns it streamed AND the ones already on disk when it started — because Claude's JSONL
-    // lags the stream (and doesn't exist at all before the first turn is written), so reading from
-    // disk while a session is running is how a reconnect used to come back blank or truncated.
-    const live = running ? await running.history() : [];
-    const history = live.length
-      ? live
-      : term.agentSessionId ? await loadHistory(term.agentSessionId, ws.folder) : [];
-    send({ type: "history", messages: history, sessionId: term.agentSessionId, config: guiConfig });
+    const agent = guiAgentFor(term, ws);
 
     const session = ctx.gui.ensure({
+      agent,
       terminalId: term.id,
       cwd: ws.folder,
       resumeSessionId: term.agentSessionId,
@@ -64,7 +57,32 @@ export async function guiGateway(app: FastifyInstance, ctx: AppContext, config: 
       onAttention: () => { ctx.attentionFirer.fire(term.id); },
     });
 
-    const unsubscribe = session.subscribe((event) => send({ type: "event", event }));
+    // Subscribe BEFORE reading history, buffering until the history frame has gone out. Reading the
+    // conversation is asynchronous (a resumed chat starts on disk, or in Codex's case behind a
+    // thread handshake) and anything the agent streams during that read would otherwise fall in the
+    // gap: too late for the history frame, too early for the live stream.
+    let buffered: GuiEvent[] | null = [];
+    const unsubscribe = session.subscribe((event) => {
+      if (buffered) buffered.push(event);
+      else send({ type: "event", event });
+    });
+
+    // Everything said before this socket existed. A live session answers for the whole conversation
+    // — the turns it streamed AND the ones already there when it started — because the CLI's own
+    // transcript lags the stream (and doesn't exist at all before the first turn is written), so
+    // reading it while a session is running is how a reconnect used to come back blank or truncated.
+    const live = await session.history();
+    const history = live.length
+      ? live
+      // Claude's cold-start path: its JSONL is readable without a running agent. Codex has no such
+      // file to read — its history came from the thread handshake above — so this stays Claude-only.
+      : agent === "claude" && term.agentSessionId ? await loadHistory(term.agentSessionId, ws.folder) : [];
+    send({
+      type: "history", messages: history, agent, config: guiConfig,
+      sessionId: session.sessionId() ?? term.agentSessionId,
+    });
+    for (const event of buffered) send({ type: "event", event });
+    buffered = null;
     // Late joiners need the current state immediately — without this the composer would look idle
     // while a turn is actually running.
     send({ type: "event", event: { type: "state", state: session.state() } });

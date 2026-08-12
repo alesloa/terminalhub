@@ -38,6 +38,31 @@ export function diffInputOf(name: string, input: unknown): DiffInput | null {
   return null;
 }
 
+/** One file inside a patch, as Codex reports it: a real unified diff, already computed by the CLI. */
+export interface FileDiff {
+  path: string;
+  /** `add` / `update` / `delete` — Codex's own word for what happened to the file. */
+  kind: string;
+  diff: string;
+}
+
+/**
+ * The per-file diffs of a patch-shaped tool input (Codex's ApplyPatch), or null when there aren't any.
+ * Shape-keyed like `diffInputOf`: a `changes` array of `{path, diff}` is the signature, not the name.
+ */
+export function fileDiffsOf(input: unknown): FileDiff[] | null {
+  const raw = asRecord(input)?.changes;
+  if (!Array.isArray(raw)) return null;
+  const files: FileDiff[] = [];
+  for (const entry of raw) {
+    const c = asRecord(entry);
+    const path = c && asString(c.path);
+    if (!c || !path) continue;
+    files.push({ path, kind: asString(c.kind) ?? "", diff: typeof c.diff === "string" ? c.diff : "" });
+  }
+  return files.length ? files : null;
+}
+
 const MAX_ROWS = 60; // beyond this the card stops being a glance-able summary — link out to the editor instead
 
 interface Hunk {
@@ -98,6 +123,68 @@ export const DiffBlock = memo(function DiffBlock({ oldText, newText }: DiffInput
     </div>
   );
 });
+
+/** Header lines of a unified diff — the file names are already in our own header row, so they'd be
+ *  said twice. `@@` hunk markers are kept: they're the only thing separating one edit from the next. */
+function isNoise(line: string): boolean {
+  return line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff --git")
+    || line.startsWith("index ") || line.startsWith("new file mode") || line.startsWith("deleted file mode");
+}
+
+/**
+ * A patch as the CLI already computed it: one section per file, each a unified diff.
+ *
+ * Nothing is re-diffed here — Codex hands over the finished text, so this only colours it. The row
+ * budget is shared across every file so a twenty-file patch can't turn one card into the whole
+ * transcript; what's cut is counted at the bottom.
+ */
+export const PatchDiff = memo(function PatchDiff({ files }: { files: FileDiff[] }) {
+  const sections = useMemo(() => {
+    let left = MAX_ROWS;
+    let hidden = 0;
+    const out = files.map((f) => {
+      const lines = f.diff.split("\n").filter((l) => !isNoise(l));
+      // Drop the trailing blank a diff usually ends on, so it isn't spent from the budget.
+      while (lines.length && lines[lines.length - 1] === "") lines.pop();
+      const shown = lines.slice(0, Math.max(0, left));
+      hidden += lines.length - shown.length;
+      left -= shown.length;
+      return { ...f, lines: shown };
+    });
+    return { out, hidden };
+  }, [files]);
+
+  return (
+    <div className="space-y-1.5">
+      {sections.out.map((f) => (
+        <div key={f.path} className="overflow-hidden rounded-md border border-edge bg-code font-mono text-[11px] leading-5">
+          <div className="flex items-center gap-2 border-b border-edge bg-panel/60 px-2.5 py-1">
+            {f.kind && <span className="shrink-0 uppercase tracking-wide text-dim">{f.kind}</span>}
+            <span className="min-w-0 flex-1 truncate text-bright" title={f.path}>{f.path}</span>
+          </div>
+          {f.lines.length === 0
+            ? <div className="px-2.5 py-1 text-dim">No diff reported.</div>
+            : f.lines.map((line, i) => <PatchRow key={i} line={line} />)}
+        </div>
+      ))}
+      {sections.hidden > 0 && (
+        <div className="px-0.5 text-[11px] text-dim">
+          …{sections.hidden} more diff line{sections.hidden === 1 ? "" : "s"} not shown
+        </div>
+      )}
+    </div>
+  );
+});
+
+function PatchRow({ line }: { line: string }) {
+  const tone = line.startsWith("+") ? "bg-success/10 text-success"
+    : line.startsWith("-") ? "bg-error/10 text-error"
+    : line.startsWith("@@") ? "bg-panel/60 text-dim"
+    : "text-muted";
+  return (
+    <div className={`whitespace-pre-wrap break-all px-2.5 ${tone}`}>{line || " "}</div>
+  );
+}
 
 function Context({ n }: { n: number }) {
   return <div className="bg-panel/60 px-2.5 py-0.5 text-dim">⋯ {n} unchanged line{n === 1 ? "" : "s"}</div>;

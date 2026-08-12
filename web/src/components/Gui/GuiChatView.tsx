@@ -21,8 +21,9 @@ const STATE_TONE: Record<GuiSessionState, string> = {
 };
 
 /**
- * GUI mode for one terminal: the in-app Claude chat that replaces the xterm pane. Fills its parent —
- * the caller owns the frame, this owns the transcript, the prompt, and the status line.
+ * GUI mode for one terminal: the in-app chat that replaces the xterm pane. Which CLI is behind it —
+ * Claude or Codex — is the server's call, and arrives with the transcript. Fills its parent: the
+ * caller owns the frame, this owns the transcript, the prompt, and the status line.
  */
 export function GuiChatView({ terminalId, folder }: { terminalId: string; folder: string }) {
   const gui = useGuiSocket(terminalId);
@@ -105,6 +106,7 @@ export function GuiChatView({ terminalId, folder }: { terminalId: string; folder
           <Composer
             terminalId={terminalId}
             folder={folder}
+            agent={gui.agent}
             busy={gui.busy}
             connected={gui.connected}
             config={gui.config}

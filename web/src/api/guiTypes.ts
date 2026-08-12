@@ -65,13 +65,15 @@ export type GuiTurnStatus = "completed" | "interrupted" | "failed";
 // Composer controls — the model / reasoning / permission pills
 // ---------------------------------------------------------------------------
 
-/** Reasoning depth. The first five are real SDK effort levels; `ultracode` and `ultrathink` are
- *  Claude Code concepts the server translates onto other channels — from here they are ordinary
- *  `effort` values, so the composer never rewrites the prompt to express one. */
-export type GuiEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultracode" | "ultrathink";
+/** Reasoning depth. `low`–`max` are real effort levels; `ultra` is one only Codex models offer;
+ *  `ultracode` and `ultrathink` are Claude Code concepts the server translates onto other channels
+ *  — from here they are ordinary `effort` values, so the composer never rewrites the prompt to
+ *  express one. Which of these a chat can pick comes from its model's own `effortLevels`. */
+export type GuiEffort =
+  | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "ultracode" | "ultrathink";
 
 /** The subset of GuiEffort a model can actually list in `effortLevels`. */
-export type GuiEffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+export type GuiEffortLevel = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 
 /** How much the agent may do before it has to ask. */
 export type GuiPermissionMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
@@ -94,10 +96,15 @@ export interface GuiModel {
   supportsEffort: boolean;
   /** Exactly the levels this model accepts — the picker offers nothing else. */
   effortLevels: GuiEffortLevel[];
+  /** The level this model lands on when no effort is chosen, or null when the CLI doesn't say. */
+  defaultEffort: GuiEffortLevel | null;
   supportsFastMode: boolean;
   supportsContext1m: boolean;
   /** `value` with any `[1m]` suffix removed — the 200k form, and the identity shared by both. */
   base: string;
+  /** The row the CLI runs when no model is named. Claude publishes it as a row literally called
+   *  "default"; Codex flags one of its real models instead. */
+  isDefault: boolean;
 }
 
 export type GuiEvent =
@@ -178,16 +185,23 @@ export type GuiClientFrame =
   | { type: "rewind.preview"; userTurnsAfter: number; text: string }
   | { type: "ping" };
 
+/** Which CLI a GUI chat drives. Derived server-side from the terminal's launch command. */
+export type GuiAgent = "claude" | "codex";
+
 export type GuiServerFrame =
-  | { type: "history"; messages: GuiMessage[]; sessionId: string | null; config: GuiConfig }
+  /** `agent` rides along so the composer can label itself and drop the pills that mean nothing for
+   *  the CLI behind this chat. It cannot change without the socket reconnecting. */
+  | { type: "history"; messages: GuiMessage[]; sessionId: string | null; config: GuiConfig; agent: GuiAgent }
   | { type: "event"; event: GuiEvent }
   | { type: "pong" };
 
 /** Response of GET /api/terminals/:id/gui. */
+
 export interface GuiStatus {
   mode: "tmux" | "gui";
   sessionId: string | null;
   running: boolean;
   state: GuiSessionState;
+  agent: GuiAgent;
   config: GuiConfig;
 }

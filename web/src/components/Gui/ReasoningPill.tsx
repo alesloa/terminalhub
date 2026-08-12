@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
-import type { GuiConfig, GuiModel } from "../../api/guiTypes";
+import type { GuiAgent, GuiConfig, GuiModel } from "../../api/guiTypes";
 import { BoltIcon, Pill, PillPopover, PopoverBody, PopoverDivider, PopoverRow, PopoverSection } from "./ComposerPopover";
-import { DEFAULT_EFFORT, EFFORT_LABELS, isContext1m, reasoningLabel, withContextWindow } from "./composerOptions";
+import { EFFORT_LABELS, isContext1m, reasoningLabel, withContextWindow } from "./composerOptions";
 
 const MENU_W = 240;
 
@@ -12,9 +12,11 @@ const MENU_W = 240;
  *
  * Ultracode and Ultrathink are plain `effort` values on this contract: picking one writes `effort`
  * like any other row. The server owns what that means (a Claude Code setting, a prompt prefix) — the
- * composer never touches the text the user typed.
+ * composer never touches the text the user typed. They are Claude Code concepts with no Codex
+ * counterpart, so they are the one thing here that depends on which agent is behind the chat.
  */
-export function ReasoningPill({ model, config, onPatch }: {
+export function ReasoningPill({ agent, model, config, onPatch }: {
+  agent: GuiAgent;
   model: GuiModel;
   config: GuiConfig;
   onPatch: (patch: Partial<GuiConfig>) => void;
@@ -46,19 +48,19 @@ export function ReasoningPill({ model, config, onPatch }: {
                   <PopoverRow
                     key={level}
                     title={EFFORT_LABELS[level]}
-                    chip={level === DEFAULT_EFFORT ? "Default" : undefined}
+                    chip={level === model.defaultEffort ? "Default" : undefined}
                     selected={config.effort === level}
                     onClick={() => pick({ effort: level })}
                   />
                 ))}
-                {model.effortLevels.includes("xhigh") && (
+                {agent === "claude" && model.effortLevels.includes("xhigh") && (
                   <PopoverRow
                     title="Ultracode"
                     selected={config.effort === "ultracode"}
                     onClick={() => pick({ effort: "ultracode" })}
                   />
                 )}
-                {model.supportsEffort && (
+                {agent === "claude" && model.supportsEffort && (
                   <PopoverRow
                     title="Ultrathink"
                     selected={config.effort === "ultrathink"}

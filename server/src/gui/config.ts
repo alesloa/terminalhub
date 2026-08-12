@@ -8,9 +8,12 @@ import type { Options, PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 // deals in the values the user picked from that list. That's deliberate: a baked-in catalog goes
 // stale the moment Claude Code ships a new model.
 
-/** Reasoning depth. The first five are real SDK effort levels; the last two are Claude Code
- *  concepts that ride other channels — see `sdkEffort` / `sdkSettings` / `applyUltrathink`. */
-export type GuiEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultracode" | "ultrathink";
+/** Reasoning depth. `low`–`max` are real SDK effort levels; `ultra` is Codex-only (see
+ *  gui/codex/config.ts); `ultracode`/`ultrathink` are Claude Code concepts that ride other channels
+ *  — see `sdkEffort` / `sdkSettings` / `applyUltrathink`. Which of these a terminal can actually
+ *  pick is decided by the model catalog its agent advertises, never by this union. */
+export type GuiEffort =
+  | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "ultracode" | "ultrathink";
 
 /** How much the agent may do before it has to ask. Mirrors the four-way choice in the composer. */
 export type GuiPermissionMode = "approval-required" | "auto-accept-edits" | "auto" | "full-access";
@@ -36,6 +39,10 @@ export const DEFAULT_GUI_CONFIG: GuiConfig = {
   fastMode: false,
 };
 
+/** Where Claude Code lands when no `--effort` is passed. `ModelInfo` doesn't report a per-model
+ *  default, so this one constant covers the whole Claude catalog — Codex answers per model. */
+export const CLAUDE_DEFAULT_EFFORT = "high" as const;
+
 /** Suffix the CLI understands on a model id to select its 1M-token context variant. Verified
  *  against the installed CLI, which rejects unknown model ids outright. */
 export const CONTEXT_1M_SUFFIX = "[1m]";
@@ -45,7 +52,7 @@ export const CONTEXT_1M_SUFFIX = "[1m]";
 export const ULTRATHINK_PREFIX = "Ultrathink:\n";
 
 const EFFORT_VALUES: readonly GuiEffort[] =
-  ["low", "medium", "high", "xhigh", "max", "ultracode", "ultrathink"];
+  ["low", "medium", "high", "xhigh", "max", "ultra", "ultracode", "ultrathink"];
 const PERMISSION_VALUES: readonly GuiPermissionMode[] =
   ["approval-required", "auto-accept-edits", "auto", "full-access"];
 
@@ -72,9 +79,10 @@ export function parseGuiConfig(raw: unknown): GuiConfig {
 
 /** The `effort` value to hand the SDK, or undefined when the choice travels another way.
  *  - `ultracode` is not an API effort: it's xhigh plus a Claude Code setting (see `sdkSettings`).
- *  - `ultrathink` is not config at all: it's a prompt prefix (see `applyUltrathink`). */
+ *  - `ultrathink` is not config at all: it's a prompt prefix (see `applyUltrathink`).
+ *  - `ultra` is a Codex level; Claude has no such effort, so it is dropped rather than approximated. */
 export function sdkEffort(effort: GuiEffort | null): NonNullable<Options["effort"]> | undefined {
-  if (!effort || effort === "ultrathink") return undefined;
+  if (!effort || effort === "ultrathink" || effort === "ultra") return undefined;
   if (effort === "ultracode") return "xhigh";
   return effort;
 }

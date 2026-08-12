@@ -129,8 +129,8 @@ export function TerminalContextMenu({ anchor, term, index, terminals, onRename, 
         )}
       </div>
 
-      {/* Agent-session group. "Open in GUI Chat" swaps this terminal's pane for the in-app Claude
-          chat (and back); both surfaces continue the same conversation. */}
+      {/* Agent-session group. "Open in GUI Chat" swaps this terminal's pane for the in-app chat with
+          the same agent its launch command names (and back); both surfaces continue one conversation. */}
       {(onSetMode || onForkSession) && <Sep />}
       {onSetMode && (
         <Item label={term.mode === "gui" ? "Back to Terminal" : "Open in GUI Chat"}

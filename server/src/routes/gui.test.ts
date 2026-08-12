@@ -125,15 +125,33 @@ describe("GET /api/terminals/:id/gui", () => {
     const res = await getGui(term.id);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      mode: "gui", sessionId: SESSION_ID, running: false, state: "idle", config: DEFAULT_GUI_CONFIG,
+      mode: "gui", sessionId: SESSION_ID, running: false, state: "idle",
+      agent: "claude", config: DEFAULT_GUI_CONFIG,
     });
   });
 
   it("reports tmux + null session for a classic terminal", async () => {
     const { term } = makeTerminal(h);
     expect((await getGui(term.id)).json()).toEqual({
-      mode: "tmux", sessionId: null, running: false, state: "idle", config: DEFAULT_GUI_CONFIG,
+      mode: "tmux", sessionId: null, running: false, state: "idle",
+      agent: "claude", config: DEFAULT_GUI_CONFIG,
     });
+  });
+
+  // Which CLI the chat drives is read off the launch command, so flipping a `codex` terminal into GUI
+  // mode gives you Codex. Nothing about the terminal says "codex" other than that command.
+  it("reports codex for a terminal launched with codex", async () => {
+    const { term } = makeTerminal(h, { launchCommandOverride: "codex", mode: "gui" });
+    expect((await getGui(term.id)).json().agent).toBe("codex");
+  });
+
+  it("falls back to the workspace launch command for the agent", async () => {
+    const ws = h.ctx.store.createWorkspace({ name: "B", folder: FOLDER, launchCommand: "codex --search", color: null });
+    const term = h.ctx.store.createTerminal({
+      workspaceId: ws.id, title: "T", color: null, tmuxSession: `tr_${ws.id}_y`,
+      launchCommandOverride: null, mode: "gui", agentSessionId: null,
+    });
+    expect((await getGui(term.id)).json().agent).toBe("codex");
   });
 
   it("prefers the live session's config over the stored row", async () => {
@@ -230,7 +248,19 @@ describe("PATCH /api/terminals/:id/gui/config", () => {
   it("makes the choice sticky, so the next new chat inherits it", async () => {
     const { term } = makeTerminal(h, { mode: "gui" });
     await patchConfig(term.id, { model: "opus", effort: "xhigh" });
-    expect(h.ctx.store.getGuiDefaults()).toEqual({ ...DEFAULT_GUI_CONFIG, model: "opus", effort: "xhigh" });
+    expect(h.ctx.store.getGuiDefaults("claude")).toEqual({ ...DEFAULT_GUI_CONFIG, model: "opus", effort: "xhigh" });
+  });
+
+  it("keeps the sticky choice on the agent that made it", async () => {
+    // A model id belongs to one CLI. Writing Claude's pick into the shared bucket is what put
+    // "opus[1m]" on a Codex chat, where it names nothing and breaks every turn.
+    const claude = makeTerminal(h, { mode: "gui" });
+    const codex = makeTerminal(h, { mode: "gui", launchCommandOverride: "codex" });
+    await patchConfig(claude.term.id, { model: "opus" });
+    await patchConfig(codex.term.id, { model: "gpt-5.6-sol", effort: "ultra" });
+
+    expect(h.ctx.store.getGuiDefaults("claude")).toEqual({ ...DEFAULT_GUI_CONFIG, model: "opus" });
+    expect(h.ctx.store.getGuiDefaults("codex")).toEqual({ ...DEFAULT_GUI_CONFIG, model: "gpt-5.6-sol", effort: "ultra" });
   });
 
   it("applies the change to the live session before persisting it", async () => {
@@ -254,7 +284,7 @@ describe("PATCH /api/terminals/:id/gui/config", () => {
     // switch that still wrote the request would leave the UI showing a model nothing is running
     expect(res.json().config).toEqual(DEFAULT_GUI_CONFIG);
     expect(h.ctx.store.getTerminal(term.id)!.guiConfig).toEqual(DEFAULT_GUI_CONFIG);
-    expect(h.ctx.store.getGuiDefaults()).toEqual(DEFAULT_GUI_CONFIG);
+    expect(h.ctx.store.getGuiDefaults("claude")).toEqual(DEFAULT_GUI_CONFIG);
   });
 });
 

@@ -313,34 +313,41 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
 - **Resume sessions** — reopening a workspace reattaches to its existing tmux sessions instead of
   spawning fresh agents — the "pick up where you left off" behavior.
 
-## Claude GUI mode
+## GUI chat mode (Claude & Codex)
 
-A terminal can run Claude as a **chat panel instead of a terminal** — same agent, same session, same
+A terminal can run its agent as a **chat panel instead of a terminal** — same agent, same session, same
 project files, but rendered as messages, tool cards, and diffs rather than a TUI in a pane. Under the
-hood it's the real `claude` binary driven headlessly, so everything your CLI does (skills, MCP servers,
-`CLAUDE.md`, settings) applies unchanged.
+hood it's the real CLI driven headlessly — `claude` through the Agent SDK, `codex` through
+`codex app-server` — so everything your CLI does (skills, MCP servers, `CLAUDE.md` / `AGENTS.md`,
+settings, login) applies unchanged. **Which agent a chat drives is read off the terminal's launch
+command**, so a `codex` terminal flipped into the chat gives you Codex: the surface changes, the agent
+doesn't. Everything in this section applies to both unless it says otherwise.
 
-- **Start a terminal in GUI mode** — the New-terminal picker has a **Claude (GUI)** card next to the
-  regular Claude card. Picking it opens the chat panel instead of a tmux pane; no shell is launched.
+- **Start a terminal in GUI mode** — the New-terminal picker has a **Claude (GUI)** and a **Codex (GUI)**
+  card next to the regular ones (Codex's appears once its CLI is detected). Picking one opens the chat
+  panel instead of a tmux pane; no shell is launched.
 - **Open a past session in GUI** — the Claude/Codex session panel's menu adds **Open in GUI** alongside
-  "Resume in terminal", so any prior conversation can be reopened as chat with its full history loaded.
-  Claude sessions only — Codex has no equivalent headless mode, so the entry is disabled there.
+  "Resume in terminal", so any prior conversation of either agent can be reopened as chat with its full
+  history loaded.
 - **Switch either way, any time** — a terminal running in a pane can flip to GUI and back, from the
   pane/chat segmented switch in the terminal's floating control cluster or from **Open in GUI Chat** /
-  **Back to Terminal** in a terminal tab's right-click menu. A terminal that's currently a chat wears the
-  Claude icon and a small **GUI** tag in the terminals list, so the two surfaces are told apart at a glance.
+  **Back to Terminal** in a terminal tab's right-click menu. A terminal that's currently a chat wears its
+  agent's icon and a small **GUI** tag in the terminals list, so the two surfaces are told apart at a glance.
   Switching to GUI quits the agent inside the pane (the tmux session itself stays alive and keeps its
   scrollback) and reattaches the same conversation in the chat panel; switching back types
-  `claude --resume <id>` into that same pane — or, for a chat you never sent a prompt to, the workspace's
-  normal launch command, so you land on a running agent either way. The conversation is continuous across
-  the handoff because both surfaces read and write Claude's own transcript.
-- **One agent at a time, on purpose** — a session id can only have one live Claude attached; two would
-  corrupt the shared transcript. So the switch is a handoff, not a fork, and a switch requested while the
-  agent is mid-turn is refused with a "the agent is working — interrupt it first" message instead of
-  silently dropping the in-flight turn.
+  `claude --resume <id>` or `codex resume <id>` into that same pane — or, for a chat you never sent a
+  prompt to, the workspace's normal launch command, so you land on a running agent either way. A session
+  only crosses the handoff when both sides are the same agent; a Claude session is never handed to Codex
+  or the reverse.
+- **One agent at a time, on purpose** — a session id can only have one live agent attached; two would
+  corrupt the shared transcript. So the switch is a handoff, not a fork, and a switch requested while
+  Claude is mid-turn is refused with a "the agent is working — interrupt it first" message instead of
+  silently dropping the in-flight turn. (Codex publishes no liveness signal readable from outside its
+  process, so that refusal is Claude-only.)
 - **History comes from the transcript** — opening GUI on a terminal that has been running in a pane
-  replays the whole prior conversation (read from `~/.claude/projects/…/<session>.jsonl`), so you're not
-  starting from a blank panel.
+  replays the whole prior conversation, so you're not starting from a blank panel. Claude's comes from
+  `~/.claude/projects/…/<session>.jsonl`; Codex hands its whole thread back when the chat resumes it, so
+  there's no file to read.
 - **Stop really stops** — pressing stop also cancels a turn that was still being prepared (a prompt
   waits on its workspace snapshot before the agent is handed it), and if the agent is still producing
   output a few seconds later, its run is ended outright and the conversation resumed in a fresh one —
@@ -402,7 +409,8 @@ hood it's the real `claude` binary driven headlessly, so everything your CLI doe
   (PNG, JPEG, GIF, WebP, up to five per turn) and show inline in the transcript afterwards.
 - **`@` for files, `/` for commands** — typing `@` opens a fuzzy picker over the workspace's files;
   typing `/` at the start of a message lists the slash commands and skills the installed CLI actually
-  reports. Arrows and Enter or Tab pick; Escape closes.
+  reports (Claude's commands, or Codex's skills for that folder). Arrows and Enter or Tab pick;
+  Escape closes.
 - **Context and cost readout** — a ring in the composer shows how full the model's context window is,
   amber past 75% and red past 90%, with the running session cost beside it. Both numbers come from
   the CLI's own accounting, so they include the system prompt, tools, skills and memory files.
@@ -412,15 +420,14 @@ hood it's the real `claude` binary driven headlessly, so everything your CLI doe
 - **Composer controls** — three pills sit inside the prompt box, under the text, so what the next turn will
   run with is visible without opening a settings panel. **Model** opens a searchable picker (`⌘1`–`⌘9` pick
   the first nine visible rows). **Reasoning** holds the thinking depth the model supports — Low through Max,
-  plus Ultracode and Ultrathink — and, for models that have them, a 200k/1M context toggle and a fast-mode
-  switch; it hides itself entirely on a model with none of those. **Permissions** is the four-way choice
-  between Supervised, Auto-accept edits, Auto, and Full access, and goes amber on Full access because that
-  one skips every prompt. Picks apply immediately; changing permissions restarts the agent behind the chat
-  and resumes the same conversation.
+  plus Ultra on the Codex models that offer it and Ultracode/Ultrathink on Claude — and, for models that
+  have them, a 200k/1M context toggle and a fast-mode switch; it hides itself entirely on a model with none
+  of those. **Permissions** is the four-way choice between Supervised, Auto-accept edits, Auto, and Full
+  access, and goes amber on Full access because that one skips every prompt. Picks apply immediately.
 - **The model list comes from your CLI** — nothing about which models exist is baked into Terminalhub. The
-  picker is built from what the installed Claude Code reports at runtime, along with each model's real
-  effort levels and whether it has a 1M-context or fast-mode variant, so a model that ships tomorrow shows
-  up without an update here.
+  picker is built from what the installed CLI reports at runtime — Claude Code's own catalog, or Codex's
+  `model/list` — along with each model's real effort levels and whether it has a 1M-context or fast-mode
+  variant, so a model that ships tomorrow shows up without an update here.
 - **Empty chat asks a question** — a fresh GUI terminal opens on "What should we build in *folder*?" with
   the composer centred underneath it, and drops back to the normal pinned-to-the-bottom layout as soon as
   there's a message.
@@ -432,7 +439,28 @@ hood it's the real `claude` binary driven headlessly, so everything your CLI doe
   a prompt raised while you were looking elsewhere is answerable the moment you return.
 - **Same working animation and done-alert as a pane** — a GUI terminal shows the equalizer bars and KITT
   sweep in the terminals list while its turn is in flight, and fires the same toast, notification and
-  spoken line when the turn finishes or Claude asks you something.
+  spoken line when the turn finishes or the agent asks you something.
+
+### What's different when the chat is driving Codex
+
+- **Type while it's working** — a message sent mid-turn *steers* the running turn rather than queueing
+  behind it, so a correction lands in the work already happening instead of after it.
+- **Permissions are two knobs, not one** — Codex separates *how often it asks* from *what its sandbox
+  even allows*, so the same four choices read differently: Supervised is read-only, Auto-accept edits
+  works freely inside the folder and asks to leave it, Auto never interrupts but stays in the folder,
+  Full access is neither. The pill says so in Codex's own terms. Changing the sandbox reopens the thread
+  (the conversation carries over by id); model, reasoning and how-often-it-asks apply to the next turn
+  with no restart.
+- **Rewind undoes the conversation and, if you tick it, the files** — Codex's own rollback rewrites the
+  thread and explicitly leaves the working tree alone, so the git checkpoints described above are what
+  put the files back. Same buttons, same confirmations, same cost-before-you-commit numbers.
+- **Patches render as real diffs** — an edit arrives as a unified diff per file, already computed by
+  Codex, shown with a header per file rather than re-diffed here.
+- **Approvals map to Codex's own answers** — Allow, Allow always and Deny become `accept`,
+  `acceptForSession` and `decline`; a stop denies whatever was blocking the turn so it can't sit waiting
+  on a prompt nobody is going to answer.
+- **The context ring reads Codex's token accounting** — usage and the model's context window come from
+  the thread's own reporting, not an estimate.
 
 ## Code editor & files
 

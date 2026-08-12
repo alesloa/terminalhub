@@ -1,8 +1,9 @@
 import type { GuiConfig } from "./guiTypes";
 
-// `mode` picks the surface: "tmux" is the classic pane, "gui" swaps it for the in-app Claude chat.
-// `agentSessionId` is the Claude session the conversation lives under, so flipping surfaces resumes
-// the same thread. Mirrors server/src/types.ts Terminal; keep in sync.
+// `mode` picks the surface: "tmux" is the classic pane, "gui" swaps it for the in-app chat (Claude or
+// Codex, decided server-side from the launch command). `agentSessionId` is the agent session the
+// conversation lives under, so flipping surfaces resumes the same thread. Mirrors
+// server/src/types.ts Terminal; keep in sync.
 export type TerminalMode = "tmux" | "gui";
 export interface Terminal { id: string; workspaceId: string; title: string; color: string | null; icon: string | null; tmuxSession: string; launchCommandOverride: string | null; position: number; createdAt: number; titleAuto: boolean; systemPrompt: { text: string; includeParent: boolean } | null; mode: TerminalMode; agentSessionId: string | null; guiConfig: GuiConfig; alive?: boolean; }
 export interface Workspace { id: string; name: string; folder: string; launchCommand: string; color: string | null; cardColor: string | null; layout: string | null; spaceId: string | null; folderId: string | null; config: SpaceConfig | null; systemPrompt: { text: string; includeGlobal: boolean } | null; x: number; y: number; createdAt: number; updatedAt: number; terminals?: Terminal[]; }

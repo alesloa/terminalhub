@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { switchToGui, switchToTmux, SwitchBlocked, type SwitchDeps } from "../gui/switch.js";
 import { parseGuiConfig } from "../gui/config.js";
+import { guiAgentFor } from "../gui/agent.js";
 
 // REST surface for GUI mode. The conversation itself rides the WebSocket (ws/guiGateway.ts); these
 // endpoints move a terminal between surfaces, report which one it's on, and carry the composer's
@@ -14,7 +15,7 @@ const modeSchema = z.object({ mode: z.enum(["tmux", "gui"]) });
 // current value; an explicit null on `model` clears it back to the CLI's own default.
 const configSchema = z.object({
   model: z.string().min(1).max(200).nullable().optional(),
-  effort: z.enum(["low", "medium", "high", "xhigh", "max", "ultracode", "ultrathink"]).nullable().optional(),
+  effort: z.enum(["low", "medium", "high", "xhigh", "max", "ultra", "ultracode", "ultrathink"]).nullable().optional(),
   permissionMode: z.enum(["approval-required", "auto-accept-edits", "auto", "full-access"]).optional(),
   fastMode: z.boolean().optional(),
 });
@@ -37,6 +38,9 @@ export async function guiRoutes(app: FastifyInstance, ctx: AppContext) {
       sessionId: term.agentSessionId,
       running: Boolean(session) && session?.state() !== "stopped",
       state: session?.state() ?? "idle",
+      // Which CLI this chat drives. The composer needs it to label itself and to know which pills
+      // are even meaningful — Codex has no fast mode or 1M context.
+      agent: guiAgentFor(term, ctx.store.getWorkspace(term.workspaceId)),
       // A live session is the authority on what the agent is actually running under; the row is only
       // the fallback for a chat that hasn't started yet.
       config: session?.config() ?? term.guiConfig,
@@ -45,14 +49,16 @@ export async function guiRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.get("/api/terminals/:id/gui/models", async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    if (!ctx.store.getTerminal(id)) return reply.code(404).send({ error: "terminal not found" });
-    return { models: await ctx.gui.models(id) };
+    const term = ctx.store.getTerminal(id);
+    if (!term) return reply.code(404).send({ error: "terminal not found" });
+    return { models: await ctx.gui.models(id, guiAgentFor(term, ctx.store.getWorkspace(term.workspaceId))) };
   });
 
   app.get("/api/terminals/:id/gui/commands", async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    if (!ctx.store.getTerminal(id)) return reply.code(404).send({ error: "terminal not found" });
-    return { commands: await ctx.gui.commands(id) };
+    const term = ctx.store.getTerminal(id);
+    if (!term) return reply.code(404).send({ error: "terminal not found" });
+    return { commands: await ctx.gui.commands(id, guiAgentFor(term, ctx.store.getWorkspace(term.workspaceId))) };
   });
 
   app.patch("/api/terminals/:id/gui/config", async (req, reply) => {
@@ -62,6 +68,7 @@ export async function guiRoutes(app: FastifyInstance, ctx: AppContext) {
     const b = configSchema.safeParse(req.body ?? {});
     if (!b.success) return reply.code(400).send({ error: "invalid gui config" });
 
+    const agent = guiAgentFor(term, ctx.store.getWorkspace(term.workspaceId));
     const p = b.data;
     const merged = parseGuiConfig({
       model: p.model !== undefined ? p.model : term.guiConfig.model,
@@ -75,8 +82,9 @@ export async function guiRoutes(app: FastifyInstance, ctx: AppContext) {
     const session = ctx.gui.get(id);
     const config = session ? await session.setConfig(merged) : merged;
     ctx.store.setTerminalGuiConfig(id, config);
-    // Sticky: the next new chat opens on this choice instead of resetting to the defaults.
-    ctx.store.setGuiDefaults(config);
+    // Sticky, per agent: the next new chat on THIS CLI opens on this choice. Kept apart because a
+    // model id only means something to the CLI that advertised it.
+    ctx.store.setGuiDefaults(agent, config);
     return { config };
   });
 
@@ -92,7 +100,7 @@ export async function guiRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!ws) return reply.code(404).send({ error: "workspace not found" });
 
     try {
-      if (b.data.mode === "gui") await switchToGui(term, ws.folder, deps());
+      if (b.data.mode === "gui") await switchToGui(term, ws.folder, deps(), guiAgentFor(term, ws));
       else await switchToTmux(term, term.launchCommandOverride ?? ws.launchCommand, deps());
     } catch (err) {
       // A blocked switch is the user's problem to resolve (interrupt the agent), not a server fault —

@@ -12,6 +12,7 @@ import type { AiConfig } from "../ai/types.js";
 import type { SkillInstall, CatalogSource, CatalogEntry } from "../skills/types.js";
 import { DEFAULT_CATALOG_SOURCES } from "../skills/defaults.js";
 import { DEFAULT_GUI_CONFIG, parseGuiConfig, type GuiConfig } from "../gui/config.js";
+import type { GuiAgent } from "../gui/types.js";
 import { computeNextOccurrence } from "../scheduler/recurrence.js";
 
 const EMPTY_AI_CONFIG: AiConfig = { providers: [], defaultProviderId: null };
@@ -178,6 +179,13 @@ function parseTerminalGuiConfig(raw: string | null | undefined): GuiConfig {
   try { return parseGuiConfig(JSON.parse(raw)); } catch { return { ...DEFAULT_GUI_CONFIG }; }
 }
 
+/** Settings key holding one agent's sticky composer picks. Claude keeps the original unsuffixed key
+ *  so the choices made before GUI mode grew a second agent are still there. */
+const GUI_DEFAULTS_KEYS: Record<GuiAgent, string> = { claude: "guiDefaults", codex: "guiDefaults.codex" };
+function guiDefaultsKey(agent: GuiAgent): string {
+  return GUI_DEFAULTS_KEYS[agent] ?? GUI_DEFAULTS_KEYS.claude;
+}
+
 /** Map a raw terminals row to a Terminal: SQLite stores titleAuto as 1/0, the type wants a boolean,
  *  and systemPrompt is an opaque JSON column. (A pre-migration row missing a column reads as default.) */
 function rowToTerminal(row: any): Terminal {
@@ -320,11 +328,13 @@ export interface Store {
   // `removedAgents` settings key). The picker filters these out; re-adding clears the id.
   getRemovedAgents(): string[];
   setRemovedAgents(ids: string[]): void;
-  // Sticky GUI-composer defaults (a GuiConfig JSON blob under the `guiDefaults` settings key). Every
-  // config change writes here too, so the next new chat opens on the last model/effort/permission
-  // the user picked instead of resetting. Unset = DEFAULT_GUI_CONFIG.
-  getGuiDefaults(): GuiConfig;
-  setGuiDefaults(config: GuiConfig): void;
+  // Sticky GUI-composer defaults, kept PER AGENT. Every config change writes here too, so the next
+  // new chat opens on the last model/effort/permission the user picked instead of resetting.
+  // Per-agent because a model id belongs to one CLI: carrying a Claude model onto a Codex chat names
+  // a model Codex has never heard of, which breaks its turns and leaves the picker with no row to
+  // read. Unset = DEFAULT_GUI_CONFIG.
+  getGuiDefaults(agent: GuiAgent): GuiConfig;
+  setGuiDefaults(agent: GuiAgent, config: GuiConfig): void;
   // Copilot singleton settings (JSON blob under the `copilot` settings key). getCopilotSettings
   // merges over defaults field-by-field; setCopilotSettings persists the validated whole object.
   getCopilotSettings(): CopilotSettings;
@@ -600,6 +610,16 @@ export function createStore(path: string): Store {
   // `guiConfig` is the GUI composer's model / reasoning / permission picks for this chat, as opaque
   // JSON (null = the defaults). Only GUI mode reads it, so an older tmux row needs no backfill.
   if (!tmCols.some(c => c.name === "guiConfig")) db.exec(`ALTER TABLE terminals ADD COLUMN guiConfig TEXT`);
+  // Until GUI mode learned to drive Codex, a chat was always Claude and the launch command it stored
+  // (or didn't) said nothing about that. Now the command is what picks the agent — so an old GUI row
+  // with none of its own would inherit the workspace's, and a Codex workspace would silently re-point
+  // an existing Claude conversation at Codex, which cannot resume a Claude session id. Pin those rows
+  // to what they have always been. Once: a GUI terminal created since carries its own command, and a
+  // pane switched into GUI is allowed to inherit the workspace's.
+  if (!db.prepare(`SELECT value FROM settings WHERE key='guiAgentBackfill'`).get()) {
+    db.prepare(`UPDATE terminals SET launchCommandOverride='claude' WHERE mode='gui' AND launchCommandOverride IS NULL`).run();
+    db.prepare(`INSERT INTO settings (key,value) VALUES ('guiAgentBackfill','1')`).run();
+  }
   // `position` orders terminals within their workspace's list (drag-reorder). Older tables ordered by
   // createdAt alone; add the column, then backfill contiguous positions per workspace IN that same
   // createdAt order so the existing visible order is preserved exactly. Only on first add — never
@@ -1062,7 +1082,7 @@ export function createStore(path: string): Store {
     getSettings() {
       const rows = db.prepare(`SELECT key,value FROM settings`).all() as { key: string; value: string }[];
       const s: any = { ...DEFAULT_SETTINGS };
-      for (const r of rows) { if (r.key === "aiConfig" || r.key === "betterComments" || r.key === "breaks" || r.key === "copilot" || r.key === "keptVoices" || r.key === "homeSpaceId" || r.key === "desktopWorkspaceId" || r.key === "canvasBackground" || r.key === "stageDock" || r.key === "guiDefaults" || r.key === "drive.clientId" || r.key === "drive.clientSecret" || r.key === "drive.redirect") continue; s[r.key] = parseSetting(r.key, r.value); }
+      for (const r of rows) { if (r.key === "aiConfig" || r.key === "betterComments" || r.key === "breaks" || r.key === "copilot" || r.key === "keptVoices" || r.key === "homeSpaceId" || r.key === "desktopWorkspaceId" || r.key === "canvasBackground" || r.key === "stageDock" || r.key.startsWith("guiDefaults") || r.key === "drive.clientId" || r.key === "drive.clientSecret" || r.key === "drive.redirect") continue; s[r.key] = parseSetting(r.key, r.value); }
       return s as Settings;
     },
     setSettings(patch) {
@@ -1182,14 +1202,14 @@ export function createStore(path: string): Store {
       db.prepare(`INSERT INTO settings (key,value) VALUES ('removedAgents',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
         .run(JSON.stringify(ids));
     },
-    getGuiDefaults() {
-      const row = db.prepare(`SELECT value FROM settings WHERE key='guiDefaults'`).get() as { value: string } | undefined;
+    getGuiDefaults(agent) {
+      const row = db.prepare(`SELECT value FROM settings WHERE key=?`).get(guiDefaultsKey(agent)) as { value: string } | undefined;
       if (!row) return { ...DEFAULT_GUI_CONFIG };
       try { return parseGuiConfig(JSON.parse(row.value)); } catch { return { ...DEFAULT_GUI_CONFIG }; }
     },
-    setGuiDefaults(config) {
-      db.prepare(`INSERT INTO settings (key,value) VALUES ('guiDefaults',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
-        .run(JSON.stringify(config));
+    setGuiDefaults(agent, config) {
+      db.prepare(`INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+        .run(guiDefaultsKey(agent), JSON.stringify(config));
     },
     getCopilotSettings() {
       const row = db.prepare(`SELECT value FROM settings WHERE key='copilot'`).get() as { value: string } | undefined;

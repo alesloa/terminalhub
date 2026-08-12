@@ -9,6 +9,7 @@ import { statPath } from "../fs/browser.js";
 import { seedWorkspaceEffective } from "../spaces/seedSpace.js";
 import { resolveTerminalSession } from "../claude/terminalLink.js";
 import { resolveEffective, applySystemPrompt } from "../agents/systemPrompt.js";
+import { guiAgentForCommand } from "../gui/agent.js";
 
 const DEFAULT_COLS = 200, DEFAULT_ROWS = 50;
 
@@ -63,9 +64,10 @@ export async function terminalRoutes(app: FastifyInstance, ctx: AppContext) {
       systemPrompt: b.data.systemPrompt ?? null,
       mode,
       agentSessionId: b.data.agentSessionId ?? null,
-      // Sticky composer picks: a new chat opens on the last model/effort/permission the user chose.
-      // Seeded on every terminal, not just GUI ones, so a later tmux → GUI switch inherits them too.
-      guiConfig: ctx.store.getGuiDefaults(),
+      // Sticky composer picks: a new chat opens on the last model/effort/permission the user chose
+      // FOR THIS AGENT — Claude's model ids mean nothing to Codex and vice versa. Seeded on every
+      // terminal, not just GUI ones, so a later tmux → GUI switch inherits them too.
+      guiConfig: ctx.store.getGuiDefaults(guiAgentForCommand(b.data.launchCommandOverride ?? ws.launchCommand)),
     });
     const session = sessionName(wsId, term.id);
     ctx.store.setTerminalSession(term.id, session);

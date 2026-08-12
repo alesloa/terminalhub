@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, guiSocketUrl } from "../../api/client";
 import type {
+  GuiAgent,
   GuiApprovalDecision,
   GuiApprovalRequest,
   GuiClientFrame,
@@ -99,6 +100,10 @@ export interface GuiRewindResult { ok: boolean; error?: string }
 
 export interface GuiSocket {
   messages: GuiMessage[];
+  /** Which CLI is behind this chat. null until the `history` frame lands — the server decides it from
+   *  the terminal's launch command, and nothing on this side may guess ahead of that answer. It never
+   *  changes for the life of a socket. */
+  agent: GuiAgent | null;
   busy: boolean;
   state: GuiSessionState;
   connected: boolean;
@@ -140,6 +145,7 @@ export interface GuiSocket {
  */
 export function useGuiSocket(terminalId: string): GuiSocket {
   const [messages, setMessages] = useState<GuiMessage[]>([]);
+  const [agent, setAgent] = useState<GuiAgent | null>(null);
   const [busy, setBusy] = useState(false);
   const [state, setState] = useState<GuiSessionState>("idle");
   const [connected, setConnected] = useState(false);
@@ -181,6 +187,7 @@ export function useGuiSocket(terminalId: string): GuiSocket {
     epochRef.current++;
     workRef.current = [];
     setMessages([]);
+    setAgent(null);
     setBusy(false);
     setState("idle");
     setSessionId(null);
@@ -267,6 +274,7 @@ export function useGuiSocket(terminalId: string): GuiSocket {
         if (frame.type === "history") {
           workRef.current = frame.messages.slice();
           setSessionId(frame.sessionId);
+          setAgent(frame.agent);
           applyConfig(frame.config);
           // The server re-sends whatever is still blocking the agent right after this frame, so drop
           // anything held from the previous connection — a request answered while we were away must
@@ -394,7 +402,7 @@ export function useGuiSocket(terminalId: string): GuiSocket {
   }, [terminalId, applyConfig]);
 
   return {
-    messages, busy, state, connected, sessionId, error, pendingApproval, pendingQuestion, config,
+    messages, agent, busy, state, connected, sessionId, error, pendingApproval, pendingQuestion, config,
     plan, contextUsage, costUsd, notice, dismissPlan, rewindPreview,
     send, interrupt, approve, answer, rewind, previewRewind, setConfig,
   };
