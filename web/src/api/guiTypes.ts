@@ -124,7 +124,10 @@ export type GuiEvent =
   | { type: "notice"; message: string }
   | { type: "context"; usage: GuiContextUsage }
   /** Answer to a `rewind.preview` request. */
-  | { type: "rewind.preview"; preview: GuiRewindPreview };
+  | { type: "rewind.preview"; preview: GuiRewindPreview }
+  /** The outcome of a rewind the client asked for. Sent for BOTH outcomes: a refusal has to reach the
+   *  editor that asked, or it closes over text the user typed and that text is gone. */
+  | { type: "rewind.result"; ok: boolean; error?: string };
 
 /** What "undo file changes" on a rewind would do to the working tree, asked for before the user
  *  commits to it — the undo deletes files created since that message, so the count goes in front of

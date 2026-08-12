@@ -434,6 +434,14 @@ html, body, #root { height: 100%; }
 .tr-markdown p { color: rgb(var(--tr-text)); }
 .tr-markdown a { color: rgb(var(--tr-link)); text-decoration: underline; text-decoration-color: rgba(96,165,250,.55); text-underline-offset: 3px; }
 .tr-markdown a:hover { color: rgb(var(--tr-link)); }
+/* Chat links are always blue, whatever the theme or the room's accent. A link is only useful if it
+   reads as one AND can be read at all: `info` is the one token every theme defines as a blue (light
+   on dark themes, deep on light ones), so it stays legible where a decorative link colour — or a
+   dark card colour bled onto the room — does not. */
+.tr-chat-md a, .tr-chat-md a:hover {
+  color: rgb(var(--tr-info));
+  text-decoration-color: rgb(var(--tr-info) / 0.55);
+}
 .tr-markdown strong { color: rgb(var(--tr-text-bright)); font-weight: 650; }
 .tr-markdown em { color: rgb(var(--tr-text)); }
 .tr-markdown blockquote { border-left: 2px solid rgba(96,165,250,.75); background: rgb(var(--tr-surface)); color: rgb(var(--tr-text)); padding: .75rem 1rem; }

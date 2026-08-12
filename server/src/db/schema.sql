@@ -49,12 +49,16 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+-- User-added launch commands for the New-terminal picker. `workspaceId` null = shared by every
+-- workspace; set = offered only in that one (no FK: the column is added by ALTER on older DBs, where
+-- SQLite cannot attach one, and the store deletes a workspace's rows with the workspace).
 CREATE TABLE IF NOT EXISTS custom_agents (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   command TEXT NOT NULL,
   icon TEXT,
   category TEXT NOT NULL DEFAULT 'Other',
+  workspaceId TEXT,
   createdAt INTEGER NOT NULL
 );
 -- Remembers the last accent color chosen for a folder so terminating a workspace and

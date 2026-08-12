@@ -369,14 +369,17 @@ function RoomBody({ room }: { room: OpenRoom }) {
     frameStyle.borderWidth = 2;
     frameStyle.borderStyle = "solid";
     // Peacock wins over the active theme INSIDE this room: rebind the accent tokens (channels) to
-    // the card color on the frame, so every accent surface below — buttons, focus rings, links —
+    // the card color on the frame, so every accent surface below — buttons, focus rings, chips —
     // uses peacock instead of whatever the theme set on <html>. Only for real hex colors (the
     // pickers always emit hex); the rgb(var()) fallback means "no custom color", leave theme as-is.
+    //
+    // NOT links. A card colour is chosen to identify a workspace, not to be read as small text on a
+    // dark panel: a navy or maroon card turns every hyperlink in the room into something you can
+    // barely see. Links keep the theme's own colour (chat pins them bluer still — see .tr-chat-md).
     if (peacock.startsWith("#")) {
       const ch = hexToChannels(peacock);
       fs["--tr-accent"] = ch;
       fs["--tr-accent-hover"] = ch;
-      fs["--tr-link"] = ch;
     }
   }
 

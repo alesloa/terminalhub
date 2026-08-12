@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GuiMessage, GuiRewindPreview } from "../../api/guiTypes";
+import type { GuiRewindResult } from "./useGuiSocket";
 import { copyText } from "../../lib/clipboard";
 import { ImageBlock } from "./MessageRow";
 
@@ -20,7 +21,7 @@ export function UserTurn({
   message: GuiMessage;
   userTurnsAfter: number;
   busy: boolean;
-  onRewind: (userTurnsAfter: number, text: string, newText?: string, restoreFiles?: boolean) => void;
+  onRewind: (userTurnsAfter: number, text: string, newText?: string, restoreFiles?: boolean) => Promise<GuiRewindResult>;
   onPreviewRewind: (userTurnsAfter: number, text: string) => void;
   preview: GuiRewindPreview | null;
 }) {
@@ -31,6 +32,7 @@ export function UserTurn({
   const [restoreFiles, setRestoreFiles] = useState(false);
   const [mode, setMode] = useState<"idle" | "edit" | "confirm-delete">("idle");
   const [draft, setDraft] = useState(text);
+  const [saving, setSaving] = useState(false);
 
   // A rewind rebuilds the transcript, so a row that survives one must not keep a half-typed edit of
   // a message that may no longer be the same turn.
@@ -68,11 +70,17 @@ export function UserTurn({
         cost={cost}
         pending={restoreFiles && !cost}
         onCancel={() => { setDraft(text); setMode("idle"); }}
+        saving={saving}
         onSave={() => {
           const next = draft.trim();
           if (!next || next === text) { setMode("idle"); setDraft(text); return; }
-          onRewind(userTurnsAfter, text, next, restoreFiles);
-          setMode("idle");
+          // The editor stays open, holding what was typed, until the server says the edit landed. A
+          // refused rewind ("this chat has moved on") used to close it and take the text with it —
+          // the one moment the text is irreplaceable, since it exists nowhere else.
+          setSaving(true);
+          void onRewind(userTurnsAfter, text, next, restoreFiles)
+            .then((result) => { if (result.ok) setMode("idle"); })
+            .finally(() => setSaving(false));
         }}
       />
     );
@@ -192,7 +200,7 @@ function RestoreFilesCost({ cost, pending }: { cost: GuiRewindPreview | null; pe
 }
 
 function EditBox({
-  draft, onDraft, onSave, onCancel, restoreFiles, onRestoreFiles, cost, pending,
+  draft, onDraft, onSave, onCancel, restoreFiles, onRestoreFiles, cost, pending, saving,
 }: {
   draft: string;
   onDraft: (v: string) => void;
@@ -202,6 +210,8 @@ function EditBox({
   onRestoreFiles: (v: boolean) => void;
   cost: GuiRewindPreview | null;
   pending: boolean;
+  /** The rewind is with the server. Nothing is thrown away until it answers. */
+  saving: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -229,7 +239,7 @@ function EditBox({
           onChange={(e) => onDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSave(); }
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!saving) onSave(); }
           }}
           rows={1}
           className="w-full resize-none bg-transparent px-1.5 py-1 text-sm leading-6 text-fg outline-none"
@@ -238,11 +248,11 @@ function EditBox({
           <span className="mr-auto text-dim">Resending drops everything after this message</span>
           <RestoreFilesToggle checked={restoreFiles} onChange={onRestoreFiles} />
           <RestoreFilesCost cost={cost} pending={pending} />
-          <button type="button" onClick={onCancel} className="rounded-md border border-edge px-2 py-0.5 text-muted transition-colors hover:text-bright">
+          <button type="button" onClick={onCancel} disabled={saving} className="rounded-md border border-edge px-2 py-0.5 text-muted transition-colors hover:text-bright disabled:opacity-40">
             Cancel
           </button>
-          <button type="button" onClick={onSave} className="rounded-md bg-accent px-2 py-0.5 text-accent-fg transition-opacity hover:opacity-90">
-            Send
+          <button type="button" onClick={onSave} disabled={saving} className="rounded-md bg-accent px-2 py-0.5 text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50">
+            {saving ? "Sending…" : "Send"}
           </button>
         </div>
       </div>

@@ -8,7 +8,7 @@ import {
 } from "./rewind.js";
 import { createGuiCheckpointer } from "./checkpointer.js";
 import { checkImages, imageContentBlock } from "./images.js";
-import { loadHistory, transcriptPathFor } from "./history.js";
+import { loadHistory, transcriptPathFor, DEFAULT_HISTORY_LIMIT } from "./history.js";
 import { parseSessionEntries } from "../claude/jsonl.js";
 import type { SessionEntry } from "../claude/types.js";
 import {
@@ -31,6 +31,11 @@ import type {
 // The terminal's tmux session is untouched by all of this — see switch.ts for the handoff.
 
 /** Tools whose approval prompt we render ourselves instead of as a generic allow/deny. */
+/** How long a stop waits for the agent to honour it before the run is ended outright. Long enough to
+ *  cover a tool call that was already in flight when the button was pressed, short enough that a stop
+ *  that did nothing is never something the user has to sit and watch. */
+const HARD_STOP_GRACE_MS = 4000;
+
 const ASK_USER_QUESTION = "AskUserQuestion";
 const EXIT_PLAN_MODE = "ExitPlanMode";
 
@@ -60,12 +65,15 @@ export interface GuiSession {
   state(): GuiSessionState;
   /** The Claude session id this conversation lives under. Known from start for a fresh session. */
   sessionId(): string | null;
-  /** The conversation as this session has seen it — what a reconnecting client is replayed from. */
-  messages(): GuiMessage[];
-  /** Requests still blocking the agent, as the events that raised them. A question or approval is
-   *  answered by a client that may not have existed when it was asked (tab switch, refresh, second
-   *  browser), so a reconnecting client has to be told about it again or the chat sits waiting on a
-   *  prompt nobody can see. */
+  /** The WHOLE conversation — what a reconnecting client is replayed from. Async because a resumed
+   *  conversation starts on disk: this session only folded the turns it streamed itself, and handing
+   *  a refreshing browser just those would shrink the chat to "everything since the agent last
+   *  started". Capped to the newest {@link DEFAULT_HISTORY_LIMIT} messages, same as a cold open. */
+  history(): Promise<GuiMessage[]>;
+  /** Requests still blocking the agent, as the events that raised them — plus the turn still in
+   *  flight, if any. A question or approval is answered by a client that may not have existed when
+   *  it was asked (tab switch, refresh, second browser), so a reconnecting client has to be told
+   *  about it again or the chat sits waiting on a prompt nobody can see. */
   pending(): GuiEvent[];
   /** Subscribe to the event stream. Returns an unsubscribe. */
   subscribe(fn: (event: GuiEvent) => void): () => void;
@@ -132,6 +140,17 @@ function createPromptQueue() {
 }
 
 type PromptQueue = ReturnType<typeof createPromptQueue>;
+
+/** Events that only exist because the agent is mid-turn — the stream's own proof it is working. */
+function opensTurn(event: GuiEvent): boolean {
+  switch (event.type) {
+    case "message.start": return event.role === "assistant";
+    case "block.start": case "block.delta": case "block.input": case "block.end":
+    case "tool.result": case "approval.request": case "question.request":
+      return true;
+    default: return false;
+  }
+}
 
 function userMessage(text: string, images: GuiImageAttachment[] = []): SDKUserMessage {
   // A plain string when there is nothing attached — the shape the CLI has always been given.
@@ -227,7 +246,26 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
   // Which run of the agent loop is current. A restart bumps it so the outgoing pump's tail (its
   // "stopped"/"error" bookkeeping) can't clobber the state of the run that replaced it.
   let generation = 0;
+  // Bumped by every stop. A prompt that was mid-snapshot when the user pressed stop compares this
+  // against the value it captured and drops itself instead of starting a turn nobody asked for.
+  let interruptEpoch = 0;
   let promptQueue = createPromptQueue();
+  // Everything this conversation said BEFORE this session process existed. The transcript below only
+  // folds events this session emitted, so without a seed a reconnecting client would be handed the
+  // tail of the conversation and lose every turn that ran under an earlier session (or an earlier
+  // hub). Read once, at construction — the CLI writes a turn to disk only after it ends, so nothing
+  // this session goes on to stream can already be in here.
+  let prefix: GuiMessage[] = [];
+  const prefixReady: Promise<void> = opts.resumeSessionId
+    ? loadHistory(opts.resumeSessionId, opts.cwd).then((loaded) => { prefix = loaded; }).catch(() => {})
+    : Promise.resolve();
+
+  /** Prefix + live fold, newest-capped. The one answer to "what is this conversation". */
+  const wholeConversation = async (): Promise<GuiMessage[]> => {
+    await prefixReady;
+    const all = [...prefix, ...transcript.messages()];
+    return all.length > DEFAULT_HISTORY_LIMIT ? all.slice(-DEFAULT_HISTORY_LIMIT) : all;
+  };
 
   const emit = (event: GuiEvent) => {
     // Record before delivering: the session outlives every socket, so this copy is what a client
@@ -401,6 +439,16 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
         if (stopped || gen !== generation) break;
         for (const event of normalizer.push(message)) {
           if (event.type === "session") { setSessionId(event.sessionId); continue; }
+          // The agent is producing something and no turn is open, so one opens here. Without this a
+          // turn is only ever "running" because the browser that sent the prompt said so — and that
+          // fact dies with the socket: refresh mid-turn and the reconnecting client is told "idle"
+          // while text is still pouring in (no stop button, no working indicator). Anything the
+          // agent streams is proof a turn is in flight, whoever asked for it and however long ago.
+          if (event.type !== "turn.end" && !currentTurnId && opensTurn(event)) {
+            currentTurnId = randomUUID();
+            emit({ type: "turn.start", turnId: currentTurnId });
+            setState("running");
+          }
           if (event.type === "turn.start") { currentTurnId = event.turnId; setState("running"); }
           if (event.type === "turn.end") {
             currentTurnId = null;
@@ -510,9 +558,14 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
     // instant either way; only the agent waits, and only for as long as one `git add -A` takes.
     // `promptQueue` is read after the await on purpose: a restart in between swaps the queue, and the
     // turn belongs in the run that exists now, not the one that was closed.
+    const epoch = interruptEpoch;
     void checkpoints.beforeTurn(sent)
       .catch(() => {})
-      .then(() => { if (!stopped) promptQueue.push(userMessage(sent, images)); });
+      .then(() => {
+        // Stopped while the snapshot was being taken: the turn was cancelled before it ever ran.
+        if (stopped || interruptEpoch !== epoch) return;
+        promptQueue.push(userMessage(sent, images));
+      });
   }
 
   /**
@@ -549,7 +602,7 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
     terminalId: opts.terminalId,
     state: () => state,
     sessionId: () => sessionId,
-    messages: () => transcript.messages(),
+    history: wholeConversation,
 
     subscribe(fn) {
       subscribers.add(fn);
@@ -560,16 +613,35 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
 
     async interrupt() {
       if (!runtime || stopped) return;
+      // Anything still on its way INTO the run counts as stopped too. A prompt waits on its workspace
+      // snapshot before it is queued, so without this a stop pressed during that wait lets the turn
+      // start a moment later — the agent carries on and it reads as a stop that did nothing.
+      interruptEpoch += 1;
+      const epoch = interruptEpoch;
       try { await runtime.interrupt(); } catch { /* nothing in flight, or the CLI is already gone */ }
       if (currentTurnId) {
         emit({ type: "turn.end", turnId: currentTurnId, status: "interrupted" });
         currentTurnId = null;
       }
       setState("idle");
+
+      // Asking is not the same as stopping. If the agent is still producing after the grace period —
+      // a turn re-opens the moment anything streams, so an open turn here means it ignored us — the
+      // run is torn down and the conversation resumed in a fresh one. That is a real stop: the CLI
+      // holding the turn is gone. Nothing is lost that a stop wasn't already discarding.
+      setTimeout(() => {
+        if (stopped || interruptEpoch !== epoch || !currentTurnId) return;
+        emit({ type: "notice", message: "The agent didn't stop on request — its run was ended." });
+        void restart(config, "Stopped.").catch(() => {});
+      }, HARD_STOP_GRACE_MS);
     },
 
     pending() {
       return [
+        // The open turn first: a client that arrives mid-turn has to learn the agent is working
+        // before it is shown what the agent is blocked on, or it renders an approval bar under an
+        // idle-looking composer.
+        ...(currentTurnId ? [{ type: "turn.start", turnId: currentTurnId } as GuiEvent] : []),
         ...[...questions.values()].map((p): GuiEvent => ({ type: "question.request", request: p.request })),
         ...[...approvals.values()].map((p): GuiEvent => ({ type: "approval.request", request: p.request })),
       ];
@@ -593,9 +665,9 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
       const found = findForkPoint(loaded.entries, target);
       if (!found.ok) return { ok: false as const, error: found.error };
 
-      // What the chat should show afterwards. The live transcript is the truth while a session is
-      // up; a chat nobody has typed into yet only exists on disk.
-      const base = transcript.messages();
+      // What the chat should show afterwards — the whole conversation, disk prefix included, or the
+      // cut would be measured against only the turns this session happened to stream.
+      const base = await wholeConversation();
       const source = base.length ? base : await loadHistory(sessionId, opts.cwd);
       const kept = truncateMessages(source, target.userTurnsAfter);
       if (!kept) return { ok: false as const, error: "That message is no longer in this conversation." };
@@ -626,6 +698,9 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
       }
       opts.onSessionId?.(sessionId);
       emit({ type: "session", sessionId });
+      // `kept` is the whole surviving conversation, so the transcript now holds all of it — leaving
+      // the disk prefix in place would replay the pre-rewind turns a second time on the next connect.
+      prefix = [];
       emit({ type: "history.reset", messages: kept });
 
       await restart(config, "Rewinding the conversation.");

@@ -191,6 +191,10 @@ export interface CustomAgent {
   command: string;
   icon: string | null; // uploaded icon as a data URL, or null
   category: string;     // section it shows under in the picker ("Other" by default; never "Detected agents")
+  /** Which workspace this command belongs to, or null for one shared by every workspace. A launch
+   *  command is usually a property of the project, not of the machine — `npm run dev` means something
+   *  different in each folder — so the picker offers a workspace's own commands plus the shared ones. */
+  workspaceId: string | null;
   createdAt: number;
 }
 

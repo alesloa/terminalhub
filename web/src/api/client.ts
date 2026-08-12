@@ -1,5 +1,5 @@
 import type {
-  Workspace, Folder, Space, SpaceConfig, SpaceCatalog, SpacePreset, SpaceSeedReport, SeedResult, InstalledSet, InstallKind, CanvasBackground, Wallpaper, WallpaperData, Terminal, FsListing, FsFile, FsFileBytes, DriveAccountPublic, DriveEntry, AgentsResponse, HeadroomStatus, HeadroomSavings, CustomAgent, ProcessInfo, PortInfo, AttentionResponse, WorkingResponse, ClaudeUsageResult, CodexUsageResult,
+  Workspace, Folder, Space, SpaceConfig, SpaceCatalog, SpacePreset, SpaceSeedReport, SeedResult, InstalledSet, InstallKind, CanvasBackground, Wallpaper, WallpaperData, Terminal, FsListing, FsFile, FsFileBytes, DriveAccountPublic, DriveEntry, AgentsResponse, CommandPreset, HeadroomStatus, HeadroomSavings, CustomAgent, ProcessInfo, PortInfo, AttentionResponse, WorkingResponse, ClaudeUsageResult, CodexUsageResult,
   GitInfo, GitStatus, GitCommit, GitBranch, GitWorktree, StashEntry, CommitFile, MergePreview, PrMergeMethod, GithubInfo, GithubOwners, GithubRepo, GithubAccount, GithubIdentity, GitignorePreview, PullRequest, PullRequestDetail, ActionRun, CloneJob,
   SystemStats,
   AiProvider, AiProviderKind, AiProvidersResponse, PromptBuilderInputs, AiBuilderResponse, AiChatMessage, AiChatResponse, SettingsResponse, KeptVoice, Bookmark, FavoriteGroup, Favorite, Note, NoteGroup, Link, LinkFolder, StickyNote, SpaceWidget, SpaceWidgetKind, BoardCard, BoardColumn, TimeEntry, TimeClient, TimeProject, TimeTask, SttStatus, TranscribeResult,
@@ -273,10 +273,14 @@ export const api = {
   searchReplace: (b: { query: string; replace: string; caseSensitive?: boolean; wholeWord?: boolean; regexp?: boolean; targets: SearchReplaceTarget[] }) =>
     req<{ replaced: number; files: number }>("POST", "/api/search/replace", b),
   lspServers: () => req<{ servers: LanguageServerInfo[] }>("GET", "/api/lsp/servers"),
-  listAgents: () => req<AgentsResponse>("GET", "/api/agents"),
+  // Scoped: the shared commands plus this workspace's own. Without an id, only the shared ones.
+  listAgents: (workspaceId?: string) =>
+    req<AgentsResponse>("GET", `/api/agents${workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""}`),
+  commandPresets: (workspaceId: string) =>
+    req<{ presets: CommandPreset[] }>("GET", `/api/agents/presets?workspaceId=${encodeURIComponent(workspaceId)}`),
   headroomStatus: () => req<HeadroomStatus>("GET", "/api/agents/headroom"),
   headroomSavings: () => req<HeadroomSavings>("GET", "/api/agents/headroom/savings"),
-  createAgent: (b: { name: string; command: string; icon?: string | null; category?: string }) =>
+  createAgent: (b: { name: string; command: string; icon?: string | null; category?: string; workspaceId?: string | null }) =>
     req<{ agent: CustomAgent }>("POST", "/api/agents", b),
   deleteAgent: (id: string) => req<{ ok: true }>("DELETE", `/api/agents/${id}`),
   listAttention: () => req<AttentionResponse>("GET", "/api/attention"),

@@ -42,11 +42,11 @@ export async function guiGateway(app: FastifyInstance, ctx: AppContext, config: 
     const running = ctx.gui.get(term.id);
     const guiConfig = running?.config() ?? term.guiConfig;
 
-    // Everything said before this socket existed. A live session's own transcript wins: switching
-    // terminal tabs unmounts the panel and drops the socket, and Claude's on-disk JSONL lags the
-    // stream (and doesn't exist at all before the first turn is written), so reading from disk while
-    // a session is running is how a reconnect used to come back blank.
-    const live = running?.messages() ?? [];
+    // Everything said before this socket existed. A live session answers for the whole conversation
+    // — the turns it streamed AND the ones already on disk when it started — because Claude's JSONL
+    // lags the stream (and doesn't exist at all before the first turn is written), so reading from
+    // disk while a session is running is how a reconnect used to come back blank or truncated.
+    const live = running ? await running.history() : [];
     const history = live.length
       ? live
       : term.agentSessionId ? await loadHistory(term.agentSessionId, ws.folder) : [];
@@ -98,7 +98,12 @@ export async function guiGateway(app: FastifyInstance, ctx: AppContext, config: 
               ...(typeof frame.newText === "string" ? { newText: frame.newText } : {}),
               restoreFiles: frame.restoreFiles === true,
             })
-            .then((result) => { if (!result.ok) send({ type: "event", event: { type: "error", message: result.error } }); });
+            .then((result) => {
+              if (!result.ok) send({ type: "event", event: { type: "error", message: result.error } });
+              // Always acked, success or not: the editor that asked is holding the user's typed text
+              // until it hears back, and a silent refusal would strand it open forever.
+              send({ type: "event", event: { type: "rewind.result", ok: result.ok, ...(result.ok ? {} : { error: result.error }) } });
+            });
           break;
         case "rewind.preview":
           // Read-only: the chat asks this the moment "undo file changes" is ticked, so the number of

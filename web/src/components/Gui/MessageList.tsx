@@ -5,6 +5,8 @@ import { UserTurn } from "./UserTurn";
 import { ToolRun } from "./ToolRun";
 import { buildTranscriptRows } from "./transcriptRows";
 import { TurnActiveProvider } from "./turnActive";
+import { ActivityIndicator } from "./ActivityIndicator";
+import type { GuiRewindResult } from "./useGuiSocket";
 
 const NEAR_BOTTOM_PX = 48; // slack so a one-line overshoot still counts as "at the bottom"
 
@@ -12,10 +14,12 @@ const NEAR_BOTTOM_PX = 48; // slack so a one-line overshoot still counts as "at 
  * The scrolling transcript. Sticks to the bottom while the user is already there and releases the
  * moment they scroll up, so reading back through a long turn isn't yanked away by the next delta.
  */
-export function MessageList({ messages, busy, onRewind, onPreviewRewind, rewindPreview }: {
+export function MessageList({ messages, busy, waitingOnUser, onRewind, onPreviewRewind, rewindPreview }: {
   messages: GuiMessage[];
   busy: boolean;
-  onRewind: (userTurnsAfter: number, text: string, newText?: string, restoreFiles?: boolean) => void;
+  /** An approval or question is on screen — the turn is stalled on the user, not on the model. */
+  waitingOnUser: boolean;
+  onRewind: (userTurnsAfter: number, text: string, newText?: string, restoreFiles?: boolean) => Promise<GuiRewindResult>;
   onPreviewRewind: (userTurnsAfter: number, text: string) => void;
   rewindPreview: GuiRewindPreview | null;
 }) {
@@ -85,7 +89,7 @@ export function MessageList({ messages, busy, onRewind, onPreviewRewind, rewindP
             if (row.kind === "tools") return <ToolRun key={row.id} blocks={row.blocks} />;
             return <BlockGroup key={row.id} blocks={row.blocks} />;
           })}
-          {busy && <PendingIndicator messages={messages} />}
+          {busy && <ActivityIndicator messages={messages} waitingOnUser={waitingOnUser} />}
         </div>
       </div>
 
@@ -100,18 +104,5 @@ export function MessageList({ messages, busy, onRewind, onPreviewRewind, rewindP
       )}
     </div>
     </TurnActiveProvider>
-  );
-}
-
-/** Typing wave shown only while the turn has produced nothing to look at yet. */
-function PendingIndicator({ messages }: { messages: GuiMessage[] }) {
-  const last = messages[messages.length - 1];
-  if (last && last.role === "assistant" && last.blocks.length > 0) return null;
-  return (
-    <span className="inline-flex items-center gap-1 py-1 text-muted" aria-label="Claude is working">
-      {[0, 150, 300].map((d) => (
-        <span key={d} className="tr-wave-dot h-1.5 w-1.5 rounded-full bg-current" style={{ animationDelay: `${d}ms` }} />
-      ))}
-    </span>
   );
 }

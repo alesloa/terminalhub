@@ -94,6 +94,9 @@ function applyEvent(work: GuiMessage[], ev: GuiEvent): boolean {
   }
 }
 
+/** How a rewind ended. `ok:false` means the conversation was left exactly as it was. */
+export interface GuiRewindResult { ok: boolean; error?: string }
+
 export interface GuiSocket {
   messages: GuiMessage[];
   busy: boolean;
@@ -120,8 +123,9 @@ export interface GuiSocket {
   approve: (id: string, decision: GuiApprovalDecision) => void;
   answer: (id: string, answers: Record<string, string[]>) => void;
   /** Cut the chat back to a user turn — `newText` re-sends it reworded, omitting it deletes it and
-   *  everything after. `userTurnsAfter` is how many user turns come after the target (0 = latest). */
-  rewind: (userTurnsAfter: number, text: string, newText?: string, restoreFiles?: boolean) => void;
+   *  everything after. `userTurnsAfter` is how many user turns come after the target (0 = latest).
+   *  Resolves with the server's ruling, so an editor can keep the user's text until the edit lands. */
+  rewind: (userTurnsAfter: number, text: string, newText?: string, restoreFiles?: boolean) => Promise<GuiRewindResult>;
   /** Ask what "undo file changes" would cost at that turn. Answers land in `rewindPreview`. */
   previewRewind: (userTurnsAfter: number, text: string) => void;
   /** The most recent answer to `previewRewind`, tagged with the turn that asked. */
@@ -151,6 +155,9 @@ export function useGuiSocket(terminalId: string): GuiSocket {
   const [rewindPreview, setRewindPreview] = useState<GuiRewindPreview | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  // The caller waiting on the current rewind, if any. Settled by the server's ack, or by the socket
+  // dying — never left hanging, because whoever is waiting is holding text the user typed.
+  const rewindWaiterRef = useRef<((result: GuiRewindResult) => void) | null>(null);
   const workRef = useRef<GuiMessage[]>([]);
   const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The live config, readable without re-creating setConfig on every change (it's the rollback value
@@ -225,6 +232,12 @@ export function useGuiSocket(terminalId: string): GuiSocket {
         case "notice": setNotice(ev.message); break;
         case "context": setContextUsage(ev.usage); break;
         case "rewind.preview": setRewindPreview(ev.preview); break;
+        case "rewind.result": {
+          const waiter = rewindWaiterRef.current;
+          rewindWaiterRef.current = null;
+          waiter?.({ ok: ev.ok, ...(ev.error === undefined ? {} : { error: ev.error }) });
+          break;
+        }
         case "plan.proposed": setPlan(ev.text); break;
         default:
           // block.delta is the hot path — everything else is rare enough to land immediately.
@@ -269,6 +282,11 @@ export function useGuiSocket(terminalId: string): GuiSocket {
 
       ws.onclose = (e) => {
         if (ping) { clearInterval(ping); ping = null; }
+        // Whoever asked for a rewind is holding the user's typed text waiting on an answer that can
+        // no longer come. Tell them it failed so they keep it on screen.
+        const waiter = rewindWaiterRef.current;
+        rewindWaiterRef.current = null;
+        waiter?.({ ok: false, error: "Lost the connection — nothing was changed." });
         if (closed) return;
         setConnected(false);
         // Without a socket there's no turn to be in, and no way to learn it ended — otherwise the
@@ -339,12 +357,18 @@ export function useGuiSocket(terminalId: string): GuiSocket {
     setPendingQuestion((p) => (p && p.id === id ? null : p));
   }, [sendFrame]);
 
+  // Resolves when the server rules on the rewind, so the caller can hold the user's typed text until
+  // it knows the edit actually landed. One rewind can be outstanding at a time (the row's controls are
+  // disabled while one is in flight), so a single slot is enough.
   const rewind = useCallback((userTurnsAfter: number, text: string, newText?: string, restoreFiles?: boolean) => {
+    rewindWaiterRef.current?.({ ok: false, error: "Superseded by another rewind." });
+    const settled = new Promise<GuiRewindResult>((resolve) => { rewindWaiterRef.current = resolve; });
     sendFrame({
       type: "rewind", userTurnsAfter, text,
       ...(newText === undefined ? {} : { newText }),
       ...(restoreFiles ? { restoreFiles: true } : {}),
     });
+    return settled;
   }, [sendFrame]);
 
   const previewRewind = useCallback((userTurnsAfter: number, text: string) => {

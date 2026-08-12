@@ -138,7 +138,10 @@ export type GuiEvent =
   /** Context-window occupancy, pushed after every turn and once on connect. */
   | { type: "context"; usage: GuiContextUsage }
   /** Answer to a `rewind.preview` request. Liveness, never replayed. */
-  | { type: "rewind.preview"; preview: GuiRewindPreview };
+  | { type: "rewind.preview"; preview: GuiRewindPreview }
+  /** The outcome of a rewind the client asked for. Sent for BOTH outcomes: a refusal has to reach the
+   *  editor that asked, or it closes over text the user typed and that text is gone. */
+  | { type: "rewind.result"; ok: boolean; error?: string };
 
 // ---------------------------------------------------------------------------
 // Composer controls — the model / reasoning / permission pills

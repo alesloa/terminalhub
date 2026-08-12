@@ -268,6 +268,15 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
 - **Custom agents** — define named agents (command + icon) in the New-terminal picker, filed under a
   category you choose or name (defaults to "Other"; "Detected agents" is reserved for `$PATH`-detected
   built-ins). Hover a custom agent to remove it. Built-in agents are detected from `$PATH`.
+- **Commands belong to a workspace** — a saved command is scoped to the workspace you added it in
+  (`npm run dev` means something different in every folder), and is marked **THIS FOLDER** on its card.
+  The form's scope picker can make one **Every workspace** instead, which is what every command saved
+  before scoping existed still is. Deleting a workspace takes its own commands with it.
+- **Start from a command you already have** — the add-a-command form leads with a dropdown of ready-made
+  launch commands: every script in *that folder's* `package.json`, shown with the script body and run
+  through the package manager its lockfile names (`pnpm run dev` in a pnpm repo, `bun run dev` in a bun
+  one), followed by the usual `dev` / `start` / `build` / `test` for the ones it doesn't define. Picking
+  one fills in the command and the name.
 - **Remove / re-add any card** — every card in the New-terminal picker has a hover ✕ to remove it:
   detected built-ins (Claude/Codex/Cursor/…) and the Headroom launcher persist as removed (the CLI
   stays on disk, it's just hidden from the picker); custom CLIs delete outright. **Plain terminal is the
@@ -332,11 +341,32 @@ hood it's the real `claude` binary driven headlessly, so everything your CLI doe
 - **History comes from the transcript** — opening GUI on a terminal that has been running in a pane
   replays the whole prior conversation (read from `~/.claude/projects/…/<session>.jsonl`), so you're not
   starting from a blank panel.
+- **Stop really stops** — pressing stop also cancels a turn that was still being prepared (a prompt
+  waits on its workspace snapshot before the agent is handed it), and if the agent is still producing
+  output a few seconds later, its run is ended outright and the conversation resumed in a fresh one —
+  said plainly in the notice line rather than left looking stopped while it works on.
+- **A refused edit keeps what you typed** — editing a message and resending can be refused (the chat
+  moved on since that message). The editor now stays open with your text still in it, so it can be
+  copied, rather than closing and taking the only copy of it with it.
+- **Links stay readable** — hyperlinks in the chat are always blue, whatever theme is active and
+  whatever colour the workspace card is. A room tinted with a dark card colour no longer bleeds that
+  colour onto its links (anywhere in the room, not just the chat) — the accent still drives buttons,
+  chips and the message bubble.
+- **Survives a refresh, mid-turn** — reload the page while the agent is working and the chat comes back
+  whole: the full conversation (not merely the turns the current agent process happened to stream) and
+  the turn still in flight, so the stop button, the working line and the terminal's badge are all still
+  there. A turn counts as running because the agent is producing output, not because the browser that
+  asked for it is still connected.
 - **Real approval buttons** — permission prompts arrive as an **Allow / Allow always / Deny** bar instead
   of a keyboard menu, and Claude's questions render as an answerable form. Plan mode is captured and shown
   as a proposed plan rather than dropping you into a TUI picker.
 - **Streaming with tool cards** — assistant text and thinking stream token-by-token; each tool call gets a
   collapsible card with its input, status, and result, and file edits render as syntax-aware diffs.
+- **A live "still working" line** — for the whole of a running turn the foot of the transcript shows what
+  is happening right now — *Thinking*, *Responding*, *Reading `…/checkout.tsx`*, *Running 3 tools*, or
+  *Waiting for you* when an approval is on screen — next to cresting dots and a turn timer (`45s`,
+  `2m 05s`). It no longer vanishes the moment a block lands, so a long gap between a finished tool card
+  and the next token reads as work in progress rather than a hang.
 - **Zoom the whole chat** — a floating `−  100%  +` cluster in the chat's top-right corner scales
   everything at once: transcript, tool cards, diffs, the approval bar and the box you type into.
   Lines re-wrap at the new size rather than being stretched. Five percent a press, 75% to 250%; the

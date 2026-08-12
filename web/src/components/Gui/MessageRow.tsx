@@ -6,7 +6,7 @@ import { renderMarkdown } from "../../lib/markdown";
 // equal specificity loses the tie. The `!` prefix is the cheapest way to pull the document-scale
 // heading/spacing rhythm down to chat scale without forking the whole markdown theme.
 const MD_CLASS =
-  "tr-markdown text-sm leading-6 [&>*+*]:!mt-3 " +
+  "tr-markdown tr-chat-md text-sm leading-6 [&>*+*]:!mt-3 " +
   "[&_h1]:!text-[1.05rem] [&_h1]:!mt-4 [&_h1]:!pb-1 " +
   "[&_h2]:!text-[1rem] [&_h2]:!mt-4 [&_h2]:!pb-0 [&_h2]:!border-0 " +
   "[&_h3]:!text-[0.95rem] [&_h3]:!mt-3 [&_h4]:!text-sm [&_h4]:!mt-3 " +

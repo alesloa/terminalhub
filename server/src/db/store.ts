@@ -302,8 +302,9 @@ export interface Store {
   getWallpaper(id: string): WallpaperData | undefined;
   createWallpaper(w: { name: string; dataUrl: string }): Wallpaper;
   deleteWallpaper(id: string): void;
-  listCustomAgents(): CustomAgent[];
-  createCustomAgent(a: Pick<CustomAgent,"name"|"command"|"icon"|"category">): CustomAgent;
+  /** Shared commands, plus the given workspace's own when one is named. */
+  listCustomAgents(workspaceId?: string | null): CustomAgent[];
+  createCustomAgent(a: Pick<CustomAgent,"name"|"command"|"icon"|"category"> & { workspaceId?: string | null }): CustomAgent;
   deleteCustomAgent(id: string): void;
   getAiConfig(): AiConfig;
   setAiConfig(c: AiConfig): void;
@@ -612,6 +613,10 @@ export function createStore(path: string): Store {
       rows.forEach((r, i) => setPos.run(i, r.id));
     }
   }
+  // `workspaceId` scopes a saved launch command to one workspace (null = shared by all). Every row
+  // that predates the column was global by definition, so NULL is exactly right for them.
+  const caScopeCols = db.prepare(`PRAGMA table_info(custom_agents)`).all() as { name: string }[];
+  if (!caScopeCols.some(c => c.name === "workspaceId")) db.exec(`ALTER TABLE custom_agents ADD COLUMN workspaceId TEXT`);
   // `background` is a space's per-canvas backdrop override (CanvasBackground as opaque JSON; null =
   // inherit the global default); add it to spaces tables created before this feature.
   const spCols = db.prepare(`PRAGMA table_info(spaces)`).all() as { name: string }[];
@@ -868,7 +873,12 @@ export function createStore(path: string): Store {
         .run({ ...next, config: next.config ? JSON.stringify(next.config) : null, systemPrompt: next.systemPrompt ? JSON.stringify(next.systemPrompt) : null });
       if ("color" in patch) rememberColor(next.folder, next.color);
     },
-    deleteWorkspace(wid) { db.prepare(`DELETE FROM workspaces WHERE id=?`).run(wid); },
+    deleteWorkspace(wid) {
+      // Its own launch commands go with it — no FK on that column (see schema.sql), so nothing else
+      // would ever collect them and they would sit in the table forever.
+      db.prepare(`DELETE FROM custom_agents WHERE workspaceId=?`).run(wid);
+      db.prepare(`DELETE FROM workspaces WHERE id=?`).run(wid);
+    },
     createFolder(f) {
       const now = Date.now();
       const folder: Folder = {
@@ -1087,11 +1097,18 @@ export function createStore(path: string): Store {
       return { id: wp.id, name: wp.name, createdAt: wp.createdAt };
     },
     deleteWallpaper(wid) { db.prepare(`DELETE FROM wallpapers WHERE id=?`).run(wid); },
-    listCustomAgents() { return db.prepare(`SELECT * FROM custom_agents ORDER BY createdAt`).all() as CustomAgent[]; },
+    // Shared commands plus, when asked from inside a workspace, that workspace's own. Without an id
+    // only the shared ones are listed — never another workspace's, which would put a command that
+    // only makes sense in one project in front of every other.
+    listCustomAgents(workspaceId) {
+      return db.prepare(
+        `SELECT * FROM custom_agents WHERE workspaceId IS NULL OR workspaceId=? ORDER BY createdAt`,
+      ).all(workspaceId ?? null) as CustomAgent[];
+    },
     createCustomAgent(a) {
-      const agent: CustomAgent = { id: id("ag_"), createdAt: Date.now(), ...a };
-      db.prepare(`INSERT INTO custom_agents (id,name,command,icon,category,createdAt)
-        VALUES (@id,@name,@command,@icon,@category,@createdAt)`).run(agent);
+      const agent: CustomAgent = { id: id("ag_"), createdAt: Date.now(), workspaceId: null, ...a };
+      db.prepare(`INSERT INTO custom_agents (id,name,command,icon,category,workspaceId,createdAt)
+        VALUES (@id,@name,@command,@icon,@category,@workspaceId,@createdAt)`).run(agent);
       return agent;
     },
     deleteCustomAgent(aid) { db.prepare(`DELETE FROM custom_agents WHERE id=?`).run(aid); },

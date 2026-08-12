@@ -10,7 +10,7 @@ import { Section } from "./controls";
 export function AgentPromptsSettings() {
   const qc = useQueryClient();
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
-  const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: api.listAgents });
+  const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => api.listAgents() });
 
   const stored = settings?.agentSystemPrompts ?? {};
   // Draft map, seeded from the stored prompts; re-seeded whenever the stored blob changes and we're not

@@ -113,8 +113,12 @@ export interface TimeClient { id: string; name: string; archived: boolean; posit
 export interface TimeProject { id: string; clientId: string; name: string; archived: boolean; position: number; createdAt: number; updatedAt: number; }
 export interface TimeTask { id: string; name: string; archived: boolean; position: number; createdAt: number; updatedAt: number; }
 export interface BuiltinAgent { id: string; name: string; command: string; blurb: string; installed: boolean; }
-export interface CustomAgent { id: string; name: string; command: string; icon: string | null; category: string; createdAt: number; }
+/** `workspaceId` null = shared by every workspace; set = offered only inside that one. */
+export interface CustomAgent { id: string; name: string; command: string; icon: string | null; category: string; workspaceId: string | null; createdAt: number; }
 export interface AgentsResponse { builtin: BuiltinAgent[]; custom: CustomAgent[]; }
+/** A ready-made launch command offered by the add-a-command form. `script` = read from the
+ *  workspace's own package.json; `common` = a usual suspect that folder doesn't define. */
+export interface CommandPreset { label: string; command: string; source: "script" | "common"; detail?: string }
 
 // A temp access link ("add a teammate"). `secret` is the URL credential, returned to the owner so the
 // manager can re-copy the link. `workspaceId` = the room to auto-open on arrival (null = canvas).

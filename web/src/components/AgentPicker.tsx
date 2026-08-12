@@ -14,7 +14,9 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
   const qc = useQueryClient();
   const close = useRoom(s => s.closeAgentPicker);
   const requestTerminalFocus = useUi(s => s.requestTerminalFocus);
-  const { data } = useQuery({ queryKey: ["agents"], queryFn: api.listAgents });
+  // Scoped to this workspace: its own saved commands plus the shared ones. Keyed by workspace so
+  // opening the picker in another room doesn't reuse this room's list from cache.
+  const { data } = useQuery({ queryKey: ["agents", workspaceId], queryFn: () => api.listAgents(workspaceId) });
   // The special "Claude (Headroom)" launcher: separate endpoint so its network probe never delays the
   // main list. Polled while the picker is open so the running dot stays fresh.
   const { data: hr } = useQuery({ queryKey: ["agents", "headroom"], queryFn: api.headroomStatus, refetchInterval: 15_000 });
@@ -118,6 +120,9 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
 
   const customCard = (a: (typeof customs)[number]) => (
     <AgentCard key={a.id} icon={a.icon ?? FALLBACK_ICON} name={a.name} blurb={a.command}
+      // Only this workspace's own commands are marked — the shared ones are the norm, so a badge on
+      // those would just be noise on every card.
+      tag={a.workspaceId ? "THIS FOLDER" : undefined}
       onClick={() => pick(a.command, a.name)}
       onDelete={async () => { await api.deleteAgent(a.id); qc.invalidateQueries({ queryKey: ["agents"] }); }} />
   );
@@ -201,7 +206,7 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
             </div>
           )}
           {panel === "cli" && (
-            <AddAgentForm knownCats={knownCats} detected={detected}
+            <AddAgentForm knownCats={knownCats} detected={detected} workspaceId={workspaceId}
               onClose={() => setPanel("none")}
               onAdded={() => qc.invalidateQueries({ queryKey: ["agents"] })} />
           )}
@@ -216,8 +221,8 @@ export function AgentPicker({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-function AgentCard({ icon, name, blurb, onClick, onDelete }: {
-  icon: string; name: string; blurb?: string; onClick: () => void; onDelete?: () => void;
+function AgentCard({ icon, name, blurb, tag, onClick, onDelete }: {
+  icon: string; name: string; blurb?: string; tag?: string; onClick: () => void; onDelete?: () => void;
 }) {
   return (
     <div className="group relative">
@@ -226,7 +231,10 @@ function AgentCard({ icon, name, blurb, onClick, onDelete }: {
           hover:border-accent/60 hover:bg-surface">
         <img src={icon} alt="" className="w-7 h-7 shrink-0 object-contain" />
         <span className="min-w-0">
-          <span className="block truncate text-sm text-bright">{name}</span>
+          <span className="flex items-center gap-1.5">
+            <span className="min-w-0 truncate text-sm text-bright">{name}</span>
+            {tag && <span className="shrink-0 rounded bg-elevated px-1 py-px text-[9px] tracking-wide text-dim">{tag}</span>}
+          </span>
           {blurb && <span className="block truncate text-xs text-dim">{blurb}</span>}
         </span>
       </button>
@@ -324,17 +332,41 @@ function HeadroomInstall({ status, onClose }: { status: HeadroomStatus; onClose:
 
 type DetectedAgent = { id: string; name: string; icon: string; removed: boolean; toggle: () => void };
 
-function AddAgentForm({ knownCats, detected, onAdded, onClose }: {
-  knownCats: string[]; detected: DetectedAgent[]; onAdded: () => void; onClose: () => void;
+function AddAgentForm({ knownCats, detected, workspaceId, onAdded, onClose }: {
+  knownCats: string[]; detected: DetectedAgent[]; workspaceId: string; onAdded: () => void; onClose: () => void;
 }) {
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
   const [category, setCategory] = useState("Other");
   const [icon, setIcon] = useState<string | null>(null);
   const [err, setErr] = useState("");
+  // Default to this workspace: `npm run dev` means a different thing in every folder, so a saved
+  // command belongs to its project unless the user says otherwise.
+  const [shared, setShared] = useState(false);
+
+  // What this folder can actually run — its package.json scripts, through the package manager its
+  // lockfile names — plus the usual suspects it doesn't define.
+  const { data: presetData } = useQuery({
+    queryKey: ["agents", "presets", workspaceId],
+    queryFn: () => api.commandPresets(workspaceId),
+    staleTime: 60_000,
+  });
+  const presets = presetData?.presets ?? [];
+  const scripts = presets.filter(p => p.source === "script");
+  const common = presets.filter(p => p.source === "common");
+
+  /** Picking a preset fills the command, and the name too unless one has been typed. */
+  const usePreset = (value: string) => {
+    if (!value) return;
+    setCommand(value);
+    setName(n => (n.trim() ? n : value));
+  };
 
   const save = useMutation({
-    mutationFn: () => api.createAgent({ name: name.trim(), command: command.trim(), icon, category: category.trim() || "Other" }),
+    mutationFn: () => api.createAgent({
+      name: name.trim(), command: command.trim(), icon, category: category.trim() || "Other",
+      workspaceId: shared ? null : workspaceId,
+    }),
     onSuccess: () => { onAdded(); onClose(); },
     onError: (e: unknown) => setErr(e instanceof Error ? e.message : "failed"),
   });
@@ -374,10 +406,36 @@ function AddAgentForm({ knownCats, detected, onAdded, onClose }: {
         </div>
       )}
       <div className="flex flex-col gap-3">
+        {/* Start from something this folder can already run, instead of typing it out. Resets to the
+            placeholder after each pick so the same preset can be chosen twice. */}
+        {presets.length > 0 && (
+          <select value="" onChange={e => usePreset(e.target.value)}
+            className="px-3 py-2 rounded bg-canvas border border-edge text-sm outline-none focus:border-accent/60">
+            <option value="">Start from a command…</option>
+            {scripts.length > 0 && (
+              <optgroup label="Scripts in this folder">
+                {scripts.map(p => (
+                  <option key={p.command} value={p.command}>{p.label}{p.detail ? ` — ${p.detail}` : ""}</option>
+                ))}
+              </optgroup>
+            )}
+            {common.length > 0 && (
+              <optgroup label="Common">
+                {common.map(p => <option key={p.command} value={p.command}>{p.label}</option>)}
+              </optgroup>
+            )}
+          </select>
+        )}
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Name (e.g. Aider)"
           className="px-3 py-2 rounded bg-canvas border border-edge text-sm outline-none focus:border-accent/60" />
         <input value={command} onChange={e => setCommand(e.target.value)} placeholder="Launch command (e.g. aider)"
           className="px-3 py-2 rounded bg-canvas border border-edge text-sm font-mono outline-none focus:border-accent/60" />
+        {/* Where it shows up. This workspace by default — see the state above. */}
+        <select value={shared ? "shared" : "workspace"} onChange={e => setShared(e.target.value === "shared")}
+          className="px-3 py-2 rounded bg-canvas border border-edge text-sm outline-none focus:border-accent/60">
+          <option value="workspace">Only this workspace</option>
+          <option value="shared">Every workspace</option>
+        </select>
         {/* Category: type a new one or pick an existing (datalist). "Detected agents" is reserved for
             $PATH-detected built-ins; the server coerces it to "Other". Blank → "Other". */}
         <input value={category} onChange={e => setCategory(e.target.value)} list="agent-cats" placeholder="Category (e.g. Other)"

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { createNormalizer } from "./normalize.js";
 import { createTranscript } from "./transcript.js";
@@ -39,6 +39,13 @@ describe("normalize — replay of real SDK frames", () => {
   });
 
   it("is idempotent across a re-run — no leaked state between messages", () => {
-    expect(render()).toEqual(render());
+    // Frozen clock: a message is stamped with Date.now() as it opens, so two renders that straddle a
+    // millisecond differ on `ts` alone — a real difference, but not the one this test is about.
+    vi.useFakeTimers();
+    try {
+      expect(render()).toEqual(render());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -33,7 +33,7 @@ export const PlanCard = memo(function PlanCard({
         </button>
       </div>
 
-      <div className="tr-markdown max-h-64 overflow-y-auto text-sm leading-6 [&>*+*]:!mt-2 [&_h1]:!text-[1rem] [&_h2]:!text-[0.95rem] [&_h2]:!border-0 [&_h3]:!text-sm [&_pre]:!p-2 [&_pre]:!text-[11px]"
+      <div className="tr-markdown tr-chat-md max-h-64 overflow-y-auto text-sm leading-6 [&>*+*]:!mt-2 [&_h1]:!text-[1rem] [&_h2]:!text-[0.95rem] [&_h2]:!border-0 [&_h3]:!text-sm [&_pre]:!p-2 [&_pre]:!text-[11px]"
         dangerouslySetInnerHTML={{ __html: html }} />
 
       <div className="mt-2 flex items-center gap-2">
