@@ -105,6 +105,9 @@ export interface GuiSocket {
    *  changes for the life of a socket. */
   agent: GuiAgent | null;
   busy: boolean;
+  /** When the running turn started (epoch ms), or null when nothing is running. The SERVER's stamp,
+   *  replayed on every connect, so the working clock survives leaving the chat and coming back. */
+  turnStartedAt: number | null;
   state: GuiSessionState;
   connected: boolean;
   sessionId: string | null;
@@ -147,6 +150,7 @@ export function useGuiSocket(terminalId: string): GuiSocket {
   const [messages, setMessages] = useState<GuiMessage[]>([]);
   const [agent, setAgent] = useState<GuiAgent | null>(null);
   const [busy, setBusy] = useState(false);
+  const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
   const [state, setState] = useState<GuiSessionState>("idle");
   const [connected, setConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -189,6 +193,7 @@ export function useGuiSocket(terminalId: string): GuiSocket {
     setMessages([]);
     setAgent(null);
     setBusy(false);
+    setTurnStartedAt(null);
     setState("idle");
     setSessionId(null);
     setError(null);
@@ -211,9 +216,10 @@ export function useGuiSocket(terminalId: string): GuiSocket {
 
     const onEvent = (ev: GuiEvent) => {
       switch (ev.type) {
-        case "turn.start": setBusy(true); setError(null); break;
+        case "turn.start": setBusy(true); setTurnStartedAt(ev.startedAt); setError(null); break;
         case "turn.end":
           setBusy(false);
+          setTurnStartedAt(null);
           // The SDK reports a running total per query, so the latest value IS the session cost.
           if (typeof ev.costUsd === "number") setCostUsd(ev.costUsd);
           commit(); // flush the tail of the last delta window
@@ -402,7 +408,7 @@ export function useGuiSocket(terminalId: string): GuiSocket {
   }, [terminalId, applyConfig]);
 
   return {
-    messages, agent, busy, state, connected, sessionId, error, pendingApproval, pendingQuestion, config,
+    messages, agent, busy, turnStartedAt, state, connected, sessionId, error, pendingApproval, pendingQuestion, config,
     plan, contextUsage, costUsd, notice, dismissPlan, rewindPreview,
     send, interrupt, approve, answer, rewind, previewRewind, setConfig,
   };

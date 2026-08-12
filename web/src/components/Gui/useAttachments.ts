@@ -1,20 +1,20 @@
 import { useCallback, useState } from "react";
-import type { GuiImageAttachment } from "../../api/guiTypes";
+import { NO_IMAGES, useGuiDraft, type StagedImage } from "../../store/guiDraft";
 
 // Images staged for the next prompt. Pasting a screenshot is the whole point: describing a broken
 // screen in words is strictly worse than showing it.
+//
+// The staged list lives in the draft store, keyed by terminal, so it survives the chat unmounting
+// when you look at another terminal — the same reason the typed text does. Only the error message is
+// local: it belongs to the paste that just failed, not to the draft.
+
+export type { StagedImage };
 
 /** The four the API reads. Anything else is rejected here so the failure is visible at the moment of
  *  the paste, not swallowed into a turn that then behaves oddly. */
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 const MAX_BYTES = 4 * 1024 * 1024;
 const MAX_IMAGES = 5;
-
-export interface StagedImage extends GuiImageAttachment {
-  id: string;
-  /** Object URL for the thumbnail. Revoked when the image is dropped. */
-  url: string;
-}
 
 /** Read a File as bare base64 (no data-URI prefix). */
 function toBase64(file: File): Promise<string> {
@@ -30,8 +30,8 @@ function toBase64(file: File): Promise<string> {
   });
 }
 
-export function useAttachments() {
-  const [images, setImages] = useState<StagedImage[]>([]);
+export function useAttachments(terminalId: string) {
+  const images = useGuiDraft((s) => s.drafts[terminalId]?.images ?? NO_IMAGES);
   const [error, setError] = useState<string | null>(null);
 
   const add = useCallback(async (files: File[]) => {
@@ -53,7 +53,7 @@ export function useAttachments() {
     })));
 
     setError(null);
-    setImages((prev) => {
+    useGuiDraft.getState().setImages(terminalId, (prev) => {
       const room = MAX_IMAGES - prev.length;
       if (room <= 0) {
         setError(`At most ${MAX_IMAGES} images per message.`);
@@ -64,18 +64,15 @@ export function useAttachments() {
       read.slice(room).forEach((r) => URL.revokeObjectURL(r.url));
       return [...prev, ...read.slice(0, room)];
     });
-  }, []);
+  }, [terminalId]);
 
   const remove = useCallback((id: string) => {
-    setImages((prev) => {
-      prev.find((i) => i.id === id)?.url && URL.revokeObjectURL(prev.find((i) => i.id === id)!.url);
+    useGuiDraft.getState().setImages(terminalId, (prev) => {
+      const dropped = prev.find((i) => i.id === id);
+      if (dropped) URL.revokeObjectURL(dropped.url);
       return prev.filter((i) => i.id !== id);
     });
-  }, []);
+  }, [terminalId]);
 
-  const clear = useCallback(() => {
-    setImages((prev) => { prev.forEach((i) => URL.revokeObjectURL(i.url)); return []; });
-  }, []);
-
-  return { images, error, add, remove, clear, dismissError: useCallback(() => setError(null), []) };
+  return { images, error, add, remove, dismissError: useCallback(() => setError(null), []) };
 }

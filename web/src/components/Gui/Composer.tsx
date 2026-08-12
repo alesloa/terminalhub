@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
+import { useGuiDraft } from "../../store/guiDraft";
 import type { GuiAgent, GuiCommand, GuiConfig, GuiContextUsage, GuiImageAttachment, GuiModel } from "../../api/guiTypes";
 import { AGENT_NAMES, findModel, hasReasoningOptions } from "./composerOptions";
 import { ModelPill } from "./ModelPill";
@@ -46,13 +47,16 @@ interface Props {
 export function Composer({
   terminalId, folder, agent, busy, connected, config, hero, contextUsage, costUsd, onSend, onInterrupt, onConfig,
 }: Props) {
-  const [text, setText] = useState("");
-  const [caret, setCaret] = useState(0);
+  // The half-typed message belongs to the terminal, not to this component — looking at another
+  // terminal unmounts the chat, and a draft that vanished for that would be maddening.
+  const text = useGuiDraft((s) => s.drafts[terminalId]?.text ?? "");
+  const setText = useCallback((next: string) => useGuiDraft.getState().setText(terminalId, next), [terminalId]);
+  const [caret, setCaret] = useState(() => text.length); // a restored draft resumes at its end
   const [menuIndex, setMenuIndex] = useState(0);
   const [menuOpen, setMenuOpen] = useState(true);
   const [dragging, setDragging] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
-  const attachments = useAttachments();
+  const attachments = useAttachments(terminalId);
 
   // The catalog is whatever the installed CLI reports, so it can't shift under a live session — fetch
   // it once per terminal and hold it. Keyed by terminal because it's a per-session question.
@@ -113,6 +117,10 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT_PX)}px`;
   };
 
+  // A restored multi-line draft mounts into a one-row box; size it before the first paint so it
+  // doesn't visibly snap open.
+  useLayoutEffect(grow, [terminalId]);
+
   const write = (next: string, nextCaret: number) => {
     setText(next);
     setCaret(nextCaret);
@@ -135,9 +143,8 @@ export function Composer({
     const value = text.trim();
     if ((!value && !attachments.images.length) || busy || !connected) return;
     const images: GuiImageAttachment[] = attachments.images.map(({ mediaType, dataBase64 }) => ({ mediaType, dataBase64 }));
-    setText("");
+    useGuiDraft.getState().clear(terminalId);
     setCaret(0);
-    attachments.clear();
     onSend(value, images.length ? images : undefined);
     requestAnimationFrame(grow); // after the cleared value has been painted
   };

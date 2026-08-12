@@ -115,7 +115,10 @@ export type GuiEvent =
   | { type: "block.end"; messageId: string; blockId: string }
   | { type: "block.input"; messageId: string; blockId: string; input: unknown }
   | { type: "tool.result"; toolUseId: string; status: Exclude<GuiToolStatus, "running">; result: string }
-  | { type: "turn.start"; turnId: string }
+  // `startedAt` is when the SERVER opened the turn, not when this client heard about it — a client
+  // that reconnects (or a chat that is closed and reopened) is replayed the original stamp, so the
+  // elapsed clock keeps counting the turn instead of restarting from zero.
+  | { type: "turn.start"; turnId: string; startedAt: number }
   | { type: "turn.end"; turnId: string; status: GuiTurnStatus; usage?: GuiUsage; costUsd?: number }
   | { type: "approval.request"; request: GuiApprovalRequest }
   | { type: "approval.resolved"; id: string; decision: GuiApprovalDecision }

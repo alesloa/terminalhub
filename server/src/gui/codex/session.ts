@@ -80,6 +80,9 @@ export function createCodexGuiSession(opts: GuiSessionOptions): GuiSession {
   // reconnect or a hub restart resumes. Unknown until `thread/start` answers.
   let threadId: string | null = opts.resumeSessionId ?? null;
   let currentTurnId: string | null = null;
+  /** When the open turn started, so a client that arrives late is told the truth about how long the
+   *  agent has been working rather than starting its own stopwatch. */
+  let turnStartedAt = 0;
   let config: GuiConfig = opts.config;
   let stopped = false;
   /** Bumped by every stop and every restart, so work that was already in flight can drop itself. */
@@ -139,7 +142,8 @@ export function createCodexGuiSession(opts: GuiSessionOptions): GuiSession {
           const turn = (params as CodexTurnNotification)?.turn;
           if (!turn?.id) return;
           currentTurnId = turn.id;
-          emit({ type: "turn.start", turnId: turn.id });
+          turnStartedAt = Date.now();
+          emit({ type: "turn.start", turnId: turn.id, startedAt: turnStartedAt });
           setState("running");
           return;
         }
@@ -480,7 +484,7 @@ export function createCodexGuiSession(opts: GuiSessionOptions): GuiSession {
 
     pending() {
       return [
-        ...(currentTurnId ? [{ type: "turn.start", turnId: currentTurnId } as GuiEvent] : []),
+        ...(currentTurnId ? [{ type: "turn.start", turnId: currentTurnId, startedAt: turnStartedAt } as GuiEvent] : []),
         ...[...questions.values()].map((p): GuiEvent => ({ type: "question.request", request: p.request })),
         ...[...approvals.values()].map((p): GuiEvent => ({ type: "approval.request", request: p.request })),
       ];

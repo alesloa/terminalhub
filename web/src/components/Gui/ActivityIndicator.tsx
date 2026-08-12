@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GuiMessage } from "../../api/guiTypes";
 
 /**
@@ -14,17 +14,22 @@ import type { GuiMessage } from "../../api/guiTypes";
  * line with its own spinner and its own arguments, so repeating the command here said the same thing
  * twice — once truncated.
  */
-export function ActivityIndicator({ messages, waitingOnUser }: {
+export function ActivityIndicator({ messages, startedAt, waitingOnUser }: {
   messages: GuiMessage[];
+  /** When the turn started, per the server. Mount time would restart the clock every time the chat
+   *  is closed and reopened, which makes a four-minute turn keep claiming it just began. */
+  startedAt: number | null;
   waitingOnUser: boolean;
 }) {
-  // Mounted for exactly one turn (the parent renders it only while busy), so mount time IS turn start.
-  const [elapsed, setElapsed] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const started = Date.now();
-    const t = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, []);
+  // Falls back to mount time only when the turn opened before the server carried a stamp — better a
+  // clock that under-counts than one showing nothing.
+  const mountedAt = useRef(Date.now());
+  const elapsed = Math.max(0, Math.floor((now - (startedAt ?? mountedAt.current)) / 1000));
 
   const activity = useMemo(() => describe(messages), [messages]);
   const label = waitingOnUser ? "Waiting for you" : activity;

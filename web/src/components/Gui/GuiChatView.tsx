@@ -71,6 +71,7 @@ export function GuiChatView({ terminalId, folder }: { terminalId: string; folder
               <MessageList
                 messages={gui.messages}
                 busy={gui.busy}
+                turnStartedAt={gui.turnStartedAt}
                 waitingOnUser={!!gui.pendingApproval || !!gui.pendingQuestion}
                 onRewind={gui.rewind}
                 onPreviewRewind={gui.previewRewind}

@@ -238,6 +238,9 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
   let runtime: Query | null = null;
   let stopped = false;
   let currentTurnId: string | null = null;
+  /** When the open turn started, so a client that arrives late is told the truth about how long the
+   *  agent has been working rather than starting its own stopwatch. */
+  let turnStartedAt = 0;
   let config: GuiConfig = opts.config;
   // Resuming an id the CLI never wrote a transcript for fails outright, so a restart before the
   // first turn re-pins the same id instead of resuming it.
@@ -448,10 +451,11 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
           // agent streams is proof a turn is in flight, whoever asked for it and however long ago.
           if (event.type !== "turn.end" && !currentTurnId && opensTurn(event)) {
             currentTurnId = randomUUID();
-            emit({ type: "turn.start", turnId: currentTurnId });
+            turnStartedAt = Date.now();
+            emit({ type: "turn.start", turnId: currentTurnId, startedAt: turnStartedAt });
             setState("running");
           }
-          if (event.type === "turn.start") { currentTurnId = event.turnId; setState("running"); }
+          if (event.type === "turn.start") { currentTurnId = event.turnId; turnStartedAt = event.startedAt; setState("running"); }
           if (event.type === "turn.end") {
             currentTurnId = null;
             setState("idle");
@@ -553,7 +557,8 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
     emit({ type: "block.start", messageId, block: { kind: "text", id: `${messageId}:0`, text: sent } });
     emit({ type: "block.end", messageId, blockId: `${messageId}:0` });
     emit({ type: "message.end", id: messageId });
-    emit({ type: "turn.start", turnId });
+    turnStartedAt = Date.now();
+    emit({ type: "turn.start", turnId, startedAt: turnStartedAt });
     setState("running");
     // Snapshot the workspace BEFORE the agent is handed the turn — a baseline taken afterwards would
     // already contain the turn's own edits. The echo above has already landed, so the composer feels
@@ -643,7 +648,7 @@ export function createGuiSession(opts: GuiSessionOptions): GuiSession {
         // The open turn first: a client that arrives mid-turn has to learn the agent is working
         // before it is shown what the agent is blocked on, or it renders an approval bar under an
         // idle-looking composer.
-        ...(currentTurnId ? [{ type: "turn.start", turnId: currentTurnId } as GuiEvent] : []),
+        ...(currentTurnId ? [{ type: "turn.start", turnId: currentTurnId, startedAt: turnStartedAt } as GuiEvent] : []),
         ...[...questions.values()].map((p): GuiEvent => ({ type: "question.request", request: p.request })),
         ...[...approvals.values()].map((p): GuiEvent => ({ type: "approval.request", request: p.request })),
       ];

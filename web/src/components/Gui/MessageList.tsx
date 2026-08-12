@@ -14,9 +14,12 @@ const NEAR_BOTTOM_PX = 48; // slack so a one-line overshoot still counts as "at 
  * The scrolling transcript. Sticks to the bottom while the user is already there and releases the
  * moment they scroll up, so reading back through a long turn isn't yanked away by the next delta.
  */
-export function MessageList({ messages, busy, waitingOnUser, onRewind, onPreviewRewind, rewindPreview }: {
+export function MessageList({ messages, busy, turnStartedAt, waitingOnUser, onRewind, onPreviewRewind, rewindPreview }: {
   messages: GuiMessage[];
   busy: boolean;
+  /** When the running turn started (epoch ms) — the server's stamp, so the clock is the turn's age
+   *  rather than this component's. */
+  turnStartedAt: number | null;
   /** An approval or question is on screen — the turn is stalled on the user, not on the model. */
   waitingOnUser: boolean;
   onRewind: (userTurnsAfter: number, text: string, newText?: string, restoreFiles?: boolean) => Promise<GuiRewindResult>;
@@ -89,7 +92,7 @@ export function MessageList({ messages, busy, waitingOnUser, onRewind, onPreview
             if (row.kind === "tools") return <ToolRun key={row.id} blocks={row.blocks} />;
             return <BlockGroup key={row.id} blocks={row.blocks} />;
           })}
-          {busy && <ActivityIndicator messages={messages} waitingOnUser={waitingOnUser} />}
+          {busy && <ActivityIndicator messages={messages} startedAt={turnStartedAt} waitingOnUser={waitingOnUser} />}
         </div>
       </div>
 
