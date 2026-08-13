@@ -9,7 +9,7 @@ import { isImageFile, imageMime } from "../../lib/fileKinds";
 import { diffTheme, fillHeight, loadLanguage } from "../../lib/codeMirror";
 import { vscodeDark } from "../../lib/vscodeDark";
 import { betterCommentsExtension } from "../../lib/betterComments";
-import { EditorToggles, ToggleBtn } from "../Editor/EditorToggles";
+import { ToggleBtn } from "../Editor/EditorToggles";
 
 // Where one side of a diff comes from: a working-copy file, a git object at a rev, or nothing (the
 // empty side of an add/delete). Images and binary fallbacks read bytes from these.
@@ -426,17 +426,16 @@ function MergeFile({ oldText, newText, name, fill }: { oldText: string; newText:
   return <div ref={host} className={`cm-diff-host ${fill ? "cm-diff-fill h-full min-h-0" : ""}`} />;
 }
 
-/** Segmented split↔unified control, plus the shared minimap / word-wrap toggles. */
+/** Segmented split↔unified control. The shared minimap / word-wrap menu is deliberately NOT here:
+ *  a diff always opens as an editor tab, and that tab strip already carries one — two ⋯ buttons in
+ *  the same corner of the same pane, opening the same menu. */
 function DiffToolbar() {
   const split = useUi(s => s.diffSplit);
   const setSplit = useUi(s => s.setDiffSplit);
   return (
-    <div className="flex items-center gap-1">
-      <div className="flex rounded border border-edge overflow-hidden">
-        <ToggleBtn active={!split} onClick={() => setSplit(false)} title="Inline (unified) diff">Unified</ToggleBtn>
-        <ToggleBtn active={split} onClick={() => setSplit(true)} title="Side-by-side (split) diff">Split</ToggleBtn>
-      </div>
-      <EditorToggles />
+    <div className="flex rounded border border-edge overflow-hidden">
+      <ToggleBtn active={!split} onClick={() => setSplit(false)} title="Inline (unified) diff">Unified</ToggleBtn>
+      <ToggleBtn active={split} onClick={() => setSplit(true)} title="Side-by-side (split) diff">Split</ToggleBtn>
     </div>
   );
 }
