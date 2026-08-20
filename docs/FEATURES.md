@@ -139,6 +139,14 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
 - **Spaces switcher** — a pill in the top bar showing the active space, with one quick-jump dot per
   space. Click the pill for a Mission-Control-style grid to add, rename, recolor, reorder, or delete
   spaces.
+- **Tile hover toolbar** — hovering a space tile in that grid reveals rename, config, icon, recolor
+  and delete buttons in its top-right corner. The row is inert until it's visible, so it can't
+  intercept a click aimed at the tile itself.
+- **Right-click a space tile** — opens an in-app menu (Open, Rename, Change Icon, Space Color, Edit
+  Config, Delete Space) instead of the browser's own page menu, so every tile action is reachable
+  without aiming at a 20px icon. The home space's menu omits Delete.
+- **Confirmed space deletion** — deleting a space asks first, in an in-app dialog that names the
+  space and states what happens: its cards move to the next space and no terminals are killed.
 - **Per-space layout** — which rooms are open, their positions and sizes, and the focused room are
   all scoped to the space and restored when you return.
 - **Cross-space attention** — a space's quick-jump dot in the top-bar switcher pulses (fading in and
@@ -1186,6 +1194,25 @@ over loopback (no token needed locally; `TERMINALHUB_TOKEN` Bearer when exposed)
   Toggle it per device under **Workbench → System stats** (off also stops its background 2s poll). The
   open-rooms **Active windows** taskbar on the same strip has its own toggle right beside it.
 - **Toast position** — notifications anchor to any cell of a 3×3 grid.
+
+## Install as a desktop app
+
+Terminal Hub ships a web manifest (`web/public/manifest.webmanifest`), so any Chromium browser can
+install it as a real desktop application — no native shell, no extra build.
+
+- **One-step install** — in Chrome, ⋮ → *Save and share* → *Install page as app* → check *Open as
+  window*. macOS drops a launchable `.app` in `~/Applications/Chrome Apps/` that can be pinned to
+  the Dock.
+- **Chromeless window** — `display: standalone` opens the hub with no tabs and no address bar, so it
+  reads as an app rather than a browser page.
+- **Real icon and name** — the manifest supplies 128/192/256/512px PNGs and the name "Terminal Hub",
+  instead of letting the browser scrape a blurry favicon.
+- **Matches the app's own shade** — `theme_color` / `background_color` are pinned to `#141414`, the
+  default `--tr-bg`, so the window frame and the pre-mount background don't flash a lighter color.
+- **Port-agnostic** — `start_url` and `scope` are relative (`/`), so the installed app follows
+  whichever host and port you installed it from.
+- **The server still runs separately** — the installed app is a window onto a running hub, not a
+  supervisor for it. If the hub process isn't up, the app opens to a connection error.
 
 ## Remote access & security
 

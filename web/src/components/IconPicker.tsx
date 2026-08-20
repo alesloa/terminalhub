@@ -22,7 +22,10 @@ export function IconPicker({ current, onPick, onClose }: Props) {
   }, [onClose]);
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]" onMouseDown={onClose}>
+    // data-app-menu marks this as app chrome that portals OUTSIDE its opener's DOM subtree, so
+    // click-away handlers (e.g. the Spaces dropdown) don't read a click in here as "clicked away"
+    // and tear down the component that opened it.
+    <div data-app-menu className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]" onMouseDown={onClose}>
       <div className="bg-panel border border-edge rounded-lg shadow-2xl w-[420px] p-3 flex flex-col gap-3"
         onMouseDown={(e) => e.stopPropagation()}>
         <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)}

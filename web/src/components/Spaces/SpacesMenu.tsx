@@ -44,7 +44,14 @@ export function SpacesMenu() {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      // Menus a tile opens (context menu, icon picker) portal to <body>, so they land outside `ref`
+      // and would otherwise read as "clicked away" — closing the dropdown and unmounting the tile
+      // mid-interaction. They tag themselves data-app-menu; treat those clicks as inside.
+      if (t?.closest?.("[data-app-menu]")) return;
+      if (ref.current && !ref.current.contains(t as Node)) setOpen(false);
+    };
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     window.addEventListener("pointerdown", onDown);
     window.addEventListener("keydown", onKey);

@@ -23,7 +23,10 @@ export function ConfirmDialog({ title, body, confirmLabel = "Confirm", cancelLab
   }, [onConfirm, onCancel]);
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]"
+    // data-app-menu: this dialog is mounted at the app root (ConfirmHost), far from whatever opened
+    // it. Click-away handlers skip it so answering the prompt doesn't also tear down the caller
+    // that's waiting on the promise.
+    <div data-app-menu className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]"
       onMouseDown={dismissable ? onCancel : undefined}>
       <div className="relative bg-panel w-[420px] rounded-lg p-5 flex flex-col gap-3 border border-edge"
         onMouseDown={(e) => e.stopPropagation()}>

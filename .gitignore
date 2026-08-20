@@ -1,5 +1,10 @@
 node_modules/
 dist/
+
+# Tauri desktop shell: Rust build output (multi-GB) and the ACL schemas regenerated on every build.
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
 *.db
 *.db-*
 .env

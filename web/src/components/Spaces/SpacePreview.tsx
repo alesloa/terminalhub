@@ -3,8 +3,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { Space, Workspace } from "../../api/types";
 import { useUi, rectOf } from "../../store/ui";
+import { confirmModal } from "../../store/confirm";
 import { IconPicker } from "../IconPicker";
 import { ColorPicker, WS_L_MIN } from "../TerminalContextMenu";
+import { SpaceContextMenu } from "./SpaceContextMenu";
 
 const DEFAULT_ACCENT = "rgb(var(--tr-accent))";
 // Nominal card footprint on the real canvas, used to scale the mini-map (matches WorkspaceCard's
@@ -19,6 +21,7 @@ export function SpacePreview({ space, workspaces, active, attention, isHome, onO
   const [renaming, setRenaming] = useState(false);
   const [iconOpen, setIconOpen] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const invalidate = () => qc.invalidateQueries({ queryKey: ["spaces"] });
   const rename = useMutation({ mutationFn: (name: string) => api.updateSpace(space.id, { name }), onSuccess: invalidate });
   const setIcon = useMutation({ mutationFn: (icon: string | null) => api.updateSpace(space.id, { icon }), onSuccess: invalidate });
@@ -27,6 +30,23 @@ export function SpacePreview({ space, workspaces, active, attention, isHome, onO
     mutationFn: () => api.deleteSpace(space.id),
     onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ["workspaces"] }); },
   });
+
+  // Deleting a space is destructive enough to gate, but not catastrophic — the cards survive, so the
+  // body says so rather than warning about data loss. Shared by the hover trash button and the
+  // context menu's Delete so both routes ask exactly once, with the same wording.
+  const askDelete = async () => {
+    const ok = await confirmModal({
+      title: `Delete “${space.name}”?`,
+      body: "Its cards move to the next space. No terminals are killed.",
+      confirmLabel: "Delete",
+    });
+    if (ok) del.mutate();
+  };
+
+  // Opening the wizard from the context menu: grow it out of the click point (a zero-size rect at the
+  // cursor) since there's no opener icon to capture.
+  const openConfigAt = (x: number, y: number) =>
+    openWizard({ mode: "edit", spaceId: space.id, origin: { x, y, w: 0, h: 0 } });
 
   const accent = space.color ?? DEFAULT_ACCENT;
   // Fit the cards into the tile: derive the content box from card coords + nominal size, then scale.
@@ -45,9 +65,14 @@ export function SpacePreview({ space, workspaces, active, attention, isHome, onO
   }, [workspaces]);
 
   return (
-    <div className="relative shrink-0">
+    // `group` MUST live on this wrapper, not on the tile button below: the hover-controls row is the
+    // button's SIBLING, and Tailwind's group-hover: only reaches descendants of the element carrying
+    // `group`. With it on the button the row stayed at opacity-0 forever — still clickable, just
+    // invisible — so the whole toolbar (delete included) was unreachable by mouse.
+    <div className="group relative shrink-0"
+      onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}>
       <button onClick={onOpen}
-        className={`group relative w-[180px] h-[116px] rounded-lg border bg-elevated overflow-hidden transition
+        className={`relative w-[180px] h-[116px] rounded-lg border bg-elevated overflow-hidden transition
           ${active ? "ring-2 ring-accent" : "hover:border-accent"} ${attention ? "tr-blink" : ""}`}
         style={{ borderColor: accent, "--tr-glow-color": accent } as CSSProperties}
         title={space.name}>
@@ -67,8 +92,11 @@ export function SpacePreview({ space, workspaces, active, attention, isHome, onO
         </div>
       </button>
 
-      {/* hover controls */}
-      <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition">
+      {/* Hover controls. pointer-events-none while transparent: opacity-0 alone still swallows clicks,
+          so the hidden row used to intercept presses aimed at the tile's top-right corner. */}
+      <div className="absolute top-1 right-1 flex gap-1 opacity-0 pointer-events-none transition
+        group-hover:opacity-100 group-hover:pointer-events-auto
+        focus-within:opacity-100 focus-within:pointer-events-auto">
         <button title="Rename" onClick={(e) => { e.stopPropagation(); setRenaming(true); }}
           className="grid h-5 w-5 place-items-center rounded bg-panel/90 text-muted hover:text-bright text-[11px]">
           <span className="codicon codicon-edit" aria-hidden />
@@ -87,10 +115,7 @@ export function SpacePreview({ space, workspaces, active, attention, isHome, onO
           <span className="codicon codicon-paintcan" aria-hidden />
         </button>
         {!isHome && (
-          <button title="Delete space" onClick={(e) => {
-            e.stopPropagation();
-            if (confirm(`Delete the “${space.name}” space? Its cards move to the next space; no terminals are killed.`)) del.mutate();
-          }}
+          <button title="Delete space" onClick={(e) => { e.stopPropagation(); void askDelete(); }}
             className="grid h-5 w-5 place-items-center rounded bg-red-600/90 text-white hover:bg-red-500 text-[11px]">
             <span className="codicon codicon-trash" aria-hidden />
           </button>
@@ -115,6 +140,17 @@ export function SpacePreview({ space, workspaces, active, attention, isHome, onO
       )}
       {iconOpen && (
         <IconPicker current={space.icon} onPick={(name) => { setIcon.mutate(name); setIconOpen(false); }} onClose={() => setIconOpen(false)} />
+      )}
+
+      {menu && (
+        <SpaceContextMenu anchor={menu} space={space} isHome={isHome}
+          onOpen={onOpen}
+          onRename={() => setRenaming(true)}
+          onChangeIcon={() => setIconOpen(true)}
+          onColor={(c) => setColor.mutate(c)}
+          onEditConfig={() => openConfigAt(menu.x, menu.y)}
+          onDelete={() => void askDelete()}
+          dismiss={() => setMenu(null)} />
       )}
     </div>
   );

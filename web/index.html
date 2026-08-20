@@ -6,6 +6,13 @@
          touch gestures reach the canvas (its own pan/zoom) instead of zooming the whole UI. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Installable-app metadata. Chrome's "Install page as app" reads this to name the macOS
+         .app, pick its Dock icon, and open it chromeless (display: standalone) instead of
+         guessing from the title + SVG favicon. theme-color matches --tr-bg so the window frame
+         and the pre-mount background are the same shade. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#141414" />
     <title>Terminal Hub</title>
   </head>
   <body>
