@@ -22,8 +22,9 @@ import { useUi, rectOf } from "../store/ui";
 import { usePresence } from "../store/presence";
 import type { WinRect } from "../store/ui";
 import type { WindowHandle } from "../hooks/useDraggableWindow";
+import { useAutoHideTopBar } from "../hooks/useAutoHideTopBar";
 
-export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
+export function TopBar({ onNewWorkspace, autoHide = false }: { onNewWorkspace: () => void; autoHide?: boolean }) {
   // Modal open-state lives in the shared store (useUi.panels), NOT local React state — so the owner's
   // open panels are observable and a mirror viewer can be driven to open the SAME ones (see useMirror).
   // Origins (grow-from rect) + the close-animation WindowHandle refs stay local: per-browser animation
@@ -129,6 +130,11 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
   const [widgetsOpen, setWidgetsOpen] = useState(false);
   const widgetsBtnRef = useRef<HTMLButtonElement>(null);
   const widgetsWin = useRef<WindowHandle>(null);
+  // Auto-hide: a fullscreen room fills from y 0, so this bar would cover the room's own title bar —
+  // and the minimize/close buttons on it. Slide out of the way and come back on a top-edge hover.
+  // The anchored popovers portal to <body>, so keep the bar down while one is open or it looks
+  // detached from its button.
+  const barHidden = useAutoHideTopBar(autoHide, launcherOpen || widgetsOpen);
   const launcherOrigin = (): WinRect | null => {
     const r = launcherBtnRef.current?.getBoundingClientRect();
     return r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null;
@@ -163,8 +169,20 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
           z-[110]: above rooms (40), floating windows/modals (50-80), drag ghosts (90) and the stats
           bar (100) — the bar is the app's fixed chrome and nothing may paint over it — but below
           toasts (120), the shared-cursor layer (150) and the break overlay (200). Needs `relative`
-          so z applies; its own popovers (launcher, spaces menu, notifications) ride along too. */}
-      <div data-spaces-strip className="relative z-[110] h-14 flex items-center justify-between gap-4 px-4 border-b border-edge bg-canvas">
+          so z applies; its own popovers (launcher, spaces menu, notifications) ride along too.
+
+          Two elements, not one: the OUTER holds the tag, the height and the z, and never moves — so
+          spacesBarBottom() keeps reporting the same floor whether the bar is on screen or hidden, and
+          floating windows/modals don't jump when it slides. The INNER is the painted bar and is the
+          only thing the auto-hide transform touches.
+
+          pointer-events: the outer is a measuring box, never a click target — left clickable it would
+          be an invisible 56px-tall z-[110] plate across the top of a fullscreen room, swallowing every
+          press on the room's title bar and tab strip while the bar was slid away. The inner (the real
+          bar) takes the clicks instead, and drops them too once it's hidden. */}
+      <div data-spaces-strip className="relative z-[110] h-14 pointer-events-none">
+      <div style={{ transform: barHidden ? "translateY(-100%)" : undefined, transition: "transform 200ms ease" }}
+        className={`absolute inset-x-0 top-0 h-14 flex items-center justify-between gap-4 px-4 border-b border-edge bg-canvas ${barHidden ? "pointer-events-none" : "pointer-events-auto"}`}>
         <div className="flex-1 min-w-0 flex items-center gap-4">
           <div className="font-bold tracking-wide">Terminal Hub</div>
           <label title="Snap workspace cards to the grid"
@@ -214,6 +232,7 @@ export function TopBar({ onNewWorkspace }: { onNewWorkspace: () => void }) {
           </button>
           <button onClick={onNewWorkspace} className="px-3 py-1.5 bg-blue-600 rounded text-sm">+ New workspace</button>
         </div>
+      </div>
       </div>
       {settingsOpen && <SettingsModal ref={settingsWin} origin={settingsOrigin} onClose={() => closePanel("settings")} />}
       {builderOpen && <PromptBuilderModal onClose={() => closePanel("prompt")} />}

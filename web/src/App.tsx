@@ -80,6 +80,17 @@ export default function App() {
   // Spotlight may hide the other rooms only when the staged room lives on the active space; otherwise a
   // space switch would leave the canvas blank (staged room parked off-screen) until the dock re-stages.
   const spotlightActive = spotlightOn && (spaceIndex.get(spaceOf.get(stagedWorkspaceId ?? "") ?? "") ?? activeIndex) === activeIndex;
+  // Is a maximized room actually on screen right now? A fullscreen room fills from y 0 and would sit
+  // under the top bar, hiding its own title bar and the minimize/close buttons on it — so the bar
+  // auto-hides while one is up. Same three filters the rooms stage below renders with (own space,
+  // not spotlighted away, not desktop-hidden), so the bar only yields to a room you can see.
+  const roomMaximized = useUi(s => s.roomMaximized);
+  const fullscreenRoomVisible = openRooms.some(r =>
+    roomMaximized[r.workspaceId]
+    && spaceOf.has(r.workspaceId)
+    && (spaceIndex.get(spaceOf.get(r.workspaceId) ?? "") ?? activeIndex) === activeIndex
+    && (!spotlightActive || r.workspaceId === stagedWorkspaceId)
+    && !hiddenRoomIds.has(r.workspaceId));
   // Restored open rooms (from localStorage) may name a workspace that was deleted while closed. Once
   // the list has loaded, close those — the render below also hides unknown rooms, this prunes the
   // stored set so it doesn't keep a dead room around. Skips while wsData is still undefined (cold boot)
@@ -209,7 +220,7 @@ export default function App() {
     // host-sized box, so heights must be relative to that box, not the physical viewport. The
     // html/body/#root height:100% chain (theme.css) makes h-full == the viewport in the normal case.
     <div className="h-full">
-      <TopBar onNewWorkspace={() => setShowNew(true)} />
+      <TopBar onNewWorkspace={() => setShowNew(true)} autoHide={fullscreenRoomVisible} />
       {/* Home screen: the Favorites dock (project switcher) sits left of the canvas of cards. */}
       <div className="flex h-[calc(100%-56px)]">
         <FavoritesDock />

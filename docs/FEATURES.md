@@ -170,6 +170,11 @@ This file is the "what ships now" list. For the spec see [`PRD.md`](PRD.md); for
   of its card and settles as a floating window pinned to the card's top-left corner. Once you drag,
   resize, or maximize it, that exact geometry + mode is restored on every reopen; until then the room
   re-anchors to its card each open (so reorganizing the canvas keeps the room landing on its card).
+- **Fullscreen hides the top bar** — maximize a room and the Terminal Hub top bar slides up out of the
+  way, so the room's own title bar — with its minimize, restore and close buttons — is no longer buried
+  under it. Nudge the pointer to the very top edge of the screen and the bar drops back down; move away
+  and it hides again. It stays down while one of its menus is open, and while it's hidden the top edge
+  of the room takes your clicks normally. Restore or close the room and the bar comes back for good.
 - **A clipped window stays grabbable** — shrink the browser under a floating room window and part of it may
   fall past the edge, but the title bar can never slide fully off-screen (a strip always stays in reach, and
   below the spaces bar), so you can grab it and drag the whole window back into view. (A maximized room
