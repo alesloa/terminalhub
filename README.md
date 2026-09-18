@@ -1,5 +1,7 @@
 # Terminal Hub
 
+[![Terminal Hub: a canvas of workspace cards, a room with the code editor and a running Claude Code terminal, and live usage widgets](.github/assets/hero.webp)](https://terminalhub.dev)
+
 A browser-based control center for AI coding-agent CLIs. Lay out **workspace cards** on a draggable canvas — each card is a folder on your machine. Open a card and you get a **room**: a main terminal plus a Zed-style side panel of additional terminals, each with its own title and color. Every terminal auto-launches the coding agent of your choice (`claude` by default, but it's agent-agnostic — `codex`, a plain shell, anything you can type).
 
 Terminals are backed by **tmux**, so they survive browser refreshes, network drops, and reconnects. Close the tab, come back tomorrow, your agent is still running where you left it.
