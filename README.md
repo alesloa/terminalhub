@@ -204,7 +204,7 @@ npm test         # backend unit + integration tests (vitest)
 
 - `server/` — Fastify (REST + WebSocket) over a tmux controller + node-pty + better-sqlite3
 - `web/` — React + Vite + xterm.js + dnd-kit
-- `docs/PRD.md`, `docs/IMPLEMENTATION-PLAN.md` — design + build plan
+- `docs/FEATURES.md` — the canonical list of everything that ships today
 
 ## How it works (one paragraph)
 

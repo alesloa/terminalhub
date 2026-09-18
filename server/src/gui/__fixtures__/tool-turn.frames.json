@@ -129,7 +129,7 @@
   "product_feedback_disabled": false,
   "uuid": "06cd1917-2022-41ae-9533-f0f1fef13c03",
   "memory_paths": {
-   "auto": "/Users/alesloas/.claude/projects/-private-tmp/memory/"
+   "auto": "/Users/example/.claude/projects/-private-tmp/memory/"
   },
   "messaging_socket_path": "/tmp/cc-socks/5254.sock",
   "fast_mode_state": "off",
